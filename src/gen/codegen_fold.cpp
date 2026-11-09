@@ -886,6 +886,12 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                         }
                         return init->elements[static_cast<std::size_t>(index)].get();
                     }
+                    if (const auto *call = std::get_if<Expr::Call>(&value.data)) {
+                        if (call->comptime_struct == nullptr) {
+                            return nullptr;
+                        }
+                        return self(self, *call->comptime_struct, index, depth + 1, array_ok);
+                    }
                     if (const auto *selector = std::get_if<Expr::Selector>(&value.data)) {
                         if (selector->base == nullptr) {
                             return nullptr;
@@ -1477,6 +1483,12 @@ const Expr *CodeGen::comptime_tuple_element(const Expr &expr) const {
                 return nullptr;
             }
             return init->elements[static_cast<std::size_t>(slot)].get();
+        }
+        if (const auto *call = std::get_if<Expr::Call>(&base.data)) {
+            if (call->comptime_struct == nullptr) {
+                return nullptr;
+            }
+            return self(self, *call->comptime_struct, slot, depth + 1);
         }
         if (const auto *named = std::get_if<Expr::Name>(&base.data)) {
             const Expr *init_expr = nullptr;

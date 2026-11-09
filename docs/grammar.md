@@ -272,7 +272,7 @@ A data pointer field and a union result are `global initializer is not a constan
 
 A `[]const u8` result is that string. `cut("Hello, world")` is `Hello` when the body keeps the bytes before `,`. `cut("Hello, world").len` is `movl $5, %eax` and `retq`. A `var` or a `const` passed to that function is `not supported yet`.
 
-A result that is not `i32`, not a `bool`, not a struct, and not a constant `[]const u8` is `not supported yet`. `comptime if (pos(3))` when `pos` returns `bool` is `movl $42, %eax` and `retq`.
+A result that is not `i32`, not a `bool`, not a struct, not a tuple, and not a constant `[]const u8` is `not supported yet`. `comptime if (pos(3))` when `pos` returns `bool` is `movl $42, %eax` and `retq`. A tuple result `pair(40)[0] + pair(40)[1]` is `movl $82, %eax` and `retq`.
 
 `emit` is not valid in a `comptime func`.
 

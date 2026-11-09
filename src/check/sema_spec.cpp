@@ -1575,6 +1575,122 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
         const int index = param.type_package.empty() ? param_index(templ.type_params, param.type_name) : -1;
         const bool plain = index >= 0 && param.type_args.empty();
         if (!plain) {
+            // `items Seq[T]` and `items *Seq[T]`. `T` comes from the methods, or from the element of an array.
+            const TraitDecl *trait = nullptr;
+            uint32_t trait_owner = file_id_;
+            if (!param.type_args.empty()) {
+                if (param.type_package.empty()) {
+                    trait = find_trait_template(param.type_name, trait_owner);
+                } else if (const Symbol *package = lookup(param.type_package);
+                           package != nullptr && package->is_package) {
+                    for (const uint32_t id : files_in_package(package->package_file)) {
+                        const auto file = trait_templates_.find(id);
+                        if (file == trait_templates_.end()) {
+                            continue;
+                        }
+                        const auto found = file->second.find(param.type_name);
+                        if (found == file->second.end()) {
+                            continue;
+                        }
+                        trait = found->second;
+                        trait_owner = id;
+                        break;
+                    }
+                }
+            }
+            if (trait != nullptr && trait->type_params.size() == param.type_args.size()) {
+                const auto fn_slot = [&](const std::string &trait_param) -> int {
+                    for (std::size_t i = 0; i < trait->type_params.size(); ++i) {
+                        if (trait->type_params[i].name != trait_param || trait->type_params[i].is_value) {
+                            continue;
+                        }
+                        const TypeArg &written = param.type_args[i];
+                        if (written.is_value || !written.type_package.empty() || !written.args.empty() ||
+                            written.indirections != 0 || written.is_array) {
+                            return -1;
+                        }
+                        return param_index(templ.type_params, written.type_name);
+                    }
+                    return -1;
+                };
+                const auto bind_written = [&](const std::string &type_name, const std::string &type_package,
+                                              const Type &concrete) -> bool {
+                    if (!type_package.empty() || concrete.kind == TypeKind::Invalid) {
+                        return true;
+                    }
+                    const int slot = fn_slot(type_name);
+                    if (slot < 0) {
+                        return true;
+                    }
+                    if (!constrain(slot, concrete)) {
+                        error(call.loc, "type mismatch");
+                        return false;
+                    }
+                    return true;
+                };
+                const Type *value = &got;
+                if (param.indirections == 1 && got.kind == TypeKind::Pointer && got.pointee != nullptr) {
+                    value = got.pointee.get();
+                }
+                if (value->kind == TypeKind::Struct) {
+                    for (const FunctionDecl &method : trait->methods) {
+                        if (method.name.empty()) {
+                            continue;
+                        }
+                        const MethodInfo *info = find_method(value->struct_id, method.name);
+                        if (info == nullptr || info->type.kind != TypeKind::Function || info->type.result == nullptr) {
+                            continue;
+                        }
+                        const std::string &result_name =
+                            method.results.size() == 1 ? method.results.front().type_name : method.return_type;
+                        const std::string &result_package =
+                            method.results.size() == 1 ? method.results.front().type_package : method.type_package;
+                        if (!bind_written(result_name, result_package, *info->type.result)) {
+                            return std::nullopt;
+                        }
+                        std::size_t concrete = 0;
+                        if (!info->type.params.empty()) {
+                            const Type &receiver = info->type.params.front();
+                            const bool is_receiver =
+                                (receiver.kind == TypeKind::Struct && receiver.struct_id == value->struct_id) ||
+                                (receiver.kind == TypeKind::Pointer && receiver.pointee != nullptr &&
+                                 receiver.pointee->kind == TypeKind::Struct &&
+                                 receiver.pointee->struct_id == value->struct_id);
+                            if (is_receiver) {
+                                concrete = 1;
+                            }
+                        }
+                        for (std::size_t i = 0; i < method.params.size(); ++i) {
+                            if (concrete + i >= info->type.params.size()) {
+                                break;
+                            }
+                            const Param &written = method.params[i];
+                            if (written.is_receiver) {
+                                continue;
+                            }
+                            if (!bind_written(written.type_name, written.type_package,
+                                              info->type.params[concrete + i])) {
+                                return std::nullopt;
+                            }
+                        }
+                    }
+                }
+                const Type *element = nullptr;
+                if (value->kind == TypeKind::Array && value->element != nullptr) {
+                    element = value->element.get();
+                } else if (is_slice(*value) && value->element != nullptr) {
+                    element = value->element.get();
+                } else if (is_decayed_array(*value) && !value->optional && value->pointee != nullptr) {
+                    element = value->pointee.get();
+                }
+                if (element != nullptr && trait->name == "Seq" && package_is_iteration(trait_owner) &&
+                    !trait->type_params.empty()) {
+                    if (!bind_written(trait->type_params.front().name, "", *element)) {
+                        return std::nullopt;
+                    }
+                }
+                continue;
+            }
             if (got.kind == TypeKind::Struct && !param.type_args.empty()) {
                 const StructInfo &info = structs_[static_cast<std::size_t>(got.struct_id)];
                 if (info.template_name == param.type_name && info.spec_args.size() == param.type_args.size()) {
@@ -1753,6 +1869,35 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
     return bounds;
 }
 
+namespace {
+
+// `Seq[T]` names a type parameter of this function. `Shape` does not.
+bool type_arg_names_param(const FunctionDecl &fn, const TypeArg &arg) {
+    if (arg.is_tuple) {
+        for (const TypeArg &part : arg.tuple_parts) {
+            if (type_arg_names_param(fn, part)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (!arg.is_value && arg.type_package.empty() && arg.args.empty() && arg.indirections == 0 && !arg.is_array) {
+        for (const TypeParam &item : fn.type_params) {
+            if (!item.is_value && !item.is_pack && item.name == arg.type_name) {
+                return true;
+            }
+        }
+    }
+    for (const TypeArg &inner : arg.args) {
+        if (type_arg_names_param(fn, inner)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
 bool Checker::generic_trait_parameter(const FunctionDecl &fn) const {
     for (const Param &param : fn.params) {
         if (param.is_receiver || param.is_struct || param.is_enum || param.is_array || param.is_fn_ptr ||
@@ -1769,11 +1914,21 @@ bool Checker::generic_trait_parameter(const FunctionDecl &fn) const {
         if (type_param) {
             continue;
         }
-        if (package_trait(file_id_, param.type_name) >= 0) {
-            return true;
+        const bool trait = package_trait(file_id_, param.type_name) >= 0 || [&]() {
+            uint32_t owner = file_id_;
+            return find_trait_template(param.type_name, owner) != nullptr;
+        }();
+        if (!trait) {
+            continue;
         }
-        uint32_t owner = file_id_;
-        if (find_trait_template(param.type_name, owner) != nullptr) {
+        // `items Seq[T]` becomes `Seq[i32]` once `T` is known. `s Shape` does not.
+        bool names_param = false;
+        for (const TypeArg &arg : param.type_args) {
+            if (type_arg_names_param(fn, arg)) {
+                names_param = true;
+            }
+        }
+        if (!names_param) {
             return true;
         }
     }
@@ -2754,12 +2909,15 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         spec_checking_.erase(key);
         return type_invalid();
     }
-    // `func use[T type](items Seq[T])` is a trait parameter beside `[T type]`.
-    for (const Type &param : signature.params) {
-        if (mentions_trait(param)) {
-            error(call.loc, "not supported yet");
-            spec_checking_.erase(key);
-            return type_invalid();
+    // `s Shape` beside `[T type]` is not a specialization of `T`.
+    // `items Seq[T]` is `Seq[i32]` after substitution, and that parameter is specialized per value.
+    if (generic_trait_parameter(*templ)) {
+        for (const Type &param : signature.params) {
+            if (mentions_trait(param)) {
+                error(call.loc, "not supported yet");
+                spec_checking_.erase(key);
+                return type_invalid();
+            }
         }
     }
     // A constant comptime argument drops that parameter. A forwarded name keeps this copy.

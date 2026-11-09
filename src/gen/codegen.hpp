@@ -50,7 +50,7 @@ std::optional<std::string> eval_comptime_string(
 // One slot of a struct a comptime func returned. Offsets are relative to that slot.
 // Plain data: the module that measured them is already destroyed.
 struct ComptimeSlot {
-    enum class Kind { Int, Bool, F32, F64, Enum, Struct, Array, SliceU8, Func, Pointer, Reject };
+    enum class Kind { Int, Bool, F32, F64, Enum, Struct, Tuple, Array, SliceU8, Func, Pointer, Reject };
     Kind kind = Kind::Reject;
     // Field name when this slot is a struct member. Empty on the struct itself and on an element.
     std::string name;

@@ -49,8 +49,10 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
             } else if constexpr (std::is_same_v<T, Expr::Int>) {
                 const int bits = node.suffix.bits;
                 const bool uns = node.suffix.is_unsigned;
-                if (bits >= 64) {
-                    return {llvm::ConstantInt::get(i64(), node.value, false), 0, false, -1, false, false, false, 64, uns};
+                // An unsuffixed number past `i32` is `i64`. A suffix `i64` or `u64` is that type.
+                if (bits >= 64 || (bits == 0 && node.value > 2147483647ULL)) {
+                    return {llvm::ConstantInt::get(i64(), node.value, false), 0, false, -1, false, false, false, 64,
+                            bits >= 64 && uns};
                 }
                 if (uns && bits == 32) {
                     return {const_i32(static_cast<int32_t>(node.value)), 0, false, -1, false, false, false, 32, true};

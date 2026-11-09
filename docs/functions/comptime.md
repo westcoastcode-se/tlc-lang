@@ -342,7 +342,28 @@ func main() i32 {
 
 `at(5)` emits nothing. The error is `index out of range`, then `main.tlc:2:12: at` and `main.tlc:6:12: main`.
 
-A result that is not `i32`, not a `bool`, not a struct, and not a constant `[]const u8` is `not supported yet`.
+A tuple result is that tuple. `pair(40)[0] + pair(40)[1]` is 82. `comptime const got = pair(40)` names it. `var got = pair(40)` is `not supported yet`.
+
+```c
+comptime func pair(n i32) ((i32, i32)) {
+    var a = n;
+    var b = a + 2;
+    return (a, b);
+}
+
+func main() i32 {
+    comptime const got = pair(40);
+    return got[0] + got[1];
+}
+```
+
+```asm
+main:
+movl $82, %eax                   # got[0] + got[1]
+retq
+```
+
+A result that is not `i32`, not a `bool`, not a struct, not a tuple, and not a constant `[]const u8` is `not supported yet`.
 
 `emit` is not valid in a `comptime func`.
 

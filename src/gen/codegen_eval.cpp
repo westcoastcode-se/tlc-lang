@@ -795,6 +795,23 @@ Decoded decode_slot(const ComptimeSlot &slot, const uint8_t *base, uint64_t base
         out.expr = std::move(expr);
         return out;
     }
+    case ComptimeSlot::Kind::Tuple: {
+        auto expr = std::make_unique<Expr>();
+        Expr::Init init;
+        init.is_tuple = true;
+        init.elements.reserve(slot.children.size());
+        for (const ComptimeSlot &child : slot.children) {
+            Decoded one = decode_slot(child, bytes, slot.size, little, pool, pool_size, functions);
+            if (one.status != ComptimeStructValue::Status::Value || one.expr == nullptr) {
+                return one;
+            }
+            init.elements.push_back(std::move(one.expr));
+        }
+        expr->data = std::move(init);
+        out.status = ComptimeStructValue::Status::Value;
+        out.expr = std::move(expr);
+        return out;
+    }
     case ComptimeSlot::Kind::Struct: {
         auto expr = std::make_unique<Expr>();
         Expr::Init init;
@@ -886,20 +903,28 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
         !ftype->getReturnType()->isStructTy()) {
         return give_up();
     }
-    const Lowered ret = lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, false, 0, false);
-    if (ret.struct_id < 0 || ret.struct_id >= static_cast<int>(structs_.size()) || ret.depth != 0 || ret.is_array ||
-        ret.is_slice) {
-        return give_up();
-    }
-    const StructLayout &layout = structs_[static_cast<std::size_t>(ret.struct_id)];
-    if (layout.is_union || layout.type == nullptr || !layout.type->isSized()) {
-        image.not_constant = true;
-        return give_up();
+    // `(i32, i32)` is several results. `((i32, i32))` is one tuple. Both return one aggregate.
+    const bool many_results = fn.results.size() > 1;
+    const bool one_tuple = !many_results && fn.results.size() == 1 && fn.results.front().is_tuple &&
+                           fn.results.front().indirections == 0 && !fn.results.front().is_array;
+    const StructLayout *layout = nullptr;
+    if (!many_results && !one_tuple) {
+        const Lowered ret = lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, false, 0, false);
+        if (ret.struct_id < 0 || ret.struct_id >= static_cast<int>(structs_.size()) || ret.depth != 0 || ret.is_array ||
+            ret.is_slice) {
+            return give_up();
+        }
+        layout = &structs_[static_cast<std::size_t>(ret.struct_id)];
+        if (layout->is_union || layout->type == nullptr || !layout->type->isSized()) {
+            image.not_constant = true;
+            return give_up();
+        }
     }
     const llvm::DataLayout &data_layout = module_.getDataLayout();
+    llvm::Type *measured = layout != nullptr ? static_cast<llvm::Type *>(layout->type) : ftype->getReturnType();
     image.little = data_layout.isLittleEndian();
-    image.size = data_layout.getTypeAllocSize(layout.type).getFixedValue();
-    image.align = data_layout.getABITypeAlign(layout.type).value();
+    image.size = data_layout.getTypeAllocSize(measured).getFixedValue();
+    image.align = data_layout.getABITypeAlign(measured).value();
     if (image.align == 0) {
         image.align = 1;
     }
@@ -932,6 +957,40 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
             return slot;
         }
         slot.size = sized(type);
+        if (field.is_tuple && field.depth == 0) {
+            auto *packed = llvm::dyn_cast<llvm::StructType>(type);
+            if (packed == nullptr || field.tuple_parts.empty() || !packed->isSized()) {
+                return slot;
+            }
+            slot.kind = ComptimeSlot::Kind::Tuple;
+            slot.size = data_layout.getTypeAllocSize(packed).getFixedValue();
+            const llvm::StructLayout *placed = data_layout.getStructLayout(packed);
+            for (std::size_t index = 0; index < field.tuple_parts.size() && index < packed->getNumElements(); ++index) {
+                const Lowered part = lower_result(current_file_, field.tuple_parts[index]);
+                FieldLayout child_field;
+                child_field.type = part.type;
+                child_field.depth = part.depth;
+                child_field.elem_char = part.elem_char;
+                child_field.is_array = part.is_array;
+                child_field.array_len = part.array_len;
+                child_field.struct_id = part.struct_id;
+                child_field.elem_void = part.elem_void;
+                child_field.elem_bool = part.elem_bool;
+                child_field.elem_bits = part.elem_bits;
+                child_field.elem_unsigned = part.elem_unsigned;
+                child_field.elem_float = part.elem_float;
+                child_field.enum_id = part.enum_id;
+                child_field.is_slice = part.is_slice;
+                child_field.elem_slice = part.elem_slice;
+                child_field.shells = part.shells;
+                child_field.is_tuple = part.is_tuple;
+                child_field.tuple_parts = part.tuple_parts;
+                ComptimeSlot child = self(self, child_field);
+                child.offset = placed->getElementOffset(static_cast<unsigned>(index));
+                slot.children.push_back(std::move(child));
+            }
+            return slot;
+        }
         if (field.is_tuple) {
             return slot;
         }
@@ -1025,14 +1084,48 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
         }
         return slot;
     };
-    image.root.kind = ComptimeSlot::Kind::Struct;
-    image.root.type_name = layout.name;
     image.root.size = image.size;
-    const llvm::StructLayout *placed = data_layout.getStructLayout(layout.type);
-    for (std::size_t index = 0; index < layout.fields.size() && index < layout.type->getNumElements(); ++index) {
-        ComptimeSlot child = schema_field(schema_field, layout.fields[index]);
-        child.offset = placed->getElementOffset(static_cast<unsigned>(index));
-        image.root.children.push_back(std::move(child));
+    if (layout != nullptr) {
+        image.root.kind = ComptimeSlot::Kind::Struct;
+        image.root.type_name = layout->name;
+        const llvm::StructLayout *placed = data_layout.getStructLayout(layout->type);
+        for (std::size_t index = 0; index < layout->fields.size() && index < layout->type->getNumElements(); ++index) {
+            ComptimeSlot child = schema_field(schema_field, layout->fields[index]);
+            child.offset = placed->getElementOffset(static_cast<unsigned>(index));
+            image.root.children.push_back(std::move(child));
+        }
+    } else {
+        auto *packed = llvm::dyn_cast<llvm::StructType>(measured);
+        if (packed == nullptr || !packed->isSized()) {
+            return give_up();
+        }
+        image.root.kind = ComptimeSlot::Kind::Tuple;
+        const llvm::StructLayout *placed = data_layout.getStructLayout(packed);
+        std::vector<ResultSlot> parts = one_tuple ? fn.results.front().tuple_parts : fn.results;
+        for (std::size_t index = 0; index < parts.size() && index < packed->getNumElements(); ++index) {
+            const Lowered part = lower_result(file, parts[index]);
+            FieldLayout child_field;
+            child_field.type = part.type;
+            child_field.depth = part.depth;
+            child_field.elem_char = part.elem_char;
+            child_field.is_array = part.is_array;
+            child_field.array_len = part.array_len;
+            child_field.struct_id = part.struct_id;
+            child_field.elem_void = part.elem_void;
+            child_field.elem_bool = part.elem_bool;
+            child_field.elem_bits = part.elem_bits;
+            child_field.elem_unsigned = part.elem_unsigned;
+            child_field.elem_float = part.elem_float;
+            child_field.enum_id = part.enum_id;
+            child_field.is_slice = part.is_slice;
+            child_field.elem_slice = part.elem_slice;
+            child_field.shells = part.shells;
+            child_field.is_tuple = part.is_tuple;
+            child_field.tuple_parts = part.tuple_parts;
+            ComptimeSlot child = schema_field(schema_field, child_field);
+            child.offset = placed->getElementOffset(static_cast<unsigned>(index));
+            image.root.children.push_back(std::move(child));
+        }
     }
     if (slot_rejected(image.root)) {
         image.not_constant = true;
@@ -1128,7 +1221,7 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
         const auto at = [&](llvm::Value *ptr, uint64_t offset) {
             return builder_.CreateInBoundsGEP(i8(), ptr, llvm::ConstantInt::get(i64(), offset));
         };
-        if (slot.kind == ComptimeSlot::Kind::Struct) {
+        if (slot.kind == ComptimeSlot::Kind::Struct || slot.kind == ComptimeSlot::Kind::Tuple) {
             for (const ComptimeSlot &child : slot.children) {
                 self(self, at(base, child.offset), child);
             }

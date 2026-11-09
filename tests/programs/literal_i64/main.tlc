@@ -1,0 +1,7 @@
+func main() i32 {
+    var wide = 3000000000;
+    if (wide == 3000000000) {
+        return 42;
+    }
+    return 0;
+}

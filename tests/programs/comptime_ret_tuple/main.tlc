@@ -1,0 +1,11 @@
+comptime func pair(n i32) ((i32, i32)) {
+    var a = n;
+    var b = a + 2;
+    return (a, b);
+}
+
+comptime const got = pair(40);
+
+func main() i32 {
+    return got[0] + got[1];
+}

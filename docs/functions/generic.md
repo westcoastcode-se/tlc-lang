@@ -427,7 +427,64 @@ The call is `Point.measure[Rect](r)`.
 
 `import { Shape } from "math"` brings that trait in as `Shape`.
 
-`func use[T type](items Seq[T])` is `not supported yet`. `func use(items Seq[i32])` is that parameter.
+`func use[T type](items Seq[T])` takes `T` from the value. `use(bag)` is `Seq[i32]` when `Bag.at` returns `i32`. `use[i32](bag)` writes that argument. An array or a slice passed to `seq.Seq[T]` uses the element type. `func use[T type](s Shape, n T)` is `not supported yet`. `func use(items Seq[i32])` is that parameter.
+
+`use(bag)` returns 42.
+
+```c
+type Seq[T type] trait {
+    func at(i i32) T;
+};
+
+type Bag struct {
+    n i32;
+};
+
+func Bag::at(self this, i i32) i32 {
+    return self.n + i;
+}
+
+func use[T type](items Seq[T]) i32 {
+    return items.at(2);
+}
+
+func main() i32 {
+    var bag Bag;
+    bag.n = 40;
+    return use(bag);
+}
+```
+
+```asm
+main:
+pushq %rax
+movl $40, (%rsp)                 # bag.n = 40
+movl (%rsp), %edi                # bag
+callq main.use.spec.i32.spec.Bag # call use
+popq %rcx
+retq                             # return
+
+main.Bag.at:
+movl %edi, -8(%rsp)              # move
+movl %esi, -4(%rsp)              # move
+movl -8(%rsp), %eax              # move
+addl -4(%rsp), %eax              # add
+retq                             # return
+
+main.use.spec.i32.spec.Bag:
+subq $40, %rsp                   # allocate
+movl %edi, 32(%rsp)              # items
+movl 32(%rsp), %eax              # items
+movl %eax, 20(%rsp)              # move
+# trace frame for the call, then the matching pop
+movl 20(%rsp), %edi              # items
+movl $2, %esi                    # 2
+callq main.Bag.at                # call at
+movl %eax, 16(%rsp)              # at
+movl 16(%rsp), %eax              # at
+addq $40, %rsp                   # release
+retq                             # return
+```
 
 `var s math.Shape` is `trait has no size`.
 
@@ -1711,8 +1768,6 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `id(&g)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
-`?*T`, `*const T`, and `**T` are `not supported yet`.
-
 ```c
 func pair[T type](a T, b T) [2]T {
     var row [2]T;
@@ -1977,8 +2032,6 @@ The call is `main.make.spec.arr.2.tuple.2.i32.i32`.
 
 `var box Box[T]` with no initializer is `type mismatch`. `p` is not optional.
 
-`?*T` and `*const T` are `not supported yet`.
-
 ```c
 type Box[T type] struct {
     p *T;
@@ -2087,8 +2140,6 @@ The call is `main.hold.spec.arr.2.tuple.2.i32.i32`.
 `take(box.row)` is `main.take.spec.arr.2.tuple.2.i32.i32`.
 
 `var g [2][2]T` of that `T` is one more written length. `g[0][1][0][0]` is 40.
-
-`?*T` and `*const T` are `not supported yet`.
 
 A written `[2](i32, i32)` is `expected a type`.
 
@@ -2303,10 +2354,6 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 
 `deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
-`**T` when `T` is `[2](i32, i32)` is `not supported yet`.
-
-`?*T` and `*const T` are `not supported yet`.
-
 ```c
 func id[T type](value **T) i32 {
     return (**value)[0] + (**value)[1];
@@ -2440,8 +2487,6 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
-`?*T` and `*const T` are `not supported yet`.
-
 ```c
 func pair[T type](a T, b T) [2]T {
     var row [2]T;
@@ -2541,10 +2586,6 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 
 `(*value)[0] = 1` is `type mismatch`.
 
-`*const T` when `T` is `[2](i32, i32)` is `not supported yet`.
-
-`?*T` is `not supported yet`.
-
 ```c
 func id[T type](value *const T) i32 {
     return (*value)[0] + (*value)[1];
@@ -2590,8 +2631,6 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 `wide(&g)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 `(*value)[0][0] = 1` is `type mismatch`.
-
-`?*T` is `not supported yet`.
 
 ```c
 func pair[T type](a T, b T) [2]T {
@@ -2685,8 +2724,6 @@ The call is `main.read.spec.tuple.2.i32.i32`.
 `q` is null on one path and returns 0. `?*T(value)` stores `&row`, and `(*q)[0] + (*q)[1]` is 42.
 
 `deep(&wide)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
-
-`?*T` when `T` is `[2](i32, i32)` is `not supported yet`.
 
 `q = p`, when `p` is `*i32`, stores that pointer.
 
@@ -2852,8 +2889,6 @@ The call is `main.read.spec.tuple.2.i32.i32`.
 `read(q)`, when `q` is null, returns 0.
 
 `pass_deep(&wide)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
-
-`value ?*T` when `T` is `[2](i32, i32)` is `not supported yet`.
 
 ```c
 func read[T type](value ?*T) i32 {
@@ -4748,7 +4783,7 @@ A comptime parameter on that prototype is `not supported yet`.
 
 That declaration is `not supported yet`.
 
-A parameter whose type is a trait, such as `s Shape` beside `[T type]`, is `not supported yet`.
+`items Seq[T]` takes `T` from the value. A parameter whose type is a trait that does not use `T`, such as `s Shape` beside `[T type]`, is `not supported yet`.
 
 `extern(name="symbol")` is `name requires abi="c"`.
 

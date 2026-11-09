@@ -2680,7 +2680,7 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("func main() i32 { return 3000000000; }\n");
+        const std::string errors = diagnose("func main() i32 { return 18446744073709551615; }\n");
         EXPECT_HAS(check, errors, "type mismatch");
     }
 

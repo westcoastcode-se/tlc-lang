@@ -930,15 +930,18 @@ std::optional<Checker::WideInt> Checker::fold_wide_int(const Expr &expr) {
             [&](const auto &item) -> std::optional<WideInt> {
                 using T = std::decay_t<decltype(item)>;
                 if constexpr (std::is_same_v<T, Expr::Int>) {
-                    const int bits = item.suffix.bits == 0 ? 32 : item.suffix.bits;
+                    // An unsuffixed number past `i32` is `i64` when it fits. Past `i64` it is not a constant.
+                    int bits = item.suffix.bits;
+                    if (bits == 0) {
+                        if (item.value > 9223372036854775807ULL) {
+                            return std::nullopt;
+                        }
+                        bits = item.value > 2147483647ULL ? 64 : 32;
+                    }
                     if (bits != 8 && bits != 16 && bits != 32 && bits != 64) {
                         return std::nullopt;
                     }
                     if (item.value > wide_mask(bits)) {
-                        return std::nullopt;
-                    }
-                    // An unsuffixed number past `i32` is `type mismatch`, not a wide constant.
-                    if (item.suffix.bits == 0 && item.value > 2147483647ULL) {
                         return std::nullopt;
                     }
                     WideInt wide;
@@ -1456,6 +1459,12 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                         }
                         return init->elements[static_cast<std::size_t>(index)].get();
                     }
+                    if (const auto *call = std::get_if<Expr::Call>(&value.data)) {
+                        if (call->comptime_struct == nullptr) {
+                            return nullptr;
+                        }
+                        return self(self, *call->comptime_struct, index, depth + 1, array_ok);
+                    }
                     if (const auto *selector = std::get_if<Expr::Selector>(&value.data)) {
                         if (selector->base == nullptr) {
                             return nullptr;
@@ -1830,6 +1839,12 @@ const Expr *Checker::comptime_tuple_element(const Expr &expr) {
                 return nullptr;
             }
             return init->elements[static_cast<std::size_t>(slot)].get();
+        }
+        if (const auto *call = std::get_if<Expr::Call>(&base.data)) {
+            if (call->comptime_struct == nullptr) {
+                return nullptr;
+            }
+            return self(self, *call->comptime_struct, slot, depth + 1);
         }
         if (const auto *named = std::get_if<Expr::Name>(&base.data)) {
             const Symbol *symbol = lookup(named->text);

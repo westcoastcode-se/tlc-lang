@@ -9,6 +9,7 @@ This page lists each literal spelling and the type that spelling has.
 | Literal | Type |
 | --- | --- |
 | `42` | `i32` |
+| `3000000000` | `i64` |
 | `42i8`, `42u8` | `i8` and `u8`, when the value fits |
 | `42i16`, `42u16` | `i16` and `u16`, when the value fits |
 | `42i32`, `42u32` | `i32` and `u32`, when the value fits |
@@ -24,7 +25,37 @@ This page lists each literal spelling and the type that spelling has.
 
 ## Integer suffixes
 
-> **Warning:** The compiler reports an unsuffixed number greater than `2147483647` as `type mismatch`. It does not become `i64`.
+An unsuffixed number that fits in `i32` is `i32`. A larger number that fits in `i64` is `i64`. `3000000000` is that `i64`.
+
+A number past `i64`, such as `18446744073709551615`, is `type mismatch`.
+
+Another primitive type is a suffix or a cast. `3000000000u32` is `u32`. `i32(3000000000)` is that cast.
+
+```c
+func main() i32 {
+    var wide = 3000000000;
+    if (wide == 3000000000) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+movl $3000000000, %eax           # wide
+movq %rax, -8(%rsp)              # store wide
+movl $3000000000, %eax           # 3000000000
+cmpq %rax, -8(%rsp)              # wide == 3000000000
+jne .L1                          # branch
+movl $42, %eax                   # 42
+retq                             # return
+.L1:
+jmp .L2                          # jump
+.L2:
+xorl %eax, %eax                  # zero the result
+retq                             # return
+```
 
 A suffix is one of `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64`.
 

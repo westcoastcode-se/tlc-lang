@@ -1955,8 +1955,8 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                 if constexpr (std::is_same_v<T, Expr::Int>) {
                     const int bits = item.suffix.bits;
                     const bool uns = item.suffix.is_unsigned;
-                    if (bits == 64) {
-                        return as_int(64, uns);
+                    if (bits == 64 || (bits == 0 && item.value > 2147483647ULL)) {
+                        return as_int(64, bits == 64 && uns);
                     }
                     if (bits == 32 && uns) {
                         return as_int(32, true);

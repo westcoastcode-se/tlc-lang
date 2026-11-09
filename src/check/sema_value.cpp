@@ -281,10 +281,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return true;
                 };
                 if (bits == 0) {
-                    if (!fits(2147483647ULL)) {
-                        return type_invalid();
+                    // A value that fits in `i32` stays `i32`. A larger value that fits in `i64` is `i64`.
+                    // Another primitive type is a suffix or a cast. A value past `i64` is `type mismatch`.
+                    if (node.value <= 2147483647ULL) {
+                        return type_int();
                     }
-                    return type_int();
+                    if (node.value <= 9223372036854775807ULL) {
+                        return type_rank(5, false);
+                    }
+                    error(node.loc, "type mismatch");
+                    return type_invalid();
                 }
                 if (bits == 8) {
                     if (!fits(uns ? 255ULL : 127ULL)) {
@@ -1182,9 +1188,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return type_invalid();
                     }
                     const Type result = function_result(*fn);
-                    if (result.kind == TypeKind::Struct && result.struct_id >= 0 &&
-                        result.struct_id < static_cast<int>(structs_.size())) {
-                        if (structs_[static_cast<std::size_t>(result.struct_id)].is_union) {
+                    const bool tuple_result = result.kind == TypeKind::Tuple && result.alias_id == 0;
+                    if (tuple_result || (result.kind == TypeKind::Struct && result.struct_id >= 0 &&
+                                         result.struct_id < static_cast<int>(structs_.size()))) {
+                        if (!tuple_result && structs_[static_cast<std::size_t>(result.struct_id)].is_union) {
                             error(node.loc, "global initializer is not a constant");
                             return type_invalid();
                         }
@@ -1200,7 +1207,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             }
                             return type_invalid();
                         }
-                        stamp_kept_struct(*kept.value, result);
+                        if (!tuple_result) {
+                            stamp_kept_struct(*kept.value, result);
+                        }
                         node.comptime_struct = std::move(kept.value);
                         return result;
                     }
