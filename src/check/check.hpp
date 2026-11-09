@@ -797,6 +797,8 @@ class Checker {
     std::optional<int> fold_comptime_call(const Expr::Call &call);
     // `comptime func bias(n i32) f64`. A constant `return` folds. A body with statements is run.
     bool fold_comptime_f64(const Expr::Call &call);
+    // `comptime func pick() Order`. A constant `return` folds. A body with statements is run.
+    bool fold_comptime_enum(const Expr::Call &call);
     // A `comptime func` whose result is a constant `[]const u8`. False when that call does not fold.
     bool fold_comptime_string(const Expr::Call &call);
     // Runs a comptime func that returns a struct. The literal is the result.

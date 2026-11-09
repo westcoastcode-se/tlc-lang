@@ -543,7 +543,7 @@ It may be an index of a constant `[]const u8`, another `comptime const`, or a ca
 
 A suffix whose value fits in `i32`, such as `1u32`, folds too.
 
-A suffix that does not fit in `i32` keeps that type. `comptime const n = 3000000000u32` is that `u32`. `9223372036854775807i64` and `18446744073709551615u64` are those types. The name is not an `i32`, so `[n]i32`, a generic value argument, and `comptime if (n == 1)` stay `not supported yet` or `type mismatch`.
+A suffix that does not fit in `i32` keeps that type. `comptime const n = 3000000000u32` is that `u32`. `9223372036854775807i64` and `18446744073709551615u64` are those types. The name is not an `i32`. `[n]i32` and a generic value argument stay `not supported yet` or `type mismatch`. `comptime if (n > 0)` keeps that arm when `n` is that `u32` or an `i64`. `u64` stays `not supported yet`.
 
 `comptime const m = n + 1u32` is that sum, wrapped in `u32`. `3000000000u32 + 1u32` is `3000000001u32`.
 

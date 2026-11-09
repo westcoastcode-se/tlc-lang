@@ -1233,14 +1233,46 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                         return result;
                     }
-                    // `comptime func bias(n i32) f64` stays `f64`. A body with statements is compiled and run.
-                    if (result.kind == TypeKind::Float && result.rank >= 64 && result.alias_id == 0) {
+                    // `comptime func bias(n i32) f64` stays `f64`. `f32` is the same call.
+                    // A body with statements is compiled and run.
+                    if (result.kind == TypeKind::Float && result.alias_id == 0 &&
+                        (result.rank >= 64 || result.rank == 32)) {
                         if (!fold_comptime_f64(node)) {
                             if (diags_.size() == before) {
                                 error(node.loc, "not supported yet");
                             }
                             return type_invalid();
                         }
+                        return result;
+                    }
+                    // `comptime func pick() Order` stays that enum.
+                    if (result.kind == TypeKind::Enum && result.alias_id == 0) {
+                        if (!fold_comptime_enum(node)) {
+                            if (diags_.size() == before) {
+                                error(node.loc, "not supported yet");
+                            }
+                            return type_invalid();
+                        }
+                        return result;
+                    }
+                    // `comptime func row(n i32) [2]i32` keeps that array. A slice stays out.
+                    if (result.kind == TypeKind::Array && !is_slice(result) && result.length > 0 &&
+                        result.alias_id == 0 && result.element != nullptr && result.element->kind == TypeKind::Int &&
+                        result.element->rank == 3 && !result.element->is_unsigned && result.element->alias_id == 0) {
+                        KeptStruct kept = fold_comptime_struct(node);
+                        if (kept.status == KeptStruct::Status::NotConstant) {
+                            error(node.loc, "global initializer is not a constant");
+                            return type_invalid();
+                        }
+                        if (kept.status != KeptStruct::Status::Value || kept.value == nullptr) {
+                            if (diags_.size() == before) {
+                                error(node.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
+                                recheck_fault_.clear();
+                            }
+                            return type_invalid();
+                        }
+                        stamp_kept_struct(*kept.value, result);
+                        node.comptime_struct = std::move(kept.value);
                         return result;
                     }
                     if (!fold_int(expr)) {

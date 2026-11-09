@@ -812,8 +812,13 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return emit_rvalue(*node.comptime_struct);
                 }
                 if (node.comptime_float) {
-                    return {llvm::ConstantFP::get(f64_ty(), node.comptime_float_value), 0, false, -1, false, false,
-                            false, 64, false, -1, true};
+                    if (node.comptime_float_wide) {
+                        return {llvm::ConstantFP::get(f64_ty(), node.comptime_float_value), 0, false, -1, false, false,
+                                false, 64, false, -1, true};
+                    }
+                    const float narrowed = static_cast<float>(node.comptime_float_value);
+                    return {llvm::ConstantFP::get(f32_ty(), static_cast<double>(narrowed)), 0, false, -1, false, false,
+                            false, 32, false, -1, true};
                 }
                 if (const auto folded = fold(expr)) {
                     return {const_i32(*folded), 0};

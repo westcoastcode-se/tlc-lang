@@ -56,7 +56,7 @@ std::vector<PackageNode> CodeGen::take_comptime_specs(
 }
 
 bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
-                              const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs, bool f64) {
+                              const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs, int float_bits) {
     if (graph.nodes.empty() || fn.body == nullptr) {
         return false;
     }
@@ -100,11 +100,13 @@ bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn,
     bind_imports(*home);
     llvm::FunctionType *ftype = function_type(fn, file);
     // A `bool` result is `i1`. The evaluator still reads an `i32` of 0 or 1.
-    // An `f64` result is read as a `double`.
+    // An `f32` result is a `float`. An `f64` result is a `double`.
     const bool bool_result = ftype != nullptr && ftype->getReturnType()->isIntegerTy(1);
     const bool f64_result = ftype != nullptr && ftype->getReturnType()->isDoubleTy();
+    const bool f32_result = ftype != nullptr && ftype->getReturnType()->isFloatTy();
     const bool i32_result = ftype != nullptr && ftype->getReturnType()->isIntegerTy(32);
-    if (ftype == nullptr || ftype->getNumParams() != 0 || (f64 ? !f64_result : !(bool_result || i32_result))) {
+    const bool float_ok = float_bits >= 64 ? f64_result : (float_bits == 32 ? f32_result : (bool_result || i32_result));
+    if (ftype == nullptr || ftype->getNumParams() != 0 || !float_ok) {
         pop();
         graph_ = nullptr;
         return false;
@@ -544,6 +546,80 @@ std::optional<int32_t> eval_comptime_i32(
     return value;
 }
 
+std::optional<float> eval_comptime_f32(
+    const PackageGraph &graph, const FunctionDecl &fn, uint32_t file, SourceLoc *fault,
+    const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs,
+    const std::vector<std::pair<uint32_t, const StructDecl *>> &structs,
+    const std::vector<std::pair<uint32_t, const TypedefDecl *>> &aliases) {
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    llvm::InitializeNativeTargetAsmParser();
+    auto machine_or = llvm::orc::JITTargetMachineBuilder::detectHost();
+    if (!machine_or) {
+        llvm::consumeError(machine_or.takeError());
+        return std::nullopt;
+    }
+    llvm::orc::JITTargetMachineBuilder machine = std::move(*machine_or);
+    machine.setCPU("generic");
+    machine.setRelocationModel(llvm::Reloc::PIC_);
+    machine.getOptions().EmulatedTLS = false;
+    auto layout_or = machine.getDefaultDataLayoutForTarget();
+    if (!layout_or) {
+        llvm::consumeError(layout_or.takeError());
+        return std::nullopt;
+    }
+
+    SourceSet sources;
+    DiagnosticEngine diags(sources);
+    auto context = std::make_unique<llvm::LLVMContext>();
+    auto module = std::make_unique<llvm::Module>("tlc.comptime", *context);
+    module->setTargetTriple(machine.getTargetTriple());
+    module->setDataLayout(*layout_or);
+    {
+        CodeGen gen(*context, *module, diags);
+        gen.set_eval_structs(&structs);
+        gen.set_eval_aliases(&aliases);
+        if (!gen.define_comptime(graph, fn, file, specs, 32)) {
+            return std::nullopt;
+        }
+    }
+    std::string verify_error;
+    llvm::raw_string_ostream verify_stream(verify_error);
+    if (llvm::verifyModule(*module, &verify_stream)) {
+        return std::nullopt;
+    }
+
+    llvm::orc::LLJITBuilder builder;
+    builder.setJITTargetMachineBuilder(std::move(machine));
+    auto jit_or = builder.create();
+    if (!jit_or) {
+        llvm::consumeError(jit_or.takeError());
+        return std::nullopt;
+    }
+    std::unique_ptr<llvm::orc::LLJIT> jit = std::move(*jit_or);
+    if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(module), std::move(context)))) {
+        llvm::consumeError(std::move(err));
+        return std::nullopt;
+    }
+    auto addr = jit->lookup(kEvalName);
+    if (!addr) {
+        llvm::consumeError(addr.takeError());
+        return std::nullopt;
+    }
+    auto *call = addr->toPtr<float (*)()>();
+    if (call == nullptr) {
+        return std::nullopt;
+    }
+    const float value = call();
+    if (fault != nullptr) {
+        *fault = read_comptime_fault(*jit);
+        if (fault->valid()) {
+            return std::nullopt;
+        }
+    }
+    return value;
+}
+
 std::optional<double> eval_comptime_f64(
     const PackageGraph &graph, const FunctionDecl &fn, uint32_t file, SourceLoc *fault,
     const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs,
@@ -577,7 +653,7 @@ std::optional<double> eval_comptime_f64(
         CodeGen gen(*context, *module, diags);
         gen.set_eval_structs(&structs);
         gen.set_eval_aliases(&aliases);
-        if (!gen.define_comptime(graph, fn, file, specs, true)) {
+        if (!gen.define_comptime(graph, fn, file, specs, 64)) {
             return std::nullopt;
         }
     }
@@ -852,6 +928,10 @@ Decoded decode_slot(const ComptimeSlot &slot, const uint8_t *base, uint64_t base
         auto expr = std::make_unique<Expr>();
         Expr::Init init;
         init.array_literal = true;
+        if (slot.children.front().kind == ComptimeSlot::Kind::Int && slot.children.front().bits == 32 &&
+            !slot.children.front().is_unsigned) {
+            init.type_name = "i32";
+        }
         init.elements.reserve(static_cast<std::size_t>(slot.count));
         for (uint64_t index = 0; index < slot.count; ++index) {
             const uint64_t at = index * slot.stride;
@@ -976,15 +1056,29 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
         return false;
     };
     if (ftype == nullptr || ftype->getNumParams() != 0 || ftype->getReturnType() == nullptr ||
-        !ftype->getReturnType()->isStructTy()) {
+        !(ftype->getReturnType()->isStructTy() || ftype->getReturnType()->isArrayTy())) {
         return give_up();
     }
     // `(i32, i32)` is several results. `((i32, i32))` is one tuple. Both return one aggregate.
     const bool many_results = fn.results.size() > 1;
     const bool one_tuple = !many_results && fn.results.size() == 1 && fn.results.front().is_tuple &&
                            fn.results.front().indirections == 0 && !fn.results.front().is_array;
+    // `[2]i32`. A slice, a pointer, and an array of arrays stay out.
+    int array_shells = 0;
+    if (!many_results && fn.results.size() == 1) {
+        for (const TypeShell &shell : fn.results.front().shells) {
+            if (shell.kind == TypeShell::Kind::Array) {
+                ++array_shells;
+            }
+        }
+    }
+    const bool one_array = !many_results && fn.results.size() == 1 && fn.results.front().is_array &&
+                           fn.results.front().array_len > 0 && fn.results.front().indirections == 0 &&
+                           !fn.results.front().is_tuple && !fn.results.front().is_fn_ptr &&
+                           fn.results.front().type_name == "i32" && fn.results.front().type_package.empty() &&
+                           array_shells <= 1;
     const StructLayout *layout = nullptr;
-    if (!many_results && !one_tuple) {
+    if (!many_results && !one_tuple && !one_array) {
         const Lowered ret = lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, false, 0, false);
         if (ret.struct_id < 0 || ret.struct_id >= static_cast<int>(structs_.size()) || ret.depth != 0 || ret.is_array ||
             ret.is_slice) {
@@ -1169,6 +1263,19 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
             ComptimeSlot child = schema_field(schema_field, layout->fields[index]);
             child.offset = placed->getElementOffset(static_cast<unsigned>(index));
             image.root.children.push_back(std::move(child));
+        }
+    } else if (one_array) {
+        auto *array = llvm::dyn_cast<llvm::ArrayType>(measured);
+        if (array == nullptr || !array->isSized()) {
+            return give_up();
+        }
+        FieldLayout field;
+        field.type = array;
+        field.is_array = true;
+        field.array_len = static_cast<int>(array->getNumElements());
+        image.root = schema_field(schema_field, field);
+        if (image.root.kind != ComptimeSlot::Kind::Array) {
+            return give_up();
         }
     } else {
         auto *packed = llvm::dyn_cast<llvm::StructType>(measured);

@@ -263,6 +263,41 @@ bool plain_f64_result(const FunctionDecl &fn) {
            slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
 }
 
+bool plain_f32_result(const FunctionDecl &fn) {
+    if (fn.results.size() != 1 || fn.return_type != "f32" || fn.body == nullptr) {
+        return false;
+    }
+    const ResultSlot &slot = fn.results.front();
+    return slot.type_name == "f32" && slot.type_package.empty() && !slot.is_struct && !slot.is_enum &&
+           slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
+}
+
+bool plain_enum_result(const FunctionDecl &fn) {
+    if (fn.results.size() != 1 || fn.return_type.empty() || fn.body == nullptr) {
+        return false;
+    }
+    const ResultSlot &slot = fn.results.front();
+    // `Order` is a name. `prepare_written` does not set `is_enum` on that slot.
+    return slot.type_name == fn.return_type && slot.type_package.empty() && slot.indirections == 0 &&
+           slot.optional == 0 && !slot.is_array && !slot.is_tuple && !slot.is_struct && !slot.is_fn_ptr &&
+           slot.const_pointee == 0;
+}
+
+std::unique_ptr<Expr> enum_selector(const std::string &type_name, const std::string &member, SourceLoc loc) {
+    auto expr = std::make_unique<Expr>();
+    Expr::Selector node;
+    node.loc = loc;
+    node.field = member;
+    auto base = std::make_unique<Expr>();
+    Expr::Name name;
+    name.loc = loc;
+    name.text = type_name;
+    base->data = std::move(name);
+    node.base = std::move(base);
+    expr->data = std::move(node);
+    return expr;
+}
+
 // A `bool` parameter stays a bool literal. An integer literal would be `i32` in the body.
 std::unique_ptr<Expr> folded_scalar_arg(const Param &param, int number, SourceLoc loc) {
     if (param.type_name == "bool" && param.type_package.empty() && param.indirections == 0 && param.optional == 0 &&
@@ -487,7 +522,7 @@ std::optional<Checker::FoldedNumber> Checker::fold_number(const Expr &expr, std:
                 if (!node.comptime_float) {
                     return std::nullopt;
                 }
-                return FoldedNumber{node.comptime_float_value, true, true};
+                return FoldedNumber{node.comptime_float_value, true, node.comptime_float_wide};
             } else {
                 return std::nullopt;
             }
@@ -589,11 +624,88 @@ std::optional<int> Checker::fold_condition(const Expr &expr) {
                 if (node.op == TokenKind::EqEq || node.op == TokenKind::BangEq) {
                     const std::optional<int> lhs = fold_switch_case(*node.lhs);
                     const std::optional<int> rhs = fold_switch_case(*node.rhs);
-                    if (!lhs || !rhs) {
-                        return std::nullopt;
+                    if (lhs && rhs) {
+                        const bool same = *lhs == *rhs;
+                        return node.op == TokenKind::EqEq ? (same ? 1 : 0) : (same ? 0 : 1);
                     }
-                    const bool same = *lhs == *rhs;
-                    return node.op == TokenKind::EqEq ? (same ? 1 : 0) : (same ? 0 : 1);
+                }
+                // `comptime const n = 3000000000u32` then `comptime if (n > 0)`.
+                // `u64` stays out. `[n]i32` and a generic value argument do not use this fold.
+                const bool compare = node.op == TokenKind::EqEq || node.op == TokenKind::BangEq ||
+                                     node.op == TokenKind::Lt || node.op == TokenKind::Gt || node.op == TokenKind::Le ||
+                                     node.op == TokenKind::Ge;
+                if (compare) {
+                    const auto as_wide = [&](const Expr &side) -> std::optional<WideInt> {
+                        if (const std::optional<WideInt> wide = fold_wide_int(side)) {
+                            return wide;
+                        }
+                        if (const std::optional<int> narrow = fold_int(side)) {
+                            WideInt wide;
+                            wide.value = static_cast<uint32_t>(*narrow);
+                            wide.bits = 32;
+                            wide.is_unsigned = false;
+                            return wide;
+                        }
+                        return std::nullopt;
+                    };
+                    const std::optional<WideInt> left = as_wide(*node.lhs);
+                    const std::optional<WideInt> right = as_wide(*node.rhs);
+                    if (left && right) {
+                        const WideInt *kept = nullptr;
+                        if (left->bits == right->bits && left->is_unsigned == right->is_unsigned) {
+                            kept = &*left;
+                        } else if (left->bits == 32 && !left->is_unsigned &&
+                                   (right->bits > 32 || right->is_unsigned)) {
+                            kept = &*right;
+                        } else if (right->bits == 32 && !right->is_unsigned &&
+                                   (left->bits > 32 || left->is_unsigned)) {
+                            kept = &*left;
+                        }
+                        if (kept != nullptr && !(kept->bits == 64 && kept->is_unsigned)) {
+                            const auto as_kept = [&](const WideInt &from) -> uint64_t {
+                                if (kept->bits == 64 && !kept->is_unsigned && from.bits <= 32 && !from.is_unsigned) {
+                                    return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(from.value)));
+                                }
+                                return from.value & (kept->bits >= 64 ? ~uint64_t{0}
+                                                                      : (uint64_t{1} << static_cast<unsigned>(kept->bits)) -
+                                                                            1u);
+                            };
+                            const uint64_t a = as_kept(*left);
+                            const uint64_t b = as_kept(*right);
+                            bool less = false;
+                            bool same = false;
+                            if (!kept->is_unsigned) {
+                                const auto extend = [&](uint64_t value) -> int64_t {
+                                    if (kept->bits >= 64) {
+                                        return static_cast<int64_t>(value);
+                                    }
+                                    const uint64_t sign = uint64_t{1} << static_cast<unsigned>(kept->bits - 1);
+                                    const uint64_t mask = (uint64_t{1} << static_cast<unsigned>(kept->bits)) - 1u;
+                                    value &= mask;
+                                    if ((value & sign) != 0) {
+                                        value |= ~mask;
+                                    }
+                                    return static_cast<int64_t>(value);
+                                };
+                                const int64_t sa = extend(a);
+                                const int64_t sb = extend(b);
+                                less = sa < sb;
+                                same = sa == sb;
+                            } else {
+                                less = a < b;
+                                same = a == b;
+                            }
+                            switch (node.op) {
+                            case TokenKind::EqEq: return same ? 1 : 0;
+                            case TokenKind::BangEq: return same ? 0 : 1;
+                            case TokenKind::Lt: return less ? 1 : 0;
+                            case TokenKind::Gt: return (!less && !same) ? 1 : 0;
+                            case TokenKind::Le: return (less || same) ? 1 : 0;
+                            case TokenKind::Ge: return !less ? 1 : 0;
+                            default: break;
+                            }
+                        }
+                    }
                 }
                 if (node.op != TokenKind::AmpAmp && node.op != TokenKind::PipePipe) {
                     return std::nullopt;
@@ -2655,7 +2767,7 @@ void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &
 }
 
 std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
-    if (call.comptime_failed || call.comptime_float) {
+    if (call.comptime_failed || call.comptime_float || call.comptime_struct != nullptr) {
         return std::nullopt;
     }
     if (call.comptime_ran) {
@@ -2855,7 +2967,9 @@ bool Checker::fold_comptime_f64(const Expr::Call &call) {
         return true;
     }
     const FunctionDecl *fn = comptime_callee(call);
-    if (fn == nullptr || !plain_f64_result(*fn) || fn->is_macro || fn->variadic || !fn->type_params.empty() ||
+    const bool wide = fn != nullptr && plain_f64_result(*fn);
+    const bool narrow = fn != nullptr && plain_f32_result(*fn);
+    if (fn == nullptr || (!wide && !narrow) || fn->is_macro || fn->variadic || !fn->type_params.empty() ||
         !fn->method_struct.empty() || !call.type_args.empty() || call.args.size() != fn->params.size() ||
         comptime_folding_.contains(fn) || graph_ == nullptr) {
         return false;
@@ -2913,7 +3027,8 @@ bool Checker::fold_comptime_f64(const Expr::Call &call) {
             if (const std::optional<FoldedNumber> folded = fold_number(*rewritten)) {
                 if (folded->is_float) {
                     call.comptime_float = true;
-                    call.comptime_float_value = round_float(folded->value, true);
+                    call.comptime_float_wide = wide;
+                    call.comptime_float_value = round_float(folded->value, wide);
                     return true;
                 }
             }
@@ -2992,7 +3107,13 @@ bool Checker::fold_comptime_f64(const Expr::Call &call) {
             }
         }
     }
-    const std::optional<double> ran = eval_comptime_f64(*graph_, wrapper, file, &fault, specs, structs, aliases);
+    std::optional<double> ran;
+    if (wide) {
+        ran = eval_comptime_f64(*graph_, wrapper, file, &fault, specs, structs, aliases);
+    } else if (const std::optional<float> narrow_ran =
+                   eval_comptime_f32(*graph_, wrapper, file, &fault, specs, structs, aliases)) {
+        ran = static_cast<double>(*narrow_ran);
+    }
     if (fault.valid()) {
         const std::string message = comptime_assert_message(*wrapper.body, fault);
         report_comptime_fault(fault, message.empty() ? std::string("index out of range") : message, fn->name);
@@ -3002,8 +3123,194 @@ bool Checker::fold_comptime_f64(const Expr::Call &call) {
         return false;
     }
     call.comptime_float = true;
-    call.comptime_float_value = *ran;
+    call.comptime_float_wide = wide;
+    call.comptime_float_value = round_float(*ran, wide);
     return true;
+}
+
+bool Checker::fold_comptime_enum(const Expr::Call &call) {
+    if (call.comptime_failed) {
+        return false;
+    }
+    if (call.comptime_struct != nullptr) {
+        return true;
+    }
+    const FunctionDecl *fn = comptime_callee(call);
+    if (fn == nullptr || !plain_enum_result(*fn) || fn->is_macro || fn->variadic || !fn->type_params.empty() ||
+        !fn->method_struct.empty() || !call.type_args.empty() || call.args.size() != fn->params.size() ||
+        comptime_folding_.contains(fn) || graph_ == nullptr) {
+        return false;
+    }
+    const Type result = function_result(*fn);
+    if (result.kind != TypeKind::Enum || result.enum_id < 0 ||
+        result.enum_id >= static_cast<int>(enum_types_.size())) {
+        return false;
+    }
+    const EnumInfo &info = enum_types_[static_cast<std::size_t>(result.enum_id)];
+    const Type &underlying = info.underlying;
+    if (underlying.kind != TypeKind::Int || underlying.rank != 3 || underlying.is_unsigned || underlying.alias_id != 0) {
+        return false;
+    }
+    const auto member_at = [&](int value) -> std::string {
+        for (const EnumInfo::Member &member : info.members) {
+            if (member.value == value) {
+                return member.name;
+            }
+        }
+        return {};
+    };
+    std::vector<std::unique_ptr<Expr>> owned;
+    std::vector<std::string> names;
+    owned.reserve(fn->params.size());
+    names.reserve(fn->params.size());
+    for (std::size_t i = 0; i < fn->params.size(); ++i) {
+        if (call.args[i] == nullptr || (!fn->is_comptime && !fn->params[i].is_comptime) ||
+            unmarked_comptime_arg(*call.args[i])) {
+            return false;
+        }
+        const SourceLoc loc = expr_loc(*call.args[i]);
+        std::unique_ptr<Expr> literal;
+        if (const std::optional<int> number = fold_int(*call.args[i])) {
+            literal = folded_scalar_arg(fn->params[i], *number, loc);
+        } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
+            literal = folded_scalar_arg(fn->params[i], *local, loc);
+        }
+        if (literal == nullptr) {
+            std::unordered_set<std::string> seen;
+            if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
+                literal = folded_string(*text, loc);
+            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i])) {
+                literal = comptime_substitute(*call.args[i]);
+            }
+        }
+        if (literal == nullptr) {
+            return false;
+        }
+        names.push_back(fn->params[i].name);
+        owned.push_back(std::move(literal));
+    }
+    std::vector<const Expr *> exprs;
+    exprs.reserve(owned.size());
+    for (const auto &item : owned) {
+        exprs.push_back(item.get());
+    }
+    ComptimeEval chain(*this, *fn, call);
+    const auto keep = [&](int value, SourceLoc loc) -> bool {
+        const std::string member = member_at(value);
+        if (member.empty()) {
+            return false;
+        }
+        call.comptime_struct = enum_selector(info.name, member, loc);
+        return call.comptime_struct != nullptr;
+    };
+    if (!fn->pending_generic) {
+        if (const Expr *value = single_return_expr(*fn)) {
+            if (!comptime_folding_.insert(fn).second) {
+                return false;
+            }
+            struct Leave {
+                std::unordered_set<const FunctionDecl *> &set;
+                const FunctionDecl *kept;
+                ~Leave() { set.erase(kept); }
+            } leave{comptime_folding_, fn};
+            std::unique_ptr<Expr> rewritten = clone_expr(*value);
+            replace_names(rewritten, names, exprs);
+            const std::size_t before_fold = diags_.size();
+            if (const std::optional<int> folded = fold_switch_case(*rewritten)) {
+                return keep(*folded, expr_loc(*value));
+            }
+            if (diags_.size() != before_fold || take_comptime_fault(fn->name)) {
+                return false;
+            }
+        }
+    }
+    if (!fn->is_comptime || !comptime_folding_.insert(fn).second) {
+        return false;
+    }
+    struct Leave {
+        std::unordered_set<const FunctionDecl *> &set;
+        const FunctionDecl *kept;
+        ~Leave() { set.erase(kept); }
+    } leave{comptime_folding_, fn};
+    FunctionDecl wrapper = clone_function(*fn);
+    if (wrapper.body == nullptr) {
+        return false;
+    }
+    replace_stmt_names(*wrapper.body, names, exprs);
+    bool lengths = false;
+    if (!bind_array_lengths(*wrapper.body, names, exprs, lengths)) {
+        call.comptime_failed = true;
+        return false;
+    }
+    bool generic = false;
+    if (!bind_generic_values(*wrapper.body, names, exprs, generic)) {
+        call.comptime_failed = true;
+        return false;
+    }
+    (void)generic;
+    if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
+        error(call.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
+        recheck_fault_.clear();
+        call.comptime_failed = true;
+        return false;
+    }
+    wrapper.params.clear();
+    wrapper.captures.clear();
+    wrapper.captured_here.clear();
+    wrapper.is_comptime = false;
+    wrapper.is_macro = false;
+    wrapper.is_extern = false;
+    wrapper.extern_c = false;
+    wrapper.exported = false;
+    wrapper.variadic = false;
+    wrapper.link_name.clear();
+    // The evaluator reads an `i32`. The enum's own type is restored on the call.
+    wrapper.return_type = "i32";
+    wrapper.is_enum = false;
+    if (!wrapper.results.empty()) {
+        wrapper.results.front().type_name = "i32";
+        wrapper.results.front().is_enum = false;
+    }
+    uint32_t file = file_id_;
+    for (const PackageNode &node : graph_->nodes) {
+        for (const TopDecl &decl : node.unit.decls) {
+            if (const auto *item = std::get_if<FunctionDecl>(&decl.data); item == fn) {
+                file = node.file_id;
+            }
+        }
+    }
+    if (wrapper.body != nullptr && explain_comptime(*wrapper.body, fn->name)) {
+        return false;
+    }
+    SourceLoc fault;
+    std::vector<std::pair<uint32_t, const FunctionDecl *>> specs;
+    comptime_pending_specs(wrapper.body.get(), specs);
+    std::vector<std::pair<uint32_t, const StructDecl *>> structs;
+    for (const PendingAppend &item : pending_appends_) {
+        if (const auto *st = std::get_if<StructDecl>(&item.decl.data)) {
+            if (!st->name.empty() && st->type_params.empty()) {
+                structs.push_back({item.file_id, st});
+            }
+        }
+    }
+    std::vector<std::pair<uint32_t, const TypedefDecl *>> aliases;
+    for (const PendingAppend &item : pending_appends_) {
+        if (const auto *alias = std::get_if<TypedefDecl>(&item.decl.data)) {
+            if (!alias->name.empty() && alias->type_params.empty()) {
+                aliases.push_back({item.file_id, alias});
+            }
+        }
+    }
+    const std::optional<int32_t> ran = eval_comptime_i32(*graph_, wrapper, file, &fault, specs, structs, aliases);
+    if (fault.valid()) {
+        const std::string message = comptime_assert_message(*wrapper.body, fault);
+        report_comptime_fault(fault, message.empty() ? std::string("index out of range") : message, fn->name);
+        return false;
+    }
+    if (!ran) {
+        return false;
+    }
+    return keep(*ran, call.loc);
 }
 
 bool Checker::fold_comptime_string(const Expr::Call &call) {
@@ -3560,6 +3867,10 @@ bool Checker::unmarked_comptime_arg(const Expr &expr) {
             [&](const auto &item) -> bool {
                 using T = std::decay_t<decltype(item)>;
                 if constexpr (std::is_same_v<T, Expr::Name>) {
+                    // `const k = 40` at file scope inside `(k, 2)`. A local `const` and a `var` stay out.
+                    if (file_scope_const_int(node)) {
+                        return false;
+                    }
                     const Symbol *symbol = lookup(item.text);
                     if (symbol == nullptr || symbol->is_package || symbol->is_type || symbol->is_function ||
                         symbol->comptime_param || symbol->is_constant || symbol->held_comptime) {

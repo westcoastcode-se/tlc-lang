@@ -1,0 +1,8 @@
+comptime func field(p (i32, i32)) i32 {
+    return p[0] + p[1];
+}
+
+func main() i32 {
+    const k = 40;
+    return field((k, 2));
+}

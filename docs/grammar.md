@@ -198,9 +198,9 @@ A `const` of a struct, a float, an alias, a function, a tuple, or `[]const u8` i
 
 A tuple of a folded integer, a `bool`, a constant `[]const u8`, an enumerator, or a `comptime const` is.
 
-A file-scope `const` in that tuple is `not supported yet`.
+A file-scope `const` whose initializer folds to `i32` is an element of that tuple. `const k = 40` then `field((k, 2))` is `movl $42, %eax` and `retq`.
 
-A tuple element that is a local `const` is `type mismatch`.
+A local `const` and a `var` in that tuple are `not supported yet`.
 
 `comptime const pair = (40, 2)` names that tuple.
 
@@ -238,7 +238,7 @@ A runtime `const` of a tuple is `type mismatch`.
 
 `return` leaves the function.
 
-A call used as a value folds when every argument is a comptime value and the result is `i32`, a `bool`, a struct, or a constant `[]const u8`.
+A call used as a value folds when every argument is a comptime value and the result is `i32`, a `bool`, an `f32`, an `f64`, an enumerator, a struct, a tuple, an `[N]i32`, or a constant `[]const u8`.
 
 A body that is one `return` of a constant `i32` folds. A body with statements is compiled and run, and that integer is the constant.
 
@@ -264,7 +264,7 @@ A field may be an integer, a `bool`, an `f32`, an `f64`, an enumerator, a nested
 
 `take(move(origin), n)` calls `main.take.spec.p_42_1`.
 
-A `var` of the struct is `not supported yet`.
+`var made = move(origin)` copies that struct. `made.x` is 42. The call is not emitted.
 
 A field or a tuple element may be `3000000000u32`. That value keeps the suffix. The same bits passed to a comptime `i32`, or written as `3000000000i32`, are `value does not fit`.
 
@@ -272,7 +272,7 @@ A data pointer field and a union result are `global initializer is not a constan
 
 A `[]const u8` result is that string. `cut("Hello, world")` is `Hello` when the body keeps the bytes before `,`. `cut("Hello, world").len` is `movl $5, %eax` and `retq`. A `var` or a `const` passed to that function is `not supported yet`.
 
-A result that is not `i32`, not a `bool`, not a struct, not a tuple, and not a constant `[]const u8` is `not supported yet`. `comptime if (pos(3))` when `pos` returns `bool` is `movl $42, %eax` and `retq`. A tuple result `pair(40)[0] + pair(40)[1]` is `movl $82, %eax` and `retq`.
+A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, and not a constant `[]const u8` is `not supported yet`. `comptime if (pos(3))` when `pos` returns `bool` is `movl $42, %eax` and `retq`. A tuple result `pair(40)[0] + pair(40)[1]` is `movl $82, %eax` and `retq`.
 
 `emit` is not valid in a `comptime func`.
 
@@ -1089,10 +1089,6 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 `(**value)[0]` is 40 and `(**value)[1]` is 2.
 
 `(**value)[0] = 1` is `type mismatch`.
-
-`**const T` when `T` is `[2](i32, i32)` is `not supported yet`.
-
-`*const *T` when `T` is a tuple is `not supported yet`.
 
 `func id[T type](value **const T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
 

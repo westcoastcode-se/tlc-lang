@@ -1,0 +1,10 @@
+comptime func row(n i32) [2]i32 {
+    var a = n;
+    var b = a + 2;
+    return [_]i32{a, b};
+}
+
+func main() i32 {
+    var r = row(40);
+    return r[0] + r[1];
+}

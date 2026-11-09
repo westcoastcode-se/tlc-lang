@@ -1,0 +1,25 @@
+type Order enum {
+    less,
+    equal,
+    greater,
+};
+
+comptime func still() Order {
+    return Order.equal;
+}
+
+comptime func pick(n i32) Order {
+    if (n > 0) {
+        return Order.equal;
+    }
+    return Order.less;
+}
+
+func main() i32 {
+    var a = still();
+    var b = pick(1);
+    if (a == Order.equal && b == Order.equal) {
+        return 42;
+    }
+    return 1;
+}

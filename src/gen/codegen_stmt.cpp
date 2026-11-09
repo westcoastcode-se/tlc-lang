@@ -820,7 +820,13 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             scopes_.back()[node.names[0]] = std::move(binding);
             return;
         }
-        if (const auto *init = std::get_if<Expr::Init>(&node.value->data); init != nullptr && init->array_literal) {
+        const Expr *array_value = node.value.get();
+        if (const auto *call = std::get_if<Expr::Call>(&node.value->data);
+            call != nullptr && call->comptime_struct != nullptr) {
+            array_value = call->comptime_struct.get();
+        }
+        if (const auto *init = array_value == nullptr ? nullptr : std::get_if<Expr::Init>(&array_value->data);
+            init != nullptr && init->array_literal) {
             bool create = false;
             destination(node.names[0], create);
             if (!create) {

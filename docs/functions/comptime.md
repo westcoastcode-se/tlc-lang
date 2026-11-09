@@ -156,9 +156,29 @@ A runtime `const` of a struct, a float, an alias, a function, a tuple, or `[]con
 
 A tuple of a folded integer, a `bool`, a constant `[]const u8`, an enumerator, or a `comptime const` is a comptime value.
 
-A file-scope `const` in that tuple is `not supported yet`.
+A file-scope `const` whose initializer folds to `i32` is an element of that tuple. `const k = 40` then `field((k, 2))` is 42. The call is not emitted.
 
-A tuple element that is a local runtime `const` is `type mismatch`.
+```c
+const k = 40;
+
+comptime func field(p (i32, i32)) i32 {
+    return p[0] + p[1];
+}
+
+func main() i32 {
+    return field((k, 2));
+}
+```
+
+```asm
+main:
+movl $42, %eax                   # field((k, 2))
+retq
+```
+
+The program returns 42.
+
+A local `const` and a `var` in that tuple are `not supported yet`.
 
 A local `comptime const` in that tuple is that value. That includes an array, `comptime const row = [_]i32{2, 0}`, and an alias, `comptime const other = Integer(4)`.
 
@@ -415,7 +435,106 @@ retq
 
 The program returns 42.
 
-A result that is not `i32`, not a `bool`, not an `f64`, not a struct, not a tuple, and not a constant `[]const u8` is `not supported yet`.
+`f32` is that result too. `bias(1)` is `0.5f`. A body that is one `return` of a constant folds. A body with statements is compiled and run. The call is not emitted.
+
+```c
+comptime func bias(n i32) f32 {
+    var h = 0.5f;
+    if (n > 0) {
+        return h;
+    }
+    return 0.0f;
+}
+
+func main() i32 {
+    var x = bias(1);
+    if (x == 0.5f) {
+        return 42;
+    }
+    return 1;
+}
+```
+
+```asm
+main:
+movss (%rip), %xmm0              # bias(1)
+movss %xmm0, -4(%rsp)            # x
+movss -4(%rsp), %xmm0            # x
+movss (%rip), %xmm1              # 0.5f
+ucomiss %xmm1, %xmm0             # x == 0.5f
+jne .Lother
+jp .Lother
+movl $42, %eax                   # return
+retq
+```
+
+The program returns 42.
+
+An enumerator is that result. `pick(1)` is `Order.equal`. A body with statements is compiled and run. The call is not emitted.
+
+```c
+type Order enum {
+    less,
+    equal,
+    greater,
+};
+
+comptime func pick(n i32) Order {
+    if (n > 0) {
+        return Order.equal;
+    }
+    return Order.less;
+}
+
+func main() i32 {
+    var x = pick(1);
+    if (x == Order.equal) {
+        return 42;
+    }
+    return 1;
+}
+```
+
+```asm
+main:
+movl $1, -4(%rsp)                # x = Order.equal
+cmpl $1, -4(%rsp)                # x == Order.equal
+jne .Lother
+movl $42, %eax                   # return
+retq
+```
+
+The program returns 42.
+
+`[2]i32` is that result. `row(40)` is `{40, 42}`. A slice and a pointer stay out. The call is not emitted.
+
+```c
+comptime func row(n i32) [2]i32 {
+    var a = n;
+    var b = a + 2;
+    return [_]i32{a, b};
+}
+
+func main() i32 {
+    var r = row(40);
+    return r[0] + r[1];
+}
+```
+
+```asm
+main:
+subq $24, %rsp                   # allocate
+movl $40, 16(%rsp)               # r[0]
+movl $42, 20(%rsp)               # r[1]
+movl 16(%rsp), %eax              # r[0]
+addl 20(%rsp), %eax              # r[0] + r[1]
+addq $24, %rsp                   # release
+retq
+```
+
+The program returns 82.
+
+A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, and not a constant `[]const u8` is `not supported yet`.
 
 `emit` is not valid in a `comptime func`.
 

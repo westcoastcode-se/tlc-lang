@@ -1,0 +1,20 @@
+comptime func half() f32 {
+    return 0.5f;
+}
+
+comptime func bias(n i32) f32 {
+    var h = 0.5f;
+    if (n > 0) {
+        return h;
+    }
+    return 0.0f;
+}
+
+func main() i32 {
+    var a = half();
+    var b = bias(1);
+    if (a == 0.5f && b == 0.5f) {
+        return 42;
+    }
+    return 1;
+}

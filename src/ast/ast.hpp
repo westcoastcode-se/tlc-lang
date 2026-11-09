@@ -190,6 +190,8 @@ struct Expr {
         mutable int comptime_value = 0;
         // An `f64` result of that run. Distinct from `comptime_value`: `fold_int` of the call stays empty.
         mutable bool comptime_float = false;
+        // False is `f32`. True is `f64`.
+        mutable bool comptime_float_wide = false;
         mutable double comptime_float_value = 0;
         // A struct result of that run, as a literal. Distinct from `comptime_value`: `fold_int` of the call stays empty.
         mutable std::unique_ptr<Expr> comptime_struct;
