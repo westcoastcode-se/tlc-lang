@@ -1,0 +1,18 @@
+comptime func still() [2]u32 {
+    return [_]u32{3000000000u32, 2u32};
+}
+
+comptime func row(n i32) [2]u32 {
+    var a = 3000000000u32 + u32(n);
+    var b = 2u32;
+    return [_]u32{a, b};
+}
+
+func main() i32 {
+    var r = row(0);
+    var s = still();
+    if (r[0] == 3000000000u32 && s[1] == 2u32) {
+        return 42;
+    }
+    return 0;
+}

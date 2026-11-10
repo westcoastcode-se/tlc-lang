@@ -2,9 +2,16 @@ comptime func flags() [2]bool {
     return [_]bool{true, false};
 }
 
+comptime func bias(n i32) [2]bool {
+    var a = true;
+    var b = n == 0;
+    return [_]bool{a, b};
+}
+
 func main() i32 {
     var r = flags();
-    if (r[0]) {
+    var s = bias(1);
+    if (r[0] && s[0] && !s[1]) {
         return 42;
     }
     return 0;

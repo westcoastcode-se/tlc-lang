@@ -7,5 +7,9 @@ comptime func make() Box {
 }
 
 func main() i32 {
-    return i32(make().n == 0);
+    var made = make();
+    if (made.n == 3000000000u32) {
+        return 42;
+    }
+    return 0;
 }

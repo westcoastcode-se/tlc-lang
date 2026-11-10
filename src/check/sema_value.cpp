@@ -1255,15 +1255,24 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                         return result;
                     }
-                    // `comptime func row(n i32) [2]i32` keeps that array. `[2]f32` is the same call.
-                    // A slice, `[2]bool`, `[2]i64`, and an array of arrays stay out.
-                    const bool i32_elem = result.element != nullptr && result.element->kind == TypeKind::Int &&
-                                          result.element->rank == 3 && !result.element->is_unsigned &&
-                                          result.element->alias_id == 0;
-                    const bool f32_elem = result.element != nullptr && result.element->kind == TypeKind::Float &&
-                                          result.element->rank == 32 && result.element->alias_id == 0;
+                    // `comptime func row(n i32) [2]i32` keeps that array. `[2]f32`, `[2]f64`,
+                    // `[2]bool`, `[2]i64`, and `[2]u32` are the same call. A slice, `[2]u64`,
+                    // `[2]i8`, and an array of arrays stay out.
+                    const Type *elem = result.element.get();
+                    const bool i32_elem = elem != nullptr && elem->kind == TypeKind::Int && elem->rank == 3 &&
+                                          !elem->is_unsigned && elem->alias_id == 0;
+                    const bool i64_elem = elem != nullptr && elem->kind == TypeKind::Int && elem->rank == 5 &&
+                                          !elem->is_unsigned && elem->alias_id == 0;
+                    const bool u32_elem = elem != nullptr && elem->kind == TypeKind::Int && elem->rank == 3 &&
+                                          elem->is_unsigned && elem->alias_id == 0;
+                    const bool f32_elem = elem != nullptr && elem->kind == TypeKind::Float && elem->rank == 32 &&
+                                          elem->alias_id == 0;
+                    const bool f64_elem = elem != nullptr && elem->kind == TypeKind::Float && elem->rank >= 64 &&
+                                          elem->alias_id == 0;
+                    const bool bool_elem = elem != nullptr && elem->kind == TypeKind::Bool && elem->alias_id == 0;
                     if (result.kind == TypeKind::Array && !is_slice(result) && result.length > 0 &&
-                        result.alias_id == 0 && (i32_elem || f32_elem)) {
+                        result.alias_id == 0 &&
+                        (i32_elem || i64_elem || u32_elem || f32_elem || f64_elem || bool_elem)) {
                         KeptStruct kept = fold_comptime_struct(node);
                         if (kept.status == KeptStruct::Status::NotConstant) {
                             error(node.loc, "global initializer is not a constant");

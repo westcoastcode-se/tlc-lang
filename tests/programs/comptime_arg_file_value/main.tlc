@@ -1,0 +1,30 @@
+type Point struct { x i32; y i32; }
+const origin = Point{.x = 40, .y = 2};
+
+type Order enum { less, equal, greater }
+const e = Order.equal;
+
+type Integer i32;
+const n = Integer(4);
+
+comptime func field(p Point) i32 {
+    return p.x + p.y;
+}
+
+comptime func rank(v Order) i32 {
+    if (v == Order.equal) {
+        return 42;
+    }
+    return 0;
+}
+
+comptime func id(v Integer) i32 {
+    return i32(v);
+}
+
+func main() i32 {
+    if (field(origin) == 42 && rank(e) == 42 && id(n) == 4) {
+        return 42;
+    }
+    return 0;
+}

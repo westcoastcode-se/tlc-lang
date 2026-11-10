@@ -238,7 +238,7 @@ A runtime `const` of a tuple is `type mismatch`.
 
 `return` leaves the function.
 
-A call used as a value folds when every argument is a comptime value and the result is `i32`, a `bool`, an `f32`, an `f64`, an `i64`, a `u32`, an enumerator, a struct, a tuple, an `[N]i32`, an `[N]f32`, or a constant `[]const u8`.
+A call used as a value folds when every argument is a comptime value and the result is `i32`, a `bool`, an `f32`, an `f64`, an `i64`, a `u32`, an enumerator, a struct, a tuple, an `[N]i32`, an `[N]i64`, an `[N]u32`, an `[N]f32`, an `[N]f64`, an `[N]bool`, or a constant `[]const u8`. An enumerator result whose underlying type is `i8` or `u8` is that call. `enum(bool)` and `enum(i64)` stay `not supported yet`.
 
 A body that is one `return` of a constant `i32` folds. A body with statements is compiled and run, and that integer is the constant.
 
@@ -272,7 +272,7 @@ A data pointer field and a union result are `global initializer is not a constan
 
 A `[]const u8` result is that string. `cut("Hello, world")` is `Hello` when the body keeps the bytes before `,`. `cut("Hello, world").len` is `movl $5, %eax` and `retq`. A `var` or a `const` passed to that function is `not supported yet`.
 
-A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an `i64`, not a `u32`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, not an `[N]f32`, and not a constant `[]const u8` is `not supported yet`. A `u64` result is `not supported yet`. `comptime if (pos(3))` when `pos` returns `bool` is `movl $42, %eax` and `retq`. A tuple result `pair(40)[0] + pair(40)[1]` is `movl $82, %eax` and `retq`.
+A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an `i64`, not a `u32`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, not an `[N]i64`, not an `[N]u32`, not an `[N]f32`, not an `[N]f64`, not an `[N]bool`, and not a constant `[]const u8` is `not supported yet`. A `u64` result is `not supported yet`. An enumerator whose underlying type is not `i32`, not `i8`, and not `u8` is `not supported yet`. `comptime if (pos(3))` when `pos` returns `bool` is `movl $42, %eax` and `retq`. A tuple result `pair(40)[0] + pair(40)[1]` is `movl $82, %eax` and `retq`.
 
 `emit` is not valid in a `comptime func`.
 

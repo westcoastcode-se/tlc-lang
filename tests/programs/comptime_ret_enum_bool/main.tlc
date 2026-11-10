@@ -1,0 +1,13 @@
+type Flag enum(bool) { no, yes }
+
+comptime func pick() Flag {
+    return Flag.yes;
+}
+
+func main() i32 {
+    var x = pick();
+    if (x == Flag.yes) {
+        return 42;
+    }
+    return 0;
+}

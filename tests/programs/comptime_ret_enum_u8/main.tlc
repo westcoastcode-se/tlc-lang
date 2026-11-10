@@ -1,0 +1,15 @@
+type Tiny enum(u8) { a, b = 40 }
+
+comptime func pick(n i32) Tiny {
+    var k = n;
+    if (k == 1) { return Tiny.b; }
+    return Tiny.a;
+}
+
+func main() i32 {
+    var x = pick(1);
+    if (x == Tiny.b) {
+        return 42;
+    }
+    return 0;
+}

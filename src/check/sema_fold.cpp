@@ -2258,6 +2258,10 @@ bool Checker::comptime_constant(const Expr &expr) {
         if (const Expr *init = file_scope_const_alias(expr)) {
             return comptime_constant(*init);
         }
+        // `const e = Order.equal` at file scope. A local const stays out.
+        if (file_scope_const_enum(expr) != nullptr) {
+            return true;
+        }
         return false;
     }
     if (std::holds_alternative<Expr::Float>(expr.data)) {
@@ -2405,6 +2409,11 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
             }
             // A file-scope const alias is its initializer. A local const is not.
             if (const Expr *init = file_scope_const_alias(*cursor)) {
+                cursor = init;
+                continue;
+            }
+            // `const e = Order.equal` at file scope. A local const is not.
+            if (const Expr *init = file_scope_const_enum(*cursor)) {
                 cursor = init;
                 continue;
             }
@@ -3385,7 +3394,15 @@ bool Checker::fold_comptime_enum(const Expr::Call &call) {
     }
     const EnumInfo &info = enum_types_[static_cast<std::size_t>(result.enum_id)];
     const Type &underlying = info.underlying;
-    if (underlying.kind != TypeKind::Int || underlying.rank != 3 || underlying.is_unsigned || underlying.alias_id != 0) {
+    // Default `i32`, plus `enum(i8)` and `enum(u8)`. `i8` is a `Char` rank. `enum(bool)` and
+    // `enum(i64)` stay out.
+    const bool i32_under = underlying.kind == TypeKind::Int && underlying.rank == 3 && !underlying.is_unsigned &&
+                           underlying.alias_id == 0;
+    const bool i8_under = underlying.kind == TypeKind::Char && underlying.rank == 1 && !underlying.is_unsigned &&
+                          !underlying.plain_char && underlying.alias_id == 0;
+    const bool u8_under = underlying.kind == TypeKind::Char && underlying.rank == 1 && underlying.is_unsigned &&
+                          underlying.alias_id == 0;
+    if (!i32_under && !i8_under && !u8_under) {
         return false;
     }
     const auto member_at = [&](int value) -> std::string {
@@ -4104,9 +4121,12 @@ bool Checker::unmarked_comptime_arg(const Expr &expr) {
             [&](const auto &item) -> bool {
                 using T = std::decay_t<decltype(item)>;
                 if constexpr (std::is_same_v<T, Expr::Name>) {
-                    // `const k = 40` at file scope inside `(k, 2)`. A file-scope `const` array is the
-                    // same element. A local `const` and a `var` stay out.
-                    if (file_scope_const_int(node) || file_scope_const_array(node) != nullptr) {
+                    // `const k = 40` and `const origin = Point{.x = 40, .y = 2}` at file scope.
+                    // An enumerator and `const n = Integer(4)` are the same argument. A local
+                    // `const`, a `var`, a file-scope `f32`, and a file-scope `bool` stay out.
+                    if (file_scope_const_int(node) || file_scope_const_array(node) != nullptr ||
+                        file_scope_const_struct(node) != nullptr || file_scope_const_enum(node) != nullptr ||
+                        file_scope_const_alias(node) != nullptr) {
                         return false;
                     }
                     const Symbol *symbol = lookup(item.text);

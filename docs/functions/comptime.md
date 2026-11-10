@@ -564,7 +564,149 @@ retq
 
 The program returns 42. `u32` is the same call. `wide(0)` is `3000000000u32`. A `u64` result is `not supported yet`.
 
-`[2]f32` is that result. `row()` is `{0.5f, 1.0f}`. A slice, a pointer, `[2]bool`, `[2]i64`, and an array of arrays stay out.
+`[2]f32` is that result. `row()` is `{0.5f, 1.0f}`. A slice, a pointer, `[2]u64`, `[2]i8`, and an array of arrays stay out.
+
+`[2]bool` is that result. `flags(1)` stores `true` in `r[0]`. The call is not emitted. `r[1]` is not read, so that store is removed.
+
+```c
+comptime func flags(n i32) [2]bool {
+    var a = true;
+    var b = n == 0;
+    return [_]bool{a, b};
+}
+
+func main() i32 {
+    var r = flags(1);
+    if (r[0]) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+pushq %rax                       # allocate
+movb $1, 6(%rsp)                 # r[0]
+movb 6(%rsp), %al                # r[0]
+andb $1, %al
+movzbl %al, %eax
+cmpl $0, %eax                    # r[0]
+jne .Lyes
+xorl %eax, %eax                  # other arm
+popq %rcx
+retq
+.Lyes:
+movl $42, %eax                   # return
+popq %rcx
+retq
+```
+
+The program returns 42.
+
+`[2]i64` is that result. `row(0)[0]` is `3000000000`. `[2]u32` is the same call with `3000000000u32`.
+
+```c
+comptime func row(n i32) [2]i64 {
+    var a = 3000000000 + i64(n);
+    var b = 2i64;
+    return [_]i64{a, b};
+}
+
+func main() i32 {
+    var r = row(0);
+    if (r[0] == 3000000000) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+subq $24, %rsp                   # allocate
+movl $3000000000, %eax
+movq %rax, 8(%rsp)               # r[0]
+movl $3000000000, %eax
+cmpq %rax, 8(%rsp)               # r[0] == 3000000000
+je .Lyes
+xorl %eax, %eax                  # other arm
+addq $24, %rsp
+retq
+.Lyes:
+movl $42, %eax                   # return
+addq $24, %rsp
+retq
+```
+
+The program returns 42.
+
+`[2]f64` is that result. `row()[0]` is `0.5`.
+
+```c
+comptime func row() [2]f64 {
+    var a = 0.5;
+    var b = 1.0;
+    return [_]f64{a, b};
+}
+
+func main() i32 {
+    var r = row();
+    if (r[0] == 0.5) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+subq $24, %rsp                   # allocate
+movsd (%rip), %xmm0              # r[0]
+movsd %xmm0, 8(%rsp)
+movsd 8(%rsp), %xmm0
+movsd (%rip), %xmm1              # 0.5
+ucomisd %xmm1, %xmm0
+jne .Lother
+jp .Lother
+movl $42, %eax                   # return
+addq $24, %rsp                   # release
+retq
+```
+
+The program returns 42.
+
+`enum(i8)` is that result. `pick(1)` is `Tiny.b`. `enum(u8)` is the same call. `enum(bool)` and `enum(i64)` stay `not supported yet`.
+
+```c
+type Tiny enum(i8) { a, b }
+
+comptime func pick(n i32) Tiny {
+    var k = n;
+    if (k == 1) { return Tiny.b; }
+    return Tiny.a;
+}
+
+func main() i32 {
+    var x = pick(1);
+    if (x == Tiny.b) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+movb $1, -1(%rsp)                # x = Tiny.b
+movsbl -1(%rsp), %eax
+cmpl $1, %eax                    # x == Tiny.b
+jne .Lother
+movl $42, %eax                   # return
+retq
+```
+
+The program returns 42.
 
 ```c
 comptime func row() [2]f32 {
@@ -599,7 +741,7 @@ retq
 
 The program returns 42.
 
-A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an `i64`, not a `u32`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, not an `[N]f32`, and not a constant `[]const u8` is `not supported yet`.
+A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an `i64`, not a `u32`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, not an `[N]i64`, not an `[N]u32`, not an `[N]f32`, not an `[N]f64`, not an `[N]bool`, and not a constant `[]const u8` is `not supported yet`. An enumerator whose underlying type is not `i32`, not `i8`, and not `u8` is `not supported yet`.
 
 `emit` is not valid in a `comptime func`.
 
@@ -990,7 +1132,13 @@ An enumerator passed to a `comptime func` folds when the body returns a constant
 
 That `id` is `comptime func id(n Integer) i32 { return i32(n); }`.
 
-A `var` or a `const` of that struct, enumerator, or alias passed to that function is `not supported yet`.
+A file-scope `const origin = Point{.x = 40, .y = 2}` then `field(origin)` is 42. The call is not emitted. `main` is `movl $42, %eax` and `retq`. `func take(comptime p Point, n i32)` takes that same `origin`. `take(origin, 40)` is 42.
+
+`const e = Order.equal` then `rank(e)` is that same pair of instructions when the body returns 42 for `Order.equal`.
+
+`type Integer i32` then `const n = Integer(4)` and `id(n)` is `movl $4, %eax` and `retq`.
+
+A local `const` of that struct, enumerator, or alias is `not supported yet`. A `var` is `var is not a compile-time constant` when it is the initializer of a `comptime const`. A file-scope `const` that is an `f32` or a `bool` stays `not supported yet`.
 
 ## A struct returned from a comptime function
 
