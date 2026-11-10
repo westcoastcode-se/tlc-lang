@@ -3076,6 +3076,13 @@ void Checker::fold_shells(std::vector<TypeShell> &shells, SourceLoc loc) {
             // A later `object_type` sees this and does not report the length again.
             shell.length = -2;
             shell.length_name.clear();
+        } else if (const Symbol *symbol = lookup(shell.length_name);
+                   symbol != nullptr && symbol->is_constant && symbol->const_init != nullptr &&
+                   folded_wide_negative(*symbol->const_init)) {
+            // `-3000000000i64` does not fit in `i32` and is still a negative length.
+            error(loc, kArrayLength);
+            shell.length = -2;
+            shell.length_name.clear();
         }
     }
 }

@@ -1,0 +1,18 @@
+comptime func row() [2]f32 {
+    return [_]f32{0.5f, 1.0f};
+}
+
+comptime func bias(n i32) [2]f32 {
+    var a = 0.5f;
+    var b = f32(n);
+    return [_]f32{a, b};
+}
+
+func main() i32 {
+    var r = row();
+    var s = bias(1);
+    if (r[0] == 0.5f && s[0] == 0.5f && s[1] == 1.0f) {
+        return 42;
+    }
+    return 0;
+}

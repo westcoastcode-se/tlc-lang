@@ -534,7 +534,72 @@ retq
 
 The program returns 82.
 
-A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, and not a constant `[]const u8` is `not supported yet`.
+`i64` is that result. `wide(0)` is `3000000000`. A body with statements is compiled and run. The call is not emitted.
+
+```c
+comptime func wide(n i32) i64 {
+    var k = n;
+    return 3000000000 + i64(k);
+}
+
+func main() i32 {
+    var x = wide(0);
+    if (x == 3000000000) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+movl $3000000000, %eax
+movq %rax, -8(%rsp)              # x
+movl $3000000000, %eax
+cmpq %rax, -8(%rsp)              # x == 3000000000
+jne .Lother
+movl $42, %eax                   # return
+retq
+```
+
+The program returns 42. `u32` is the same call. `wide(0)` is `3000000000u32`. A `u64` result is `not supported yet`.
+
+`[2]f32` is that result. `row()` is `{0.5f, 1.0f}`. A slice, a pointer, `[2]bool`, `[2]i64`, and an array of arrays stay out.
+
+```c
+comptime func row() [2]f32 {
+    var a = 0.5f;
+    var b = 1.0f;
+    return [_]f32{a, b};
+}
+
+func main() i32 {
+    var r = row();
+    if (r[0] == 0.5f) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+subq $24, %rsp                   # allocate
+movss (%rip), %xmm0              # r[0]
+movss %xmm0, 16(%rsp)
+movss 16(%rsp), %xmm0
+movss (%rip), %xmm1              # 0.5f
+ucomiss %xmm1, %xmm0
+jne .Lother
+jp .Lother
+movl $42, %eax                   # return
+addq $24, %rsp                   # release
+retq
+```
+
+The program returns 42.
+
+A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an `i64`, not a `u32`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, not an `[N]f32`, and not a constant `[]const u8` is `not supported yet`.
 
 `emit` is not valid in a `comptime func`.
 
@@ -1488,17 +1553,17 @@ A local `comptime const` of that tuple is the same.
 
 A `comptime func` whose body is `return value[0][0] + value[0][1]` folds the same way.
 
-A file-scope `const row = [_]i32{2, 0}` then `return field((row, 40))` is `not supported yet`.
+A file-scope `const row = [_]i32{2, 0}` then `return field((row, 40))` is 42. The call is not emitted.
 
 That `field` is `comptime func field(p ([2]i32, i32)) i32 { return p[0][0] + p[1]; }`.
 
-The element is `comptime const row`. A `const` is a comptime argument only when it is also `comptime`.
+`main` is `movl $42, %eax` and `retq`.
 
 A local `const` of that array is `not supported yet`.
 
 A `var` array in that tuple is `var is not a compile-time constant`.
 
-`type Point struct { x i32; y i32; }` then `const row = [_]Point{Point{.x = 2, .y = 0}, Point{.x = 40, .y = 0}}` in that tuple is `not supported yet`.
+`type Point struct { x i32; y i32; }` then `const row = [_]Point{Point{.x = 2, .y = 0}, Point{.x = 40, .y = 0}}` then `return field((row, 0))` is `movl $42, %eax` and `retq`.
 
 That `field` is `comptime func field(p ([2]Point, i32)) i32 { return p[0][0].x + p[0][1].x; }`.
 

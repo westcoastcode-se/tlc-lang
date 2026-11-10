@@ -1,0 +1,11 @@
+comptime func wide() u64 {
+    return 4u64;
+}
+
+func main() i32 {
+    var x = wide();
+    if (x == 4u64) {
+        return 42;
+    }
+    return 0;
+}

@@ -1,0 +1,17 @@
+comptime func still() u32 {
+    return 3000000000u32;
+}
+
+comptime func wide(n i32) u32 {
+    var k = n;
+    return 3000000000u32 + u32(k);
+}
+
+func main() i32 {
+    var x = wide(0);
+    var y = still();
+    if (x == 3000000000u32 && y == 3000000000u32) {
+        return 42;
+    }
+    return 0;
+}

@@ -41,7 +41,21 @@ std::optional<int32_t> eval_comptime_i32(
     const std::vector<std::pair<uint32_t, const StructDecl *>> &structs = {},
     const std::vector<std::pair<uint32_t, const TypedefDecl *>> &aliases = {});
 
-// Compile `fn` and call it. `fn` returns `f64` and takes no parameters.
+// Compile `fn` and call it. `fn` returns `i64` and takes no parameters.
+std::optional<int64_t> eval_comptime_i64(
+    const PackageGraph &graph, const FunctionDecl &fn, uint32_t file, SourceLoc *fault = nullptr,
+    const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs = {},
+    const std::vector<std::pair<uint32_t, const StructDecl *>> &structs = {},
+    const std::vector<std::pair<uint32_t, const TypedefDecl *>> &aliases = {});
+
+// Compile `fn` and call it. `fn` returns `u32` and takes no parameters.
+std::optional<uint32_t> eval_comptime_u32(
+    const PackageGraph &graph, const FunctionDecl &fn, uint32_t file, SourceLoc *fault = nullptr,
+    const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs = {},
+    const std::vector<std::pair<uint32_t, const StructDecl *>> &structs = {},
+    const std::vector<std::pair<uint32_t, const TypedefDecl *>> &aliases = {});
+
+// Compile `fn` and call it. `fn` returns `f32` and takes no parameters.
 // Nullopt when emission or the call fails.
 std::optional<float> eval_comptime_f32(
     const PackageGraph &graph, const FunctionDecl &fn, uint32_t file, SourceLoc *fault = nullptr,

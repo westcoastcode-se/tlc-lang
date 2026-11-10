@@ -224,11 +224,11 @@ An element may also be an enumerator, a tuple, a function, a pointer, or an arra
 
 `pair[0][0]` is `40`.
 
-A file-scope `const row = [_]i32{2, 0}` in that tuple is `not supported yet`. `field((row, 40))` is that error. The element is `comptime const row`.
+A file-scope `const row = [_]i32{2, 0}` in that tuple is 42. `field((row, 40))` is `movl $42, %eax` and `retq`.
 
-`const grid = [_][2]i32{{2, 0}, {40, 0}}` in that tuple is `not supported yet`.
+`const grid = [_][2]i32{{2, 0}, {40, 0}}` in that tuple folds the same way.
 
-`type Point struct { x i32; y i32; }` then `const row = [_]Point{Point{.x = 2, .y = 0}, Point{.x = 40, .y = 0}}` in that tuple is `not supported yet`. `comptime const row` of that array is the element.
+`type Point struct { x i32; y i32; }` then `const row = [_]Point{Point{.x = 2, .y = 0}, Point{.x = 40, .y = 0}}` in that tuple is `movl $42, %eax` and `retq`. `comptime const row` of that array is the element.
 
 `take((row, 0), n)` with `comptime p ([2]Point, i32)` is `type mismatch`.
 
@@ -238,7 +238,7 @@ A runtime `const` of a tuple is `type mismatch`.
 
 `return` leaves the function.
 
-A call used as a value folds when every argument is a comptime value and the result is `i32`, a `bool`, an `f32`, an `f64`, an enumerator, a struct, a tuple, an `[N]i32`, or a constant `[]const u8`.
+A call used as a value folds when every argument is a comptime value and the result is `i32`, a `bool`, an `f32`, an `f64`, an `i64`, a `u32`, an enumerator, a struct, a tuple, an `[N]i32`, an `[N]f32`, or a constant `[]const u8`.
 
 A body that is one `return` of a constant `i32` folds. A body with statements is compiled and run, and that integer is the constant.
 
@@ -272,7 +272,7 @@ A data pointer field and a union result are `global initializer is not a constan
 
 A `[]const u8` result is that string. `cut("Hello, world")` is `Hello` when the body keeps the bytes before `,`. `cut("Hello, world").len` is `movl $5, %eax` and `retq`. A `var` or a `const` passed to that function is `not supported yet`.
 
-A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, and not a constant `[]const u8` is `not supported yet`. `comptime if (pos(3))` when `pos` returns `bool` is `movl $42, %eax` and `retq`. A tuple result `pair(40)[0] + pair(40)[1]` is `movl $82, %eax` and `retq`.
+A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an `i64`, not a `u32`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, not an `[N]f32`, and not a constant `[]const u8` is `not supported yet`. A `u64` result is `not supported yet`. `comptime if (pos(3))` when `pos` returns `bool` is `movl $42, %eax` and `retq`. A tuple result `pair(40)[0] + pair(40)[1]` is `movl $82, %eax` and `retq`.
 
 `emit` is not valid in a `comptime func`.
 

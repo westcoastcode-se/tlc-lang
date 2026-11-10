@@ -1255,10 +1255,15 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                         return result;
                     }
-                    // `comptime func row(n i32) [2]i32` keeps that array. A slice stays out.
+                    // `comptime func row(n i32) [2]i32` keeps that array. `[2]f32` is the same call.
+                    // A slice, `[2]bool`, `[2]i64`, and an array of arrays stay out.
+                    const bool i32_elem = result.element != nullptr && result.element->kind == TypeKind::Int &&
+                                          result.element->rank == 3 && !result.element->is_unsigned &&
+                                          result.element->alias_id == 0;
+                    const bool f32_elem = result.element != nullptr && result.element->kind == TypeKind::Float &&
+                                          result.element->rank == 32 && result.element->alias_id == 0;
                     if (result.kind == TypeKind::Array && !is_slice(result) && result.length > 0 &&
-                        result.alias_id == 0 && result.element != nullptr && result.element->kind == TypeKind::Int &&
-                        result.element->rank == 3 && !result.element->is_unsigned && result.element->alias_id == 0) {
+                        result.alias_id == 0 && (i32_elem || f32_elem)) {
                         KeptStruct kept = fold_comptime_struct(node);
                         if (kept.status == KeptStruct::Status::NotConstant) {
                             error(node.loc, "global initializer is not a constant");
@@ -1273,6 +1278,18 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                         stamp_kept_struct(*kept.value, result);
                         node.comptime_struct = std::move(kept.value);
+                        return result;
+                    }
+                    // `comptime func wide(n i32) i64` and the same function returning `u32`.
+                    // `u64` stays `not supported yet`.
+                    if (result.kind == TypeKind::Int && result.alias_id == 0 &&
+                        ((result.rank == 5 && !result.is_unsigned) || (result.rank == 3 && result.is_unsigned))) {
+                        if (!fold_comptime_wide(node)) {
+                            if (diags_.size() == before) {
+                                error(node.loc, "not supported yet");
+                            }
+                            return type_invalid();
+                        }
                         return result;
                     }
                     if (!fold_int(expr)) {

@@ -503,8 +503,10 @@ class CodeGen {
     }
     // Emit `fn` as `tlc.comptime.eval` after the package is declared. False when that emission reports a diagnostic.
     // `float_bits` is 32 or 64 when the wrapper returns that float. 0 keeps `i32` or `bool`.
+    // `int_bits` is 64 when the wrapper returns `i64`. 0 keeps the float or `i32` rule.
     bool define_comptime(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
-                         const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs, int float_bits = 0);
+                         const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs, int float_bits = 0,
+                         int int_bits = 0);
     bool define_comptime_string(const PackageGraph &graph, const FunctionDecl &fn, uint32_t file,
                                 const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs);
     // Emit `fn` as a struct return and a `void (ptr)` wrapper that stores it. False when emission fails.

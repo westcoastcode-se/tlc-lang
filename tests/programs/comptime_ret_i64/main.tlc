@@ -1,0 +1,17 @@
+comptime func still() i64 {
+    return 3000000000;
+}
+
+comptime func wide(n i32) i64 {
+    var k = n;
+    return 3000000000 + i64(k);
+}
+
+func main() i32 {
+    var x = wide(0);
+    var y = still();
+    if (x == 3000000000 && y == 3000000000) {
+        return 42;
+    }
+    return 0;
+}

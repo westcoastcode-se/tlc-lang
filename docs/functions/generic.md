@@ -713,6 +713,8 @@ It also hides a const brought in with `import { n }`.
 
 A `var` is `type mismatch`.
 
+`width[4i64]()` is `width[4]()`. `repeat[4u32](40)[0]` is 40. A local `comptime const n = 4i64` then `width[n]()` is that same specialization. `4u64` is that integer when the value fits in `i32`. `width[3000000000]()` and `width[3000000000u32]()` are `type mismatch`. `width[4i8]()` is `type mismatch`.
+
 A function in that argument must be a `comptime func`. An ordinary function is `not supported yet`.
 
 `add(3) + 1` is `expected ']'`.

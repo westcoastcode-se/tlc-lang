@@ -1,0 +1,14 @@
+func main() i32 {
+    comptime const a = 4i64;
+    comptime const b = 4u32;
+    comptime const c = 4u64;
+    comptime const z = 0i64;
+    var ra [a]i32;
+    var rb [b]i32;
+    var rc [c]i32;
+    var rz [z]i32;
+    if (ra.len == 4 && rb.len == 4 && rc.len == 4 && rz.len == 0) {
+        return 42;
+    }
+    return 0;
+}

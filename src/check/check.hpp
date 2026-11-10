@@ -797,6 +797,8 @@ class Checker {
     std::optional<int> fold_comptime_call(const Expr::Call &call);
     // `comptime func bias(n i32) f64`. A constant `return` folds. A body with statements is run.
     bool fold_comptime_f64(const Expr::Call &call);
+    // `comptime func wide(n i32) i64` and the same function returning `u32`. `u64` stays out.
+    bool fold_comptime_wide(const Expr::Call &call);
     // `comptime func pick() Order`. A constant `return` folds. A body with statements is run.
     bool fold_comptime_enum(const Expr::Call &call);
     // A `comptime func` whose result is a constant `[]const u8`. False when that call does not fold.
@@ -1318,6 +1320,11 @@ class Checker {
     // A file-scope constant, or a local `const` whose initializer folds.
     // A `var` and an unfolded `const` hide a file-scope constant.
     std::optional<int> array_length_value(const std::string &name);
+    // `4i64`, `4u32`, and `4u64` when the value fits in `i32`, including a negative `i64`.
+    // A value past `i32` is nullopt. `i8` and `i16` stay out.
+    std::optional<int> folded_wide_i32(const Expr &expr);
+    // A signed 64-bit value below zero, including one that does not fit in `i32`.
+    bool folded_wide_negative(const Expr &expr);
     // A parameter of the `comptime func` being checked, or a name bound from one.
     bool length_waits(const std::string &name);
     // That same name, or a `comptime` parameter of the ordinary function being checked.

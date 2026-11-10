@@ -1,0 +1,20 @@
+func width[N i32]() i32 {
+    return N;
+}
+
+func repeat[N i32, T type](value T) [N]T {
+    var out [N]T;
+    out[0] = value;
+    comptime if (N > 1) { out[1] = value; }
+    comptime if (N > 2) { out[2] = value; }
+    comptime if (N > 3) { out[3] = value; }
+    return out;
+}
+
+func main() i32 {
+    comptime const n = 4i64;
+    if (width[4i64]() == 4 && width[4u64]() == 4 && width[n]() == 4 && repeat[4u32](40)[0] == 40) {
+        return 42;
+    }
+    return 0;
+}

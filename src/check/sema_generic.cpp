@@ -1604,6 +1604,13 @@ std::optional<int> Checker::array_length_value(const std::string &name) {
     if (symbol != nullptr && !symbol->is_var && symbol->folded_init && plain_int_constant(symbol->type)) {
         return symbol->const_value;
     }
+    // `comptime const n = 4i64` inside a function. `4u32` and `4u64` are that length when the
+    // value fits in a non-negative `i32`. A negative value that fits is that negative `i32`.
+    if (symbol != nullptr && symbol->is_constant && !symbol->is_var && symbol->const_init != nullptr) {
+        if (const std::optional<int> fitted = folded_wide_i32(*symbol->const_init)) {
+            return fitted;
+        }
+    }
     // A runtime `const` whose initializer folds is still that length.
     if (symbol == nullptr || !symbol->runtime_const || !plain_int_constant(symbol->type)) {
         return std::nullopt;
@@ -2127,6 +2134,10 @@ void Checker::prepare_written(std::string &type_name, std::string &type_package,
             is_array = true;
         } else if (value && *value < 0) {
             // `fold_shells` reports this. The name stays until that walk retires the shell.
+        } else if (const Symbol *symbol = lookup(array_len_name);
+                   symbol != nullptr && symbol->is_constant && symbol->const_init != nullptr &&
+                   folded_wide_negative(*symbol->const_init)) {
+            // `-3000000000i64` does not fit in `i32`. `fold_shells` reports the length.
         } else if (length_waits(array_len_name)) {
             // A parameter of a `comptime func` is not a length until the call substitutes it.
         } else if (baked_comptime_params() && value_name_waits(array_len_name)) {

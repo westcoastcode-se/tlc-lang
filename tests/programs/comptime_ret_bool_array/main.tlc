@@ -1,0 +1,11 @@
+comptime func flags() [2]bool {
+    return [_]bool{true, false};
+}
+
+func main() i32 {
+    var r = flags();
+    if (r[0]) {
+        return 42;
+    }
+    return 0;
+}
