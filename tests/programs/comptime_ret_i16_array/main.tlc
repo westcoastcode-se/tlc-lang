@@ -1,0 +1,22 @@
+comptime func still() [2]i16 {
+    return [_]i16{40i16, 2i16};
+}
+
+comptime func row(n i32) [2]i16 {
+    var k = n;
+    return [_]i16{i16(k), 2i16};
+}
+
+comptime func high() [2]u16 {
+    return [_]u16{40000u16, 1u16};
+}
+
+func main() i32 {
+    var r = row(40);
+    var s = still();
+    var t = high();
+    if (r[0] + r[1] == 42i16 && s[0] == 40i16 && t[0] == 40000u16) {
+        return 42;
+    }
+    return 0;
+}

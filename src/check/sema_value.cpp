@@ -6,6 +6,51 @@
 
 namespace tlc {
 
+namespace {
+
+// One shell of these scalars is a comptime array. Two shells skip `i8` and `i16`.
+bool comptime_array_leaf(const Type &type) {
+    if (type.alias_id != 0) {
+        return false;
+    }
+    if (type.kind == TypeKind::Bool) {
+        return true;
+    }
+    if (type.kind == TypeKind::Float) {
+        return type.rank == 32 || type.rank >= 64;
+    }
+    if (type.kind == TypeKind::Char) {
+        return type.rank == 1 && !type.plain_char;
+    }
+    return type.kind == TypeKind::Int && (type.rank == 2 || type.rank == 3 || type.rank == 5);
+}
+
+bool comptime_nested_leaf(const Type &type) {
+    if (type.kind == TypeKind::Char || (type.kind == TypeKind::Int && type.rank == 2)) {
+        return false;
+    }
+    return comptime_array_leaf(type);
+}
+
+// `i32` stays on the original evaluator. These widths use the wide one.
+bool comptime_wide_int(const Type &type) {
+    if (type.alias_id != 0) {
+        return false;
+    }
+    if (type.kind == TypeKind::Char) {
+        return type.rank == 1 && !type.plain_char;
+    }
+    if (type.kind != TypeKind::Int) {
+        return false;
+    }
+    if (type.rank == 2 || type.rank == 5) {
+        return true;
+    }
+    return type.rank == 3 && type.is_unsigned;
+}
+
+} // namespace
+
 Type Checker::increment_operand(const Expr &expr) {
     if (!is_lvalue_form(expr)) {
         error(expr_loc(expr), "not an lvalue");
@@ -1255,40 +1300,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                         return result;
                     }
-                    // `comptime func row(n i32) [2]i32` keeps that array. `[2]f32`, `[2]f64`,
-                    // `[2]bool`, `[2]i64`, `[2]u32`, `[2]u64`, `[2][2]i32`, `[2][2]i64`, and `[2][2]u32`
-                    // are the same call. A slice, a pointer, `[2]i8`, `[2][2]f64`, and `[2][2]bool` stay out.
+                    // One shell of `i32`, `i64`, `u32`, `u64`, `i16`, `u16`, `i8`, `u8`, `f32`, `f64`,
+                    // or `bool`. Two shells of those except `i8` and `i16`. A slice, a pointer, and
+                    // `[2][2][2]i32` stay out.
                     const Type *elem = result.element.get();
-                    const bool i32_elem = elem != nullptr && elem->kind == TypeKind::Int && elem->rank == 3 &&
-                                          !elem->is_unsigned && elem->alias_id == 0;
-                    const bool i64_elem = elem != nullptr && elem->kind == TypeKind::Int && elem->rank == 5 &&
-                                          !elem->is_unsigned && elem->alias_id == 0;
-                    const bool u32_elem = elem != nullptr && elem->kind == TypeKind::Int && elem->rank == 3 &&
-                                          elem->is_unsigned && elem->alias_id == 0;
-                    const bool f32_elem = elem != nullptr && elem->kind == TypeKind::Float && elem->rank == 32 &&
-                                          elem->alias_id == 0;
-                    const bool f64_elem = elem != nullptr && elem->kind == TypeKind::Float && elem->rank >= 64 &&
-                                          elem->alias_id == 0;
-                    const bool u64_elem = elem != nullptr && elem->kind == TypeKind::Int && elem->rank == 5 &&
-                                          elem->is_unsigned && elem->alias_id == 0;
-                    const bool bool_elem = elem != nullptr && elem->kind == TypeKind::Bool && elem->alias_id == 0;
-                    const Type *nested = elem != nullptr ? elem->element.get() : nullptr;
-                    const bool nested_i32 = elem != nullptr && elem->kind == TypeKind::Array && !is_slice(*elem) &&
-                                            elem->length > 0 && elem->alias_id == 0 && nested != nullptr &&
-                                            nested->kind == TypeKind::Int && nested->rank == 3 && !nested->is_unsigned &&
-                                            nested->alias_id == 0;
-                    const bool nested_i64 = elem != nullptr && elem->kind == TypeKind::Array && !is_slice(*elem) &&
-                                            elem->length > 0 && elem->alias_id == 0 && nested != nullptr &&
-                                            nested->kind == TypeKind::Int && nested->rank == 5 && !nested->is_unsigned &&
-                                            nested->alias_id == 0;
-                    const bool nested_u32 = elem != nullptr && elem->kind == TypeKind::Array && !is_slice(*elem) &&
-                                            elem->length > 0 && elem->alias_id == 0 && nested != nullptr &&
-                                            nested->kind == TypeKind::Int && nested->rank == 3 && nested->is_unsigned &&
-                                            nested->alias_id == 0;
+                    const bool leaf = elem != nullptr && comptime_array_leaf(*elem);
+                    const bool row = elem != nullptr && elem->kind == TypeKind::Array && !is_slice(*elem) &&
+                                     elem->length > 0 && elem->alias_id == 0 && elem->element != nullptr &&
+                                     comptime_nested_leaf(*elem->element);
                     if (result.kind == TypeKind::Array && !is_slice(result) && result.length > 0 &&
-                        result.alias_id == 0 &&
-                        (i32_elem || i64_elem || u32_elem || u64_elem || f32_elem || f64_elem || bool_elem ||
-                         nested_i32 || nested_i64 || nested_u32)) {
+                        result.alias_id == 0 && (leaf || row)) {
                         KeptStruct kept = fold_comptime_struct(node);
                         if (kept.status == KeptStruct::Status::NotConstant) {
                             error(node.loc, "global initializer is not a constant");
@@ -1305,9 +1326,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         node.comptime_struct = std::move(kept.value);
                         return result;
                     }
-                    // `comptime func wide(n i32) i64` and the same function returning `u32` or `u64`.
-                    if (result.kind == TypeKind::Int && result.alias_id == 0 &&
-                        (result.rank == 5 || (result.rank == 3 && result.is_unsigned))) {
+                    // `i64`, `u64`, `u32`, `i16`, `u16`, `i8`, and `u8`. `i32` uses the path below.
+                    if (comptime_wide_int(result)) {
                         if (!fold_comptime_wide(node)) {
                             if (diags_.size() == before) {
                                 error(node.loc, "not supported yet");

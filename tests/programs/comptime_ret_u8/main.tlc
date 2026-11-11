@@ -1,0 +1,23 @@
+comptime func still() i8 {
+    return 42i8;
+}
+
+comptime func wide(n i32) u8 {
+    var k = n;
+    return u8(k);
+}
+
+comptime func neg(n i32) i8 {
+    var k = n;
+    return i8(k);
+}
+
+func main() i32 {
+    var x = wide(200);
+    var y = still();
+    var z = neg(-1);
+    if (x == 200u8 && y == 42i8 && z == -1i8) {
+        return 42;
+    }
+    return 0;
+}

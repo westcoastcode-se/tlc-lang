@@ -1,8 +1,17 @@
-comptime func row() [2]i8 {
-    return [_]i8{4i8, 2i8};
+comptime func still() [2]i8 {
+    return [_]i8{40i8, 2i8};
+}
+
+comptime func row(n i32) [2]u8 {
+    var k = n;
+    return [_]u8{u8(k), 2u8};
 }
 
 func main() i32 {
-    var r = row();
+    var r = row(200);
+    var s = still();
+    if (r[0] == 200u8 && s[0] + s[1] == 42i8) {
+        return 42;
+    }
     return 0;
 }

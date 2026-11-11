@@ -1,8 +1,27 @@
-comptime func grid() [2][2]f64 {
+comptime func still() [2][2]f64 {
     return [_][2]f64{{0.5, 1.0}, {2.0, 0.0}};
 }
 
+comptime func grid(n i32) [2][2]f64 {
+    var a = n;
+    return [_][2]f64{{f64(a), 1.0}, {2.0, 0.0}};
+}
+
+comptime func narrow() [2][2]f32 {
+    return [_][2]f32{{0.5f, 1.0f}, {2.0f, 0.0f}};
+}
+
+comptime func bits() [2][2]u64 {
+    return [_][2]u64{{4u64, 1u64}, {2u64, 0u64}};
+}
+
 func main() i32 {
-    var g = grid();
+    var g = grid(40);
+    var h = still();
+    var f = narrow();
+    var u = bits();
+    if (g[0][0] == 40.0 && h[0][0] == 0.5 && f[0][0] == 0.5f && u[0][0] == 4u64) {
+        return 42;
+    }
     return 0;
 }

@@ -247,67 +247,41 @@ std::unique_ptr<Expr> folded_string(std::string text, SourceLoc loc) {
     return expr;
 }
 
-bool plain_i32_result(const FunctionDecl &fn) {
-    if (fn.results.size() != 1 || fn.return_type != "i32" || fn.body == nullptr) {
+bool plain_named_result(const FunctionDecl &fn, const char *name) {
+    if (fn.results.size() != 1 || fn.return_type != name || fn.body == nullptr) {
         return false;
     }
     const ResultSlot &slot = fn.results.front();
-    return slot.type_name == "i32" && slot.type_package.empty() && !slot.is_struct && !slot.is_enum &&
+    return slot.type_name == name && slot.type_package.empty() && !slot.is_struct && !slot.is_enum &&
            slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
 }
 
-bool plain_bool_result(const FunctionDecl &fn) {
-    if (fn.results.size() != 1 || fn.return_type != "bool" || fn.body == nullptr) {
-        return false;
-    }
-    const ResultSlot &slot = fn.results.front();
-    return slot.type_name == "bool" && slot.type_package.empty() && !slot.is_struct && !slot.is_enum &&
-           slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
-}
+bool plain_i32_result(const FunctionDecl &fn) { return plain_named_result(fn, "i32"); }
 
-bool plain_f64_result(const FunctionDecl &fn) {
-    if (fn.results.size() != 1 || fn.return_type != "f64" || fn.body == nullptr) {
-        return false;
-    }
-    const ResultSlot &slot = fn.results.front();
-    return slot.type_name == "f64" && slot.type_package.empty() && !slot.is_struct && !slot.is_enum &&
-           slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
-}
+bool plain_bool_result(const FunctionDecl &fn) { return plain_named_result(fn, "bool"); }
 
-bool plain_i64_result(const FunctionDecl &fn) {
-    if (fn.results.size() != 1 || fn.return_type != "i64" || fn.body == nullptr) {
-        return false;
-    }
-    const ResultSlot &slot = fn.results.front();
-    return slot.type_name == "i64" && slot.type_package.empty() && !slot.is_struct && !slot.is_enum &&
-           slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
-}
+bool plain_f64_result(const FunctionDecl &fn) { return plain_named_result(fn, "f64"); }
 
-bool plain_u32_result(const FunctionDecl &fn) {
-    if (fn.results.size() != 1 || fn.return_type != "u32" || fn.body == nullptr) {
-        return false;
-    }
-    const ResultSlot &slot = fn.results.front();
-    return slot.type_name == "u32" && slot.type_package.empty() && !slot.is_struct && !slot.is_enum &&
-           slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
-}
+bool plain_f32_result(const FunctionDecl &fn) { return plain_named_result(fn, "f32"); }
 
-bool plain_u64_result(const FunctionDecl &fn) {
-    if (fn.results.size() != 1 || fn.return_type != "u64" || fn.body == nullptr) {
-        return false;
-    }
-    const ResultSlot &slot = fn.results.front();
-    return slot.type_name == "u64" && slot.type_package.empty() && !slot.is_struct && !slot.is_enum &&
-           slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
-}
+// Widths the wide-integer evaluator keeps. `i32` stays on the original path.
+struct IntWidth {
+    const char *name;
+    int bits;
+    bool is_unsigned;
+};
 
-bool plain_f32_result(const FunctionDecl &fn) {
-    if (fn.results.size() != 1 || fn.return_type != "f32" || fn.body == nullptr) {
-        return false;
+const IntWidth *wide_int_result(const FunctionDecl &fn) {
+    static const IntWidth table[] = {
+        {"i64", 64, false}, {"u64", 64, true}, {"u32", 32, true}, {"i16", 16, false},
+        {"u16", 16, true},  {"i8", 8, false},  {"u8", 8, true},
+    };
+    for (const IntWidth &item : table) {
+        if (plain_named_result(fn, item.name)) {
+            return &item;
+        }
     }
-    const ResultSlot &slot = fn.results.front();
-    return slot.type_name == "f32" && slot.type_package.empty() && !slot.is_struct && !slot.is_enum &&
-           slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
+    return nullptr;
 }
 
 bool plain_enum_result(const FunctionDecl &fn) {
@@ -3183,11 +3157,8 @@ bool Checker::fold_comptime_wide(const Expr::Call &call) {
         return true;
     }
     const FunctionDecl *fn = comptime_callee(call);
-    const bool want_i64 = fn != nullptr && plain_i64_result(*fn);
-    const bool want_u32 = fn != nullptr && plain_u32_result(*fn);
-    const bool want_u64 = fn != nullptr && plain_u64_result(*fn);
-    if (fn == nullptr || (!want_i64 && !want_u32 && !want_u64) || fn->is_macro || fn->variadic ||
-        !fn->type_params.empty() ||
+    const IntWidth *spec = fn == nullptr ? nullptr : wide_int_result(*fn);
+    if (fn == nullptr || spec == nullptr || fn->is_macro || fn->variadic || !fn->type_params.empty() ||
         !fn->method_struct.empty() || !call.type_args.empty() || call.args.size() != fn->params.size() ||
         comptime_folding_.contains(fn) || graph_ == nullptr) {
         return false;
@@ -3227,8 +3198,16 @@ bool Checker::fold_comptime_wide(const Expr::Call &call) {
     for (const auto &item : owned) {
         exprs.push_back(item.get());
     }
-    const auto keep = [&](uint64_t value, int bits, bool is_unsigned) {
-        call.comptime_struct = wide_int_expr(value, bits, is_unsigned, call.loc);
+    const auto keep = [&](uint64_t value, int width, bool is_unsigned) {
+        // A signed `i8` or `i16` keeps the sign in the stored integer. `200u8` stays 200.
+        if (width > 0 && width < 64) {
+            const uint64_t mask = (uint64_t{1} << static_cast<unsigned>(width)) - 1u;
+            value &= mask;
+            if (!is_unsigned && (value & (uint64_t{1} << static_cast<unsigned>(width - 1))) != 0) {
+                value |= ~mask;
+            }
+        }
+        call.comptime_struct = wide_int_expr(value, width, is_unsigned, call.loc);
         return true;
     };
     ComptimeEval chain(*this, *fn, call);
@@ -3246,14 +3225,8 @@ bool Checker::fold_comptime_wide(const Expr::Call &call) {
             replace_names(rewritten, names, exprs);
             const std::size_t before_fold = diags_.size();
             if (const std::optional<WideInt> wide = fold_wide_int(*rewritten)) {
-                if (want_i64 && wide->bits == 64 && !wide->is_unsigned) {
-                    return keep(wide->value, 64, false);
-                }
-                if (want_u32 && wide->bits == 32 && wide->is_unsigned) {
-                    return keep(wide->value, 32, true);
-                }
-                if (want_u64 && wide->bits == 64 && wide->is_unsigned) {
-                    return keep(wide->value, 64, true);
+                if (wide->bits == spec->bits && wide->is_unsigned == spec->is_unsigned) {
+                    return keep(wide->value, spec->bits, spec->is_unsigned);
                 }
             }
             if (diags_.size() != before_fold || take_comptime_fault(fn->name)) {
@@ -3331,41 +3304,43 @@ bool Checker::fold_comptime_wide(const Expr::Call &call) {
             }
         }
     }
-    if (want_i64) {
-        const std::optional<int64_t> ran = eval_comptime_i64(*graph_, wrapper, file, &fault, specs, structs, aliases);
-        if (fault.valid()) {
-            const std::string message = comptime_assert_message(*wrapper.body, fault);
-            report_comptime_fault(fault, message.empty() ? std::string("index out of range") : message, fn->name);
-            return false;
+    // `i8` and `i16` are read as `i32` after the body has been checked at their own width.
+    if (spec->bits < 32) {
+        wrapper.return_type = "i32";
+        if (!wrapper.results.empty()) {
+            wrapper.results.front().type_name = "i32";
         }
-        if (!ran) {
-            return false;
-        }
-        return keep(static_cast<uint64_t>(*ran), 64, false);
     }
-    if (want_u64) {
-        // The bits are the `u64`. The `i64` evaluator reads the same integer width.
-        const std::optional<int64_t> ran = eval_comptime_i64(*graph_, wrapper, file, &fault, specs, structs, aliases);
-        if (fault.valid()) {
-            const std::string message = comptime_assert_message(*wrapper.body, fault);
-            report_comptime_fault(fault, message.empty() ? std::string("index out of range") : message, fn->name);
+    const auto failed = [&]() {
+        if (!fault.valid()) {
             return false;
         }
-        if (!ran) {
-            return false;
-        }
-        return keep(static_cast<uint64_t>(*ran), 64, true);
-    }
-    const std::optional<uint32_t> ran = eval_comptime_u32(*graph_, wrapper, file, &fault, specs, structs, aliases);
-    if (fault.valid()) {
         const std::string message = comptime_assert_message(*wrapper.body, fault);
         report_comptime_fault(fault, message.empty() ? std::string("index out of range") : message, fn->name);
-        return false;
+        return true;
+    };
+    uint64_t bits = 0;
+    if (spec->bits >= 64) {
+        const std::optional<int64_t> ran = eval_comptime_i64(*graph_, wrapper, file, &fault, specs, structs, aliases);
+        if (failed() || !ran) {
+            return false;
+        }
+        bits = static_cast<uint64_t>(*ran);
+    } else if (spec->bits == 32) {
+        const std::optional<uint32_t> ran = eval_comptime_u32(*graph_, wrapper, file, &fault, specs, structs, aliases);
+        if (failed() || !ran) {
+            return false;
+        }
+        bits = *ran;
+    } else {
+        const std::optional<int32_t> ran = eval_comptime_i32(*graph_, wrapper, file, &fault, specs, structs, aliases);
+        if (failed() || !ran) {
+            return false;
+        }
+        const uint64_t mask = (uint64_t{1} << static_cast<unsigned>(spec->bits)) - 1u;
+        bits = static_cast<uint32_t>(*ran) & mask;
     }
-    if (!ran) {
-        return false;
-    }
-    return keep(*ran, 32, true);
+    return keep(bits, spec->bits, spec->is_unsigned);
 }
 
 bool Checker::fold_comptime_f64(const Expr::Call &call) {
@@ -3557,27 +3532,14 @@ bool Checker::fold_comptime_enum(const Expr::Call &call) {
     }
     const EnumInfo &info = enum_types_[static_cast<std::size_t>(result.enum_id)];
     const Type &underlying = info.underlying;
-    // Default `i32`, plus `i8`, `u8`, `i16`, `u16`, `u32`, `i64`, `u64`, and `bool`. `i8` is a
-    // `Char` rank. A member value that does not fit the enumerator line stays out.
-    const bool i32_under = underlying.kind == TypeKind::Int && underlying.rank == 3 && !underlying.is_unsigned &&
-                           underlying.alias_id == 0;
-    const bool u32_under = underlying.kind == TypeKind::Int && underlying.rank == 3 && underlying.is_unsigned &&
-                           underlying.alias_id == 0;
-    const bool i16_under = underlying.kind == TypeKind::Int && underlying.rank == 2 && !underlying.is_unsigned &&
-                           underlying.alias_id == 0;
-    const bool u16_under = underlying.kind == TypeKind::Int && underlying.rank == 2 && underlying.is_unsigned &&
-                           underlying.alias_id == 0;
-    const bool i8_under = underlying.kind == TypeKind::Char && underlying.rank == 1 && !underlying.is_unsigned &&
-                          !underlying.plain_char && underlying.alias_id == 0;
-    const bool u8_under = underlying.kind == TypeKind::Char && underlying.rank == 1 && underlying.is_unsigned &&
-                          underlying.alias_id == 0;
+    // `i8` through `u64`, plus `bool`. `i8` is a `Char` rank. A member value that does not fit stays out.
+    const bool integer_under =
+        underlying.alias_id == 0 &&
+        ((underlying.kind == TypeKind::Int &&
+          (underlying.rank == 2 || underlying.rank == 3 || underlying.rank == 5)) ||
+         (underlying.kind == TypeKind::Char && underlying.rank == 1 && !underlying.plain_char));
     const bool bool_under = underlying.kind == TypeKind::Bool && underlying.alias_id == 0;
-    const bool i64_under = underlying.kind == TypeKind::Int && underlying.rank == 5 && !underlying.is_unsigned &&
-                           underlying.alias_id == 0;
-    const bool u64_under = underlying.kind == TypeKind::Int && underlying.rank == 5 && underlying.is_unsigned &&
-                           underlying.alias_id == 0;
-    if (!i32_under && !u32_under && !i16_under && !u16_under && !i8_under && !u8_under && !bool_under && !i64_under &&
-        !u64_under) {
+    if (!integer_under && !bool_under) {
         return false;
     }
     const auto member_at = [&](int value) -> std::string {

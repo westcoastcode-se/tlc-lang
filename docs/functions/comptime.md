@@ -592,7 +592,7 @@ retq
 
 The program returns 42.
 
-`[2]f32` is that result. `row()` is `{0.5f, 1.0f}`. `[2]u64` is that result. `row(0)[0]` is `4u64`. `[2][2]i64` and `[2][2]u32` are that call. A slice, a pointer, `[2]i8`, `[2]u8`, `[2]i16`, `[2]u16`, `[2][2]f64`, and `[2][2]bool` stay out. An `i8`, `u8`, `i16`, or `u16` result stays out.
+`[2]f32` is that result. `row()` is `{0.5f, 1.0f}`. `[2]u64` is that result. `row(0)[0]` is `4u64`. `[2]i16`, `[2]u16`, `[2]i8`, and `[2]u8` are that call. `[2][2]i64`, `[2][2]u32`, `[2][2]u64`, `[2][2]f64`, `[2][2]f32`, and `[2][2]bool` are that call. `i16`, `u16`, `i8`, and `u8` are results too. A slice, a pointer, `[2][2]i8`, and `[2][2][2]i32` stay out. `200i8` and `40000i16` are `value does not fit`.
 
 `[2]bool` is that result. `flags(1)` stores `true` in `r[0]`. The call is not emitted. `r[1]` is not read, so that store is removed.
 
@@ -806,6 +806,110 @@ retq
 
 The program returns 42.
 
+`i16` is that result. `wide(40) + 2i16` is 42. `u16` is the same call. The value is stored as an `i32`.
+
+```c
+comptime func wide(n i32) i16 {
+    var k = n;
+    return i16(k);
+}
+
+func main() i32 {
+    var x = wide(40);
+    if (x + 2i16 == 42i16) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+movl $40, -4(%rsp)               # x
+movl -4(%rsp), %eax
+addl $2, %eax                    # x + 2i16
+cmpl $42, %eax
+jne .Lother
+movl $42, %eax                   # return
+retq
+```
+
+The program returns 42. `wide(200)` when `wide` returns `u8` stores `movl $200, -4(%rsp)` and compares that with `200u8`.
+
+`[2]i16` is that result. `row(40)[0] + row(40)[1]` is 42. `[2]u16` is the same call.
+
+```c
+comptime func row(n i32) [2]i16 {
+    var k = n;
+    return [_]i16{i16(k), 2i16};
+}
+
+func main() i32 {
+    var r = row(40);
+    if (r[0] + r[1] == 42i16) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+subq $24, %rsp                   # allocate
+movw $40, 20(%rsp)               # r[0]
+movw $2, 22(%rsp)                # r[1]
+movswl 20(%rsp), %eax            # r[0]
+movl %eax, 12(%rsp)
+movl 12(%rsp), %eax
+movswl 22(%rsp), %ecx            # r[1]
+addl %ecx, %eax                  # r[0] + r[1]
+cmpl $42, %eax
+je .Lyes
+.Lyes:
+movl $42, %eax                   # return
+addq $24, %rsp                   # release
+retq
+```
+
+The program returns 42. `[2]u8` stores the low byte of `200`. That byte is `movb $-56, 6(%rsp)`. The load is `movzbl` and `cmpl $200, %eax`.
+
+`[2][2]f64` is that result. `grid(40)` stores 40 in `g[0][0]`. `[2][2]f32`, `[2][2]bool`, and `[2][2]u64` are that call.
+
+```c
+comptime func grid(n i32) [2][2]f64 {
+    var a = n;
+    return [_][2]f64{{f64(a), 1.0}, {2.0, 0.0}};
+}
+
+func main() i32 {
+    var g = grid(40);
+    if (g[0][0] == 40.0) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+subq $56, %rsp                   # allocate
+movsd (%rip), %xmm0              # g[0][0]
+movsd %xmm0, 24(%rsp)
+leaq 24(%rsp), %rax              # g[0]
+movq %rax, 16(%rsp)
+movq 16(%rsp), %rax
+movsd (%rax), %xmm0              # g[0][0]
+movsd (%rip), %xmm1              # 40.0
+ucomisd %xmm1, %xmm0
+jne .Lother
+jp .Lother
+movl $42, %eax                   # return
+addq $56, %rsp                   # release
+retq
+```
+
+The program returns 42.
+
 `enum(i8)` is that result. `pick(1)` is `Tiny.b`. `enum(u8)` is the same call. `enum(bool)` and `enum(i64)` are that call. `enum(i16)`, `enum(u16)`, `enum(u32)`, and `enum(u64)` are that call. A member value that does not fit, `b = 3000000000` on `enum(i64)`, is `not supported yet`. `b = 40000` on `enum(i16)` is `type mismatch`. `b = 3000000000u32` on `enum(u32)` and `b = 4u64` on `enum(u64)` are `not supported yet` on the value.
 
 ```c
@@ -968,7 +1072,7 @@ retq
 
 The program returns 42.
 
-A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an `i64`, not a `u32`, not a `u64`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, not an `[N]i64`, not an `[N]u32`, not an `[N]u64`, not an `[N]f32`, not an `[N]f64`, not an `[N]bool`, not a `[2][2]i32`, not a `[2][2]i64`, not a `[2][2]u32`, and not a constant `[]const u8` is `not supported yet`. An enumerator whose underlying type is `i8`, `u8`, `i16`, `u16`, `u32`, `bool`, `i64`, or `u64` is that call. `[2]i8` and `[2][2]f64` stay `not supported yet`.
+A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an `i64`, not a `u32`, not a `u64`, not an `i16`, not a `u16`, not an `i8`, not a `u8`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, not an `[N]i64`, not an `[N]u32`, not an `[N]u64`, not an `[N]f32`, not an `[N]f64`, not an `[N]i16`, not an `[N]u16`, not an `[N]i8`, not an `[N]u8`, not an `[N]bool`, not a `[2][2]i32`, not a `[2][2]i64`, not a `[2][2]u32`, not a `[2][2]u64`, not a `[2][2]f64`, not a `[2][2]f32`, not a `[2][2]bool`, and not a constant `[]const u8` is `not supported yet`. An enumerator whose underlying type is `i8`, `u8`, `i16`, `u16`, `u32`, `bool`, `i64`, or `u64` is that call. `[2][2]i8` and `[2][2][2]i32` stay `not supported yet`.
 
 `emit` is not valid in a `comptime func`.
 

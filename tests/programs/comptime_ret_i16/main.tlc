@@ -1,0 +1,23 @@
+comptime func still() i16 {
+    return 42i16;
+}
+
+comptime func wide(n i32) i16 {
+    var k = n;
+    return i16(k);
+}
+
+comptime func narrow(n i32) u16 {
+    var k = n;
+    return u16(k);
+}
+
+func main() i32 {
+    var x = wide(40);
+    var y = still();
+    var z = narrow(2);
+    if (x + z == 42i16 && y == 42i16) {
+        return 42;
+    }
+    return 0;
+}

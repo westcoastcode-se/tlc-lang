@@ -797,7 +797,7 @@ class Checker {
     std::optional<int> fold_comptime_call(const Expr::Call &call);
     // `comptime func bias(n i32) f64`. A constant `return` folds. A body with statements is run.
     bool fold_comptime_f64(const Expr::Call &call);
-    // `comptime func wide(n i32) i64` and the same function returning `u32` or `u64`.
+    // A comptime integer result other than `i32`: `i64`, `u64`, `u32`, `i16`, `u16`, `i8`, `u8`.
     bool fold_comptime_wide(const Expr::Call &call);
     // `comptime func pick() Order`. A constant `return` folds. A body with statements is run.
     bool fold_comptime_enum(const Expr::Call &call);

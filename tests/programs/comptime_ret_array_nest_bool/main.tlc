@@ -1,8 +1,17 @@
-comptime func grid() [2][2]bool {
+comptime func still() [2][2]bool {
     return [_][2]bool{{true, false}, {false, true}};
 }
 
+comptime func grid(n i32) [2][2]bool {
+    var a = n == 1;
+    return [_][2]bool{{a, false}, {true, false}};
+}
+
 func main() i32 {
-    var g = grid();
+    var g = grid(1);
+    var h = still();
+    if (g[0][0] && h[0][0]) {
+        return 42;
+    }
     return 0;
 }
