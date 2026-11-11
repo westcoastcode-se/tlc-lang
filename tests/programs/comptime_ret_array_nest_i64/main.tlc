@@ -1,0 +1,22 @@
+comptime func still() [2][2]i64 {
+    return [_][2]i64{{40, 1}, {2, 0}};
+}
+
+comptime func grid(n i32) [2][2]i64 {
+    var a = n;
+    return [_][2]i64{{i64(a), 1}, {2, 0}};
+}
+
+comptime func box() [2][2]u32 {
+    return [_][2]u32{{40u32, 1u32}, {2u32, 0u32}};
+}
+
+func main() i32 {
+    var g = grid(40);
+    var h = still();
+    var u = box();
+    if (g[0][0] == 40 && h[0][0] + h[1][0] == 42 && u[0][0] == 40u32) {
+        return 42;
+    }
+    return 0;
+}

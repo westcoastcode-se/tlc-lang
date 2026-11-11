@@ -1,0 +1,5 @@
+type Tiny enum(i16) { a, b = 40000 }
+
+func main() i32 {
+    return 0;
+}

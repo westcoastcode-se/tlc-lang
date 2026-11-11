@@ -943,12 +943,23 @@ Decoded decode_slot(const ComptimeSlot &slot, const uint8_t *base, uint64_t base
         return fail_constant();
     case ComptimeSlot::Kind::Int: {
         const uint64_t raw = read_bits(bytes, slot.size, little);
-        // An `i64` or `u32` element keeps its suffix. `3000000000` does not fit in `i32`.
+        // An `i64`, `u64`, or `u32` element keeps its suffix. `3000000000` does not fit in `i32`.
         if (slot.bits == 64 && !slot.is_unsigned) {
             auto expr = std::make_unique<Expr>();
             Expr::Int node;
             node.value = raw;
             node.suffix.bits = 64;
+            expr->data = std::move(node);
+            out.status = ComptimeStructValue::Status::Value;
+            out.expr = std::move(expr);
+            return out;
+        }
+        if (slot.bits == 64 && slot.is_unsigned) {
+            auto expr = std::make_unique<Expr>();
+            Expr::Int node;
+            node.value = raw;
+            node.suffix.bits = 64;
+            node.suffix.is_unsigned = true;
             expr->data = std::move(node);
             out.status = ComptimeStructValue::Status::Value;
             out.expr = std::move(expr);
@@ -1109,6 +1120,8 @@ Decoded decode_slot(const ComptimeSlot &slot, const uint8_t *base, uint64_t base
             init.type_name = "i64";
         } else if (child.kind == ComptimeSlot::Kind::Int && child.bits == 32 && child.is_unsigned) {
             init.type_name = "u32";
+        } else if (child.kind == ComptimeSlot::Kind::Int && child.bits == 64 && child.is_unsigned) {
+            init.type_name = "u64";
         } else if (child.kind == ComptimeSlot::Kind::F32) {
             init.type_name = "f32";
         } else if (child.kind == ComptimeSlot::Kind::F64) {
@@ -1116,10 +1129,18 @@ Decoded decode_slot(const ComptimeSlot &slot, const uint8_t *base, uint64_t base
         } else if (child.kind == ComptimeSlot::Kind::Bool) {
             init.type_name = "bool";
         } else if (child.kind == ComptimeSlot::Kind::Array && child.children.size() == 1) {
-            // `[2][2]i32` only. `[2][2]f64` and `[2][2]bool` leave `type_name` empty.
+            // `[2][2]i32`, `[2][2]i64`, and `[2][2]u32`. `[2][2]f64` and `[2][2]bool` leave `type_name` empty.
             const ComptimeSlot &inner = child.children.front();
             if (inner.kind == ComptimeSlot::Kind::Int && inner.bits == 32 && !inner.is_unsigned) {
                 init.type_name = "i32";
+                init.elem_is_array = true;
+                init.elem_array_len = static_cast<int>(child.count);
+            } else if (inner.kind == ComptimeSlot::Kind::Int && inner.bits == 64 && !inner.is_unsigned) {
+                init.type_name = "i64";
+                init.elem_is_array = true;
+                init.elem_array_len = static_cast<int>(child.count);
+            } else if (inner.kind == ComptimeSlot::Kind::Int && inner.bits == 32 && inner.is_unsigned) {
+                init.type_name = "u32";
                 init.elem_is_array = true;
                 init.elem_array_len = static_cast<int>(child.count);
             }
@@ -1263,17 +1284,20 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
             }
         }
     }
-    // `[2]i32`, `[2]i64`, `[2]u32`, `[2]f32`, `[2]f64`, `[2]bool`, and `[2][2]i32`. A slice,
-    // a pointer, `[2]u64`, `[2]i8`, `[2][2]f64`, and `[2][2]bool` stay out.
+    // `[2]i32`, `[2]i64`, `[2]u32`, `[2]u64`, `[2]f32`, `[2]f64`, `[2]bool`, `[2][2]i32`,
+    // `[2][2]i64`, and `[2][2]u32`. A slice, a pointer, `[2]i8`, `[2][2]f64`, and `[2][2]bool` stay out.
     const bool array_elem_ok = !fn.results.empty() &&
                                (fn.results.front().type_name == "i32" || fn.results.front().type_name == "i64" ||
-                                fn.results.front().type_name == "u32" || fn.results.front().type_name == "f32" ||
-                                fn.results.front().type_name == "f64" || fn.results.front().type_name == "bool");
-    const bool nested_i32 = array_shells == 2 && !fn.results.empty() && fn.results.front().type_name == "i32";
+                                fn.results.front().type_name == "u32" || fn.results.front().type_name == "u64" ||
+                                fn.results.front().type_name == "f32" || fn.results.front().type_name == "f64" ||
+                                fn.results.front().type_name == "bool");
+    const std::string &elem_name_early = fn.results.empty() ? std::string() : fn.results.front().type_name;
+    const bool nested_wide = array_shells == 2 &&
+                             (elem_name_early == "i32" || elem_name_early == "i64" || elem_name_early == "u32");
     const bool one_array = !many_results && fn.results.size() == 1 && fn.results.front().is_array &&
                            fn.results.front().array_len > 0 && fn.results.front().indirections == 0 &&
                            !fn.results.front().is_tuple && !fn.results.front().is_fn_ptr && array_elem_ok &&
-                           fn.results.front().type_package.empty() && (array_shells <= 1 || nested_i32);
+                           fn.results.front().type_package.empty() && (array_shells <= 1 || nested_wide);
     const StructLayout *layout = nullptr;
     if (!many_results && !one_tuple && !one_array) {
         const Lowered ret = lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, false, 0, false);
@@ -1479,6 +1503,9 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
         } else if (elem_name == "u32") {
             field.elem_unsigned = true;
             field.elem_bits = 32;
+        } else if (elem_name == "u64") {
+            field.elem_unsigned = true;
+            field.elem_bits = 64;
         } else if (elem_name == "i64") {
             field.elem_bits = 64;
         }

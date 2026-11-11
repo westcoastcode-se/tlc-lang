@@ -1,0 +1,7 @@
+func main() i32 {
+    var n = 4u64;
+    comptime if (n > 0) {
+        return 42;
+    }
+    return 1;
+}

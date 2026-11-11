@@ -797,7 +797,7 @@ class Checker {
     std::optional<int> fold_comptime_call(const Expr::Call &call);
     // `comptime func bias(n i32) f64`. A constant `return` folds. A body with statements is run.
     bool fold_comptime_f64(const Expr::Call &call);
-    // `comptime func wide(n i32) i64` and the same function returning `u32`. `u64` stays out.
+    // `comptime func wide(n i32) i64` and the same function returning `u32` or `u64`.
     bool fold_comptime_wide(const Expr::Call &call);
     // `comptime func pick() Order`. A constant `return` folds. A body with statements is run.
     bool fold_comptime_enum(const Expr::Call &call);
@@ -916,6 +916,8 @@ class Checker {
         bool is_unsigned = false;
     };
     std::optional<WideInt> fold_wide_int(const Expr &expr);
+    // File-scope `const k = 3000000000u32`, `3000000000`, or `4u64`. A local `const` is not.
+    std::optional<WideInt> file_scope_const_wide(const Expr &expr);
     // Replace that sum with the wrapped literal. False when `fold_int` already holds it.
     bool rewrite_wide_int(std::unique_ptr<Expr> &expr);
     // A condition whose values are comptime, including an enumerator compare.

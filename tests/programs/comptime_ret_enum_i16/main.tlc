@@ -1,0 +1,39 @@
+type S enum(i16) { a, b }
+type U enum(u16) { a, b }
+type W enum(u32) { a, b }
+type Q enum(u64) { a, b }
+
+comptime func still() S {
+    return S.b;
+}
+
+comptime func pick(n i32) S {
+    var k = n;
+    if (k == 1) { return S.b; }
+    return S.a;
+}
+
+comptime func picku(n i32) U {
+    var k = n;
+    if (k == 1) { return U.b; }
+    return U.a;
+}
+
+comptime func pickw(n i32) W {
+    var k = n;
+    if (k == 1) { return W.b; }
+    return W.a;
+}
+
+comptime func pickq(n i32) Q {
+    var k = n;
+    if (k == 1) { return Q.b; }
+    return Q.a;
+}
+
+func main() i32 {
+    if (pick(1) == S.b && still() == S.b && picku(1) == U.b && pickw(1) == W.b && pickq(1) == Q.b) {
+        return 42;
+    }
+    return 0;
+}

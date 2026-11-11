@@ -1,0 +1,51 @@
+const wide = 3000000000u32;
+const big = 3000000000;
+const four = 4u64;
+const fit_u = 40u32;
+const fit_s = 40i64;
+
+comptime func field(p u32) i32 {
+    if (p == 3000000000u32) {
+        return 10;
+    }
+    return 0;
+}
+
+comptime func signed(p i64) i32 {
+    if (p == 3000000000) {
+        return 10;
+    }
+    return 0;
+}
+
+comptime func bits(p u64) i32 {
+    if (p == 4u64) {
+        return 10;
+    }
+    return 0;
+}
+
+comptime func small_u(p u32) i32 {
+    if (p == 40u32) {
+        return 6;
+    }
+    return 0;
+}
+
+comptime func small_s(p i64) i32 {
+    if (p == 40) {
+        return 6;
+    }
+    return 0;
+}
+
+comptime func pair(p (u32, i32)) i32 {
+    if (p[0] == 3000000000u32) {
+        return p[1];
+    }
+    return 0;
+}
+
+func main() i32 {
+    return field(wide) + signed(big) + bits(four) + small_u(fit_u) + small_s(fit_s) + pair((wide, 0));
+}

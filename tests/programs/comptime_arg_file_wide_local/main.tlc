@@ -1,0 +1,11 @@
+comptime func field(p u32) i32 {
+    if (p == 3000000000u32) {
+        return 42;
+    }
+    return 0;
+}
+
+func main() i32 {
+    const k = 3000000000u32;
+    return field(k);
+}

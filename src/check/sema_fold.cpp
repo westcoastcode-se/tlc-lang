@@ -667,8 +667,8 @@ std::optional<int> Checker::fold_condition(const Expr &expr) {
                         return node.op == TokenKind::EqEq ? (same ? 1 : 0) : (same ? 0 : 1);
                     }
                 }
-                // `comptime const n = 3000000000u32` then `comptime if (n > 0)`.
-                // `u64` stays out. `[n]i32` and a generic value argument do not use this fold.
+                // `comptime const n = 4u64` then `comptime if (n > 0)`.
+                // `[n]i32` and a generic value argument do not use this fold. `comptime switch` stays `i32`.
                 const bool compare = node.op == TokenKind::EqEq || node.op == TokenKind::BangEq ||
                                      node.op == TokenKind::Lt || node.op == TokenKind::Gt || node.op == TokenKind::Le ||
                                      node.op == TokenKind::Ge;
@@ -699,7 +699,7 @@ std::optional<int> Checker::fold_condition(const Expr &expr) {
                                    (left->bits > 32 || left->is_unsigned)) {
                             kept = &*left;
                         }
-                        if (kept != nullptr && !(kept->bits == 64 && kept->is_unsigned)) {
+                        if (kept != nullptr) {
                             const auto as_kept = [&](const WideInt &from) -> uint64_t {
                                 if (kept->bits == 64 && !kept->is_unsigned && from.bits <= 32 && !from.is_unsigned) {
                                     return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(from.value)));
@@ -1280,6 +1280,12 @@ std::optional<Checker::WideInt> Checker::fold_wide_int(const Expr &expr) {
                     default: return std::nullopt;
                     }
                     return wide;
+                } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                    // `wide(0) > 0u64` reads the integer that call kept.
+                    if (item.comptime_struct == nullptr) {
+                        return std::nullopt;
+                    }
+                    return self(self, *item.comptime_struct, depth + 1, seen);
                 } else {
                     return std::nullopt;
                 }
@@ -1788,6 +1794,41 @@ std::optional<int> Checker::file_scope_const_int(const Expr &expr) {
     return symbol->const_value;
 }
 
+std::optional<Checker::WideInt> Checker::file_scope_const_wide(const Expr &expr) {
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return std::nullopt;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol == nullptr || symbol->is_auto || symbol->type.alias_id != 0 || symbol->type.kind != TypeKind::Int) {
+        return std::nullopt;
+    }
+    const bool i64 = symbol->type.rank == 5 && !symbol->type.is_unsigned;
+    const bool u32 = symbol->type.rank == 3 && symbol->type.is_unsigned;
+    const bool u64 = symbol->type.rank == 5 && symbol->type.is_unsigned;
+    if (!i64 && !u32 && !u64) {
+        return std::nullopt;
+    }
+    const VarDecl *var = global_var(named->text);
+    if (var == nullptr || !var->is_const_decl || var->init == nullptr) {
+        return std::nullopt;
+    }
+    const std::optional<WideInt> wide = fold_wide_int(*var->init);
+    if (!wide) {
+        return std::nullopt;
+    }
+    if (i64 && !(wide->bits == 64 && !wide->is_unsigned)) {
+        return std::nullopt;
+    }
+    if (u32 && !(wide->bits == 32 && wide->is_unsigned)) {
+        return std::nullopt;
+    }
+    if (u64 && !(wide->bits == 64 && wide->is_unsigned)) {
+        return std::nullopt;
+    }
+    return wide;
+}
+
 std::optional<int> Checker::string_bound(const Expr &bound, const Expr *base) {
     if (const std::optional<int> at = fold_int(bound)) {
         return at;
@@ -2054,7 +2095,8 @@ bool Checker::argument_is_comptime(const Expr &arg) {
     }
     for (const auto &element : tuple->elements) {
         if (element == nullptr || (!argument_is_comptime(*element) && !file_scope_const_int(*element) &&
-                                   !file_scope_const_bool(*element) && file_scope_const_float(*element) == nullptr &&
+                                   !file_scope_const_wide(*element) && !file_scope_const_bool(*element) &&
+                                   file_scope_const_float(*element) == nullptr &&
                                    file_scope_const_struct(*element) == nullptr &&
                                    file_scope_const_enum(*element) == nullptr &&
                                    file_scope_const_array(*element) == nullptr &&
@@ -2337,6 +2379,10 @@ bool Checker::comptime_constant(const Expr &expr) {
         if (file_scope_const_bool(expr).has_value() || file_scope_const_float(expr) != nullptr) {
             return true;
         }
+        // `const k = 3000000000u32`, `3000000000`, and `4u64`. A local const stays out.
+        if (file_scope_const_wide(expr)) {
+            return true;
+        }
         return false;
     }
     if (std::holds_alternative<Expr::Float>(expr.data)) {
@@ -2430,6 +2476,10 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
                         element = std::move(literal);
                         continue;
                     }
+                    if (const std::optional<WideInt> wide = file_scope_const_wide(*element)) {
+                        element = wide_int_expr(wide->value, wide->bits, wide->is_unsigned, expr_loc(*element));
+                        continue;
+                    }
                     if (const std::optional<bool> flag = file_scope_const_bool(*element)) {
                         auto literal = std::make_unique<Expr>();
                         Expr::Bool node;
@@ -2507,6 +2557,10 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
             if (const Expr *init = file_scope_const_float(*cursor)) {
                 cursor = init;
                 continue;
+            }
+            // `const k = 3000000000u32` at file scope. A local const is not.
+            if (const std::optional<WideInt> wide = file_scope_const_wide(*cursor)) {
+                return wide_int_expr(wide->value, wide->bits, wide->is_unsigned, expr_loc(*cursor));
             }
             break;
         }
@@ -3503,9 +3557,15 @@ bool Checker::fold_comptime_enum(const Expr::Call &call) {
     }
     const EnumInfo &info = enum_types_[static_cast<std::size_t>(result.enum_id)];
     const Type &underlying = info.underlying;
-    // Default `i32`, plus `enum(i8)`, `enum(u8)`, `enum(bool)`, and `enum(i64)`. `i8` is a
+    // Default `i32`, plus `i8`, `u8`, `i16`, `u16`, `u32`, `i64`, `u64`, and `bool`. `i8` is a
     // `Char` rank. A member value that does not fit the enumerator line stays out.
     const bool i32_under = underlying.kind == TypeKind::Int && underlying.rank == 3 && !underlying.is_unsigned &&
+                           underlying.alias_id == 0;
+    const bool u32_under = underlying.kind == TypeKind::Int && underlying.rank == 3 && underlying.is_unsigned &&
+                           underlying.alias_id == 0;
+    const bool i16_under = underlying.kind == TypeKind::Int && underlying.rank == 2 && !underlying.is_unsigned &&
+                           underlying.alias_id == 0;
+    const bool u16_under = underlying.kind == TypeKind::Int && underlying.rank == 2 && underlying.is_unsigned &&
                            underlying.alias_id == 0;
     const bool i8_under = underlying.kind == TypeKind::Char && underlying.rank == 1 && !underlying.is_unsigned &&
                           !underlying.plain_char && underlying.alias_id == 0;
@@ -3514,7 +3574,10 @@ bool Checker::fold_comptime_enum(const Expr::Call &call) {
     const bool bool_under = underlying.kind == TypeKind::Bool && underlying.alias_id == 0;
     const bool i64_under = underlying.kind == TypeKind::Int && underlying.rank == 5 && !underlying.is_unsigned &&
                            underlying.alias_id == 0;
-    if (!i32_under && !i8_under && !u8_under && !bool_under && !i64_under) {
+    const bool u64_under = underlying.kind == TypeKind::Int && underlying.rank == 5 && underlying.is_unsigned &&
+                           underlying.alias_id == 0;
+    if (!i32_under && !u32_under && !i16_under && !u16_under && !i8_under && !u8_under && !bool_under && !i64_under &&
+        !u64_under) {
         return false;
     }
     const auto member_at = [&](int value) -> std::string {
@@ -4262,13 +4325,13 @@ bool Checker::unmarked_comptime_arg(const Expr &expr) {
             [&](const auto &item) -> bool {
                 using T = std::decay_t<decltype(item)>;
                 if constexpr (std::is_same_v<T, Expr::Name>) {
-                    // `const k = 40`, `const origin = Point{.x = 40, .y = 2}`, `const k = 0.5`,
-                    // and `const flag = true` at file scope. An enumerator and `const n = Integer(4)`
-                    // are the same argument. A local `const` and a `var` stay out.
-                    if (file_scope_const_int(node) || file_scope_const_array(node) != nullptr ||
-                        file_scope_const_struct(node) != nullptr || file_scope_const_enum(node) != nullptr ||
-                        file_scope_const_alias(node) != nullptr || file_scope_const_bool(node).has_value() ||
-                        file_scope_const_float(node) != nullptr) {
+                    // `const k = 40`, `const k = 3000000000u32`, `const origin = Point{.x = 40, .y = 2}`,
+                    // `const k = 0.5`, and `const flag = true` at file scope. An enumerator and
+                    // `const n = Integer(4)` are the same argument. A local `const` and a `var` stay out.
+                    if (file_scope_const_int(node) || file_scope_const_wide(node) ||
+                        file_scope_const_array(node) != nullptr || file_scope_const_struct(node) != nullptr ||
+                        file_scope_const_enum(node) != nullptr || file_scope_const_alias(node) != nullptr ||
+                        file_scope_const_bool(node).has_value() || file_scope_const_float(node) != nullptr) {
                         return false;
                     }
                     const Symbol *symbol = lookup(item.text);

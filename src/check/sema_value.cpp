@@ -1256,8 +1256,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return result;
                     }
                     // `comptime func row(n i32) [2]i32` keeps that array. `[2]f32`, `[2]f64`,
-                    // `[2]bool`, `[2]i64`, `[2]u32`, and `[2][2]i32` are the same call. A slice,
-                    // a pointer, `[2]u64`, `[2]i8`, `[2][2]f64`, and `[2][2]bool` stay out.
+                    // `[2]bool`, `[2]i64`, `[2]u32`, `[2]u64`, `[2][2]i32`, `[2][2]i64`, and `[2][2]u32`
+                    // are the same call. A slice, a pointer, `[2]i8`, `[2][2]f64`, and `[2][2]bool` stay out.
                     const Type *elem = result.element.get();
                     const bool i32_elem = elem != nullptr && elem->kind == TypeKind::Int && elem->rank == 3 &&
                                           !elem->is_unsigned && elem->alias_id == 0;
@@ -1269,15 +1269,26 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                           elem->alias_id == 0;
                     const bool f64_elem = elem != nullptr && elem->kind == TypeKind::Float && elem->rank >= 64 &&
                                           elem->alias_id == 0;
+                    const bool u64_elem = elem != nullptr && elem->kind == TypeKind::Int && elem->rank == 5 &&
+                                          elem->is_unsigned && elem->alias_id == 0;
                     const bool bool_elem = elem != nullptr && elem->kind == TypeKind::Bool && elem->alias_id == 0;
                     const Type *nested = elem != nullptr ? elem->element.get() : nullptr;
                     const bool nested_i32 = elem != nullptr && elem->kind == TypeKind::Array && !is_slice(*elem) &&
                                             elem->length > 0 && elem->alias_id == 0 && nested != nullptr &&
                                             nested->kind == TypeKind::Int && nested->rank == 3 && !nested->is_unsigned &&
                                             nested->alias_id == 0;
+                    const bool nested_i64 = elem != nullptr && elem->kind == TypeKind::Array && !is_slice(*elem) &&
+                                            elem->length > 0 && elem->alias_id == 0 && nested != nullptr &&
+                                            nested->kind == TypeKind::Int && nested->rank == 5 && !nested->is_unsigned &&
+                                            nested->alias_id == 0;
+                    const bool nested_u32 = elem != nullptr && elem->kind == TypeKind::Array && !is_slice(*elem) &&
+                                            elem->length > 0 && elem->alias_id == 0 && nested != nullptr &&
+                                            nested->kind == TypeKind::Int && nested->rank == 3 && nested->is_unsigned &&
+                                            nested->alias_id == 0;
                     if (result.kind == TypeKind::Array && !is_slice(result) && result.length > 0 &&
                         result.alias_id == 0 &&
-                        (i32_elem || i64_elem || u32_elem || f32_elem || f64_elem || bool_elem || nested_i32)) {
+                        (i32_elem || i64_elem || u32_elem || u64_elem || f32_elem || f64_elem || bool_elem ||
+                         nested_i32 || nested_i64 || nested_u32)) {
                         KeptStruct kept = fold_comptime_struct(node);
                         if (kept.status == KeptStruct::Status::NotConstant) {
                             error(node.loc, "global initializer is not a constant");
@@ -1295,7 +1306,6 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return result;
                     }
                     // `comptime func wide(n i32) i64` and the same function returning `u32` or `u64`.
-                    // `comptime if` on a `u64` stays `not supported yet`.
                     if (result.kind == TypeKind::Int && result.alias_id == 0 &&
                         (result.rank == 5 || (result.rank == 3 && result.is_unsigned))) {
                         if (!fold_comptime_wide(node)) {
