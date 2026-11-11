@@ -1,0 +1,10 @@
+var n i32 = 1;
+
+comptime func give() *i32 {
+    return &n;
+}
+
+func main() i32 {
+    var p = give();
+    return 0;
+}

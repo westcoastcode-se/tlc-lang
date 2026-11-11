@@ -1,8 +1,18 @@
-comptime func grid() [2][2]i32 {
+comptime func still() [2][2]i32 {
     return [_][2]i32{{40, 1}, {2, 0}};
 }
 
+comptime func grid(n i32) [2][2]i32 {
+    var a = n;
+    var b = a + 2;
+    return [_][2]i32{{a, 1}, {b, 0}};
+}
+
 func main() i32 {
-    var g = grid();
-    return g[0][0];
+    var g = grid(40);
+    var h = still();
+    if (g[0][0] + g[1][0] == 82 && h[0][0] + h[1][0] == 42) {
+        return 42;
+    }
+    return 0;
 }

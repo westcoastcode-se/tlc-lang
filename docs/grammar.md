@@ -188,9 +188,9 @@ A string is a literal, a constant range, or a `comptime const` in the same file.
 
 A `var` is not. A `const` is not, until `comptime const folded = name`.
 
-A `var` or a `const` passed to a `comptime func` is `not supported yet`.
+A local `const` or a `var` passed to a `comptime func` is `not supported yet`. `const k = 0.5` then `field(k)` is `movl $42, %eax` and `retq`. `const k = 0.5f` and `const flag = true` are that call.
 
-A `var` or a `const` passed to a `comptime` parameter on an ordinary function is `type mismatch`.
+`const scale = 0.5` on `func take(comptime v f64, n i32)` calls `main.take.spec.d3fe0000000000000` when the file is `main.tlc`. A local `const` on that parameter is `type mismatch`.
 
 A `comptime const` whose initializer folds to `i32` is a comptime argument.
 
@@ -238,7 +238,7 @@ A runtime `const` of a tuple is `type mismatch`.
 
 `return` leaves the function.
 
-A call used as a value folds when every argument is a comptime value and the result is `i32`, a `bool`, an `f32`, an `f64`, an `i64`, a `u32`, an enumerator, a struct, a tuple, an `[N]i32`, an `[N]i64`, an `[N]u32`, an `[N]f32`, an `[N]f64`, an `[N]bool`, or a constant `[]const u8`. An enumerator result whose underlying type is `i8` or `u8` is that call. `enum(bool)` and `enum(i64)` stay `not supported yet`.
+A call used as a value folds when every argument is a comptime value and the result is `i32`, a `bool`, an `f32`, an `f64`, an `i64`, a `u32`, a `u64`, an enumerator, a struct, a tuple, an `[N]i32`, an `[N]i64`, an `[N]u32`, an `[N]f32`, an `[N]f64`, an `[N]bool`, a `[2][2]i32`, or a constant `[]const u8`. An enumerator result whose underlying type is `i8`, `u8`, `bool`, or `i64` is that call. A member value that does not fit is `not supported yet`. `[2][2]f64`, `[2][2]bool`, a slice, and a pointer stay `not supported yet`.
 
 A body that is one `return` of a constant `i32` folds. A body with statements is compiled and run, and that integer is the constant.
 
@@ -272,11 +272,11 @@ A data pointer field and a union result are `global initializer is not a constan
 
 A `[]const u8` result is that string. `cut("Hello, world")` is `Hello` when the body keeps the bytes before `,`. `cut("Hello, world").len` is `movl $5, %eax` and `retq`. A `var` or a `const` passed to that function is `not supported yet`.
 
-A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an `i64`, not a `u32`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, not an `[N]i64`, not an `[N]u32`, not an `[N]f32`, not an `[N]f64`, not an `[N]bool`, and not a constant `[]const u8` is `not supported yet`. A `u64` result is `not supported yet`. An enumerator whose underlying type is not `i32`, not `i8`, and not `u8` is `not supported yet`. `comptime if (pos(3))` when `pos` returns `bool` is `movl $42, %eax` and `retq`. A tuple result `pair(40)[0] + pair(40)[1]` is `movl $82, %eax` and `retq`.
+A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an `i64`, not a `u32`, not a `u64`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, not an `[N]i64`, not an `[N]u32`, not an `[N]f32`, not an `[N]f64`, not an `[N]bool`, not a `[2][2]i32`, and not a constant `[]const u8` is `not supported yet`. An enumerator whose underlying type is `bool` or `i64` is that call. A member value that does not fit is `not supported yet`. `comptime if` on a `u64` stays `not supported yet`. `comptime if (pos(3))` when `pos` returns `bool` is `movl $42, %eax` and `retq`. A tuple result `pair(40)[0] + pair(40)[1]` is `movl $82, %eax` and `retq`. `wide(0)` when `wide` returns `u64` and the body is `return 4u64 + u64(k)` is `movq $4, -8(%rsp)` and `cmpq $4, -8(%rsp)`.
 
 `emit` is not valid in a `comptime func`.
 
-A `var` or a `const` passed to a `comptime func` is `not supported yet`.
+A local `const` or a `var` passed to a `comptime func` is `not supported yet`. `const k = 0.5` then `field(k)` is `movl $42, %eax` and `retq`. `const k = 0.5f` and `const flag = true` are that call.
 
 `value := 10` and `value := comptime_func()` are comptime until a store or `&value`. `var value = 10` is not. A store in one `if` arm drops the value after the `if`. A store in a loop drops it for the whole loop. A store in a `switch` drops it for the whole `switch` and after it. At file scope the name stays comptime when no function in the package stores it. `export value := 10` does not.
 

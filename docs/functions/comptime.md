@@ -562,9 +562,37 @@ movl $42, %eax                   # return
 retq
 ```
 
-The program returns 42. `u32` is the same call. `wide(0)` is `3000000000u32`. A `u64` result is `not supported yet`.
+The program returns 42. `u32` is the same call. `wide(0)` is `3000000000u32`.
 
-`[2]f32` is that result. `row()` is `{0.5f, 1.0f}`. A slice, a pointer, `[2]u64`, `[2]i8`, and an array of arrays stay out.
+`u64` is that result. `wide(0)` is `4u64`. A body with statements is compiled and run. The call is not emitted. `comptime if` on a `u64` stays `not supported yet`.
+
+```c
+comptime func wide(n i32) u64 {
+    var k = n;
+    return 4u64 + u64(k);
+}
+
+func main() i32 {
+    var x = wide(0);
+    if (x == 4u64) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+movq $4, -8(%rsp)                # x
+cmpq $4, -8(%rsp)                # x == 4u64
+jne .Lother
+movl $42, %eax                   # return
+retq
+```
+
+The program returns 42.
+
+`[2]f32` is that result. `row()` is `{0.5f, 1.0f}`. A slice, a pointer, `[2]u64`, `[2]i8`, `[2][2]f64`, and `[2][2]bool` stay out.
 
 `[2]bool` is that result. `flags(1)` stores `true` in `r[0]`. The call is not emitted. `r[1]` is not read, so that store is removed.
 
@@ -676,7 +704,44 @@ retq
 
 The program returns 42.
 
-`enum(i8)` is that result. `pick(1)` is `Tiny.b`. `enum(u8)` is the same call. `enum(bool)` and `enum(i64)` stay `not supported yet`.
+`[2][2]i32` is that result. `grid(40)` stores 40 and 42. `g[0][0] + g[1][0]` is 82. The call is not emitted. `return [_][2]i32{{40, 1}, {2, 0}}` then `g[0][0] + g[1][0]` is 42.
+
+```c
+comptime func grid(n i32) [2][2]i32 {
+    var a = n;
+    var b = a + 2;
+    return [_][2]i32{{a, 1}, {b, 0}};
+}
+
+func main() i32 {
+    var g = grid(40);
+    return g[0][0] + g[1][0];
+}
+```
+
+```asm
+main:
+subq $56, %rsp                   # allocate
+movl $40, 40(%rsp)               # g[0][0]
+movl $42, 48(%rsp)               # g[1][0]
+leaq 40(%rsp), %rax              # g[0]
+movq %rax, 32(%rsp)
+movq 32(%rsp), %rax
+movl (%rax), %eax                # g[0][0]
+movl %eax, 12(%rsp)
+leaq 40(%rsp), %rax              # g[1]
+addq $8, %rax
+movq %rax, 16(%rsp)
+movq 16(%rsp), %rcx
+movl 12(%rsp), %eax
+addl (%rcx), %eax                # g[0][0] + g[1][0]
+addq $56, %rsp                   # release
+retq
+```
+
+The program returns 82.
+
+`enum(i8)` is that result. `pick(1)` is `Tiny.b`. `enum(u8)` is the same call. `enum(bool)` and `enum(i64)` are that call. A member value that does not fit, `b = 3000000000` on `enum(i64)`, is `not supported yet`.
 
 ```c
 type Tiny enum(i8) { a, b }
@@ -701,6 +766,71 @@ main:
 movb $1, -1(%rsp)                # x = Tiny.b
 movsbl -1(%rsp), %eax
 cmpl $1, %eax                    # x == Tiny.b
+jne .Lother
+movl $42, %eax                   # return
+retq
+```
+
+The program returns 42.
+
+`enum(bool)` is that result. `pick(1)` is `Flag.yes`.
+
+```c
+type Flag enum(bool) { no, yes }
+
+comptime func pick(n i32) Flag {
+    var k = n;
+    if (k == 1) { return Flag.yes; }
+    return Flag.no;
+}
+
+func main() i32 {
+    var x = pick(1);
+    if (x == Flag.yes) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+movb $1, -1(%rsp)                # x = Flag.yes
+movb -1(%rsp), %al
+andb $1, %al
+movzbl %al, %eax
+cmpl $1, %eax                    # x == Flag.yes
+jne .Lother
+movl $42, %eax                   # return
+retq
+```
+
+The program returns 42.
+
+`enum(i64)` is that result. `pick(1)` is `Wide.b`.
+
+```c
+type Wide enum(i64) { a, b }
+
+comptime func pick(n i32) Wide {
+    var k = n;
+    if (k == 1) { return Wide.b; }
+    return Wide.a;
+}
+
+func main() i32 {
+    var x = pick(1);
+    if (x == Wide.b) {
+        return 42;
+    }
+    return 0;
+}
+```
+
+```asm
+main:
+movq $1, -8(%rsp)                # x = Wide.b
+cmpq $1, -8(%rsp)                # x == Wide.b
 jne .Lother
 movl $42, %eax                   # return
 retq
@@ -1140,7 +1270,7 @@ A file-scope `const origin = Point{.x = 40, .y = 2}` then `field(origin)` is 42.
 
 `type Integer i32` then `const n = Integer(4)` and `id(n)` is `movl $4, %eax` and `retq`.
 
-A local `const` of that struct, enumerator, or alias is `not supported yet`. A `var` is `var is not a compile-time constant` when it is the initializer of a `comptime const`. A file-scope `const` that is an `f32` or a `bool` stays `not supported yet`.
+A local `const` of that struct, enumerator, or alias is `not supported yet`. A `var` is `var is not a compile-time constant` when it is the initializer of a `comptime const`.
 
 ## A struct returned from a comptime function
 
@@ -1925,6 +2055,31 @@ retq                             # return
 `n` is stored and increased by `2`.
 
 The call passes `n` and does not pass `scale`.
+
+`const k = 0.5` passed to a `comptime func` folds. The call is not emitted.
+
+```c
+const k = 0.5;
+
+comptime func field(p f64) i32 {
+    if (p == 0.5) {
+        return 42;
+    }
+    return 0;
+}
+
+func main() i32 {
+    return field(k);
+}
+```
+
+```asm
+main:
+movl $42, %eax                   # constant
+retq                             # return
+```
+
+`const k = 0.5f` and `const flag = true` are that call. `main` is those two instructions. A local `const` is `not supported yet`.
 
 ## An alias or a function argument
 

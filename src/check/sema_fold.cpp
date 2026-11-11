@@ -292,6 +292,15 @@ bool plain_u32_result(const FunctionDecl &fn) {
            slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
 }
 
+bool plain_u64_result(const FunctionDecl &fn) {
+    if (fn.results.size() != 1 || fn.return_type != "u64" || fn.body == nullptr) {
+        return false;
+    }
+    const ResultSlot &slot = fn.results.front();
+    return slot.type_name == "u64" && slot.type_package.empty() && !slot.is_struct && !slot.is_enum &&
+           slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr && slot.const_pointee == 0;
+}
+
 bool plain_f32_result(const FunctionDecl &fn) {
     if (fn.results.size() != 1 || fn.return_type != "f32" || fn.body == nullptr) {
         return false;
@@ -2324,6 +2333,10 @@ bool Checker::comptime_constant(const Expr &expr) {
         if (file_scope_const_enum(expr) != nullptr) {
             return true;
         }
+        // `const flag = true` and `const k = 0.5` at file scope. A local const stays out.
+        if (file_scope_const_bool(expr).has_value() || file_scope_const_float(expr) != nullptr) {
+            return true;
+        }
         return false;
     }
     if (std::holds_alternative<Expr::Float>(expr.data)) {
@@ -2478,6 +2491,20 @@ std::unique_ptr<Expr> Checker::comptime_substitute(const Expr &expr) {
             }
             // `const e = Order.equal` at file scope. A local const is not.
             if (const Expr *init = file_scope_const_enum(*cursor)) {
+                cursor = init;
+                continue;
+            }
+            // `const flag = true` at file scope. A local const is not.
+            if (const std::optional<bool> flag = file_scope_const_bool(*cursor)) {
+                auto literal = std::make_unique<Expr>();
+                Expr::Bool node;
+                node.loc = expr_loc(*cursor);
+                node.value = *flag;
+                literal->data = std::move(node);
+                return literal;
+            }
+            // `const k = 0.5` and `const k = 0.5f` at file scope. A local const is not.
+            if (const Expr *init = file_scope_const_float(*cursor)) {
                 cursor = init;
                 continue;
             }
@@ -3104,7 +3131,9 @@ bool Checker::fold_comptime_wide(const Expr::Call &call) {
     const FunctionDecl *fn = comptime_callee(call);
     const bool want_i64 = fn != nullptr && plain_i64_result(*fn);
     const bool want_u32 = fn != nullptr && plain_u32_result(*fn);
-    if (fn == nullptr || (!want_i64 && !want_u32) || fn->is_macro || fn->variadic || !fn->type_params.empty() ||
+    const bool want_u64 = fn != nullptr && plain_u64_result(*fn);
+    if (fn == nullptr || (!want_i64 && !want_u32 && !want_u64) || fn->is_macro || fn->variadic ||
+        !fn->type_params.empty() ||
         !fn->method_struct.empty() || !call.type_args.empty() || call.args.size() != fn->params.size() ||
         comptime_folding_.contains(fn) || graph_ == nullptr) {
         return false;
@@ -3168,6 +3197,9 @@ bool Checker::fold_comptime_wide(const Expr::Call &call) {
                 }
                 if (want_u32 && wide->bits == 32 && wide->is_unsigned) {
                     return keep(wide->value, 32, true);
+                }
+                if (want_u64 && wide->bits == 64 && wide->is_unsigned) {
+                    return keep(wide->value, 64, true);
                 }
             }
             if (diags_.size() != before_fold || take_comptime_fault(fn->name)) {
@@ -3256,6 +3288,19 @@ bool Checker::fold_comptime_wide(const Expr::Call &call) {
             return false;
         }
         return keep(static_cast<uint64_t>(*ran), 64, false);
+    }
+    if (want_u64) {
+        // The bits are the `u64`. The `i64` evaluator reads the same integer width.
+        const std::optional<int64_t> ran = eval_comptime_i64(*graph_, wrapper, file, &fault, specs, structs, aliases);
+        if (fault.valid()) {
+            const std::string message = comptime_assert_message(*wrapper.body, fault);
+            report_comptime_fault(fault, message.empty() ? std::string("index out of range") : message, fn->name);
+            return false;
+        }
+        if (!ran) {
+            return false;
+        }
+        return keep(static_cast<uint64_t>(*ran), 64, true);
     }
     const std::optional<uint32_t> ran = eval_comptime_u32(*graph_, wrapper, file, &fault, specs, structs, aliases);
     if (fault.valid()) {
@@ -3458,15 +3503,18 @@ bool Checker::fold_comptime_enum(const Expr::Call &call) {
     }
     const EnumInfo &info = enum_types_[static_cast<std::size_t>(result.enum_id)];
     const Type &underlying = info.underlying;
-    // Default `i32`, plus `enum(i8)` and `enum(u8)`. `i8` is a `Char` rank. `enum(bool)` and
-    // `enum(i64)` stay out.
+    // Default `i32`, plus `enum(i8)`, `enum(u8)`, `enum(bool)`, and `enum(i64)`. `i8` is a
+    // `Char` rank. A member value that does not fit the enumerator line stays out.
     const bool i32_under = underlying.kind == TypeKind::Int && underlying.rank == 3 && !underlying.is_unsigned &&
                            underlying.alias_id == 0;
     const bool i8_under = underlying.kind == TypeKind::Char && underlying.rank == 1 && !underlying.is_unsigned &&
                           !underlying.plain_char && underlying.alias_id == 0;
     const bool u8_under = underlying.kind == TypeKind::Char && underlying.rank == 1 && underlying.is_unsigned &&
                           underlying.alias_id == 0;
-    if (!i32_under && !i8_under && !u8_under) {
+    const bool bool_under = underlying.kind == TypeKind::Bool && underlying.alias_id == 0;
+    const bool i64_under = underlying.kind == TypeKind::Int && underlying.rank == 5 && !underlying.is_unsigned &&
+                           underlying.alias_id == 0;
+    if (!i32_under && !i8_under && !u8_under && !bool_under && !i64_under) {
         return false;
     }
     const auto member_at = [&](int value) -> std::string {
@@ -4214,12 +4262,13 @@ bool Checker::unmarked_comptime_arg(const Expr &expr) {
             [&](const auto &item) -> bool {
                 using T = std::decay_t<decltype(item)>;
                 if constexpr (std::is_same_v<T, Expr::Name>) {
-                    // `const k = 40` and `const origin = Point{.x = 40, .y = 2}` at file scope.
-                    // An enumerator and `const n = Integer(4)` are the same argument. A local
-                    // `const`, a `var`, a file-scope `f32`, and a file-scope `bool` stay out.
+                    // `const k = 40`, `const origin = Point{.x = 40, .y = 2}`, `const k = 0.5`,
+                    // and `const flag = true` at file scope. An enumerator and `const n = Integer(4)`
+                    // are the same argument. A local `const` and a `var` stay out.
                     if (file_scope_const_int(node) || file_scope_const_array(node) != nullptr ||
                         file_scope_const_struct(node) != nullptr || file_scope_const_enum(node) != nullptr ||
-                        file_scope_const_alias(node) != nullptr) {
+                        file_scope_const_alias(node) != nullptr || file_scope_const_bool(node).has_value() ||
+                        file_scope_const_float(node) != nullptr) {
                         return false;
                     }
                     const Symbol *symbol = lookup(item.text);

@@ -1,0 +1,20 @@
+type Wide enum(i64) { a, b }
+
+comptime func still() Wide {
+    return Wide.b;
+}
+
+comptime func pick(n i32) Wide {
+    var k = n;
+    if (k == 1) { return Wide.b; }
+    return Wide.a;
+}
+
+func main() i32 {
+    var x = pick(1);
+    var y = still();
+    if (x == Wide.b && y == Wide.b) {
+        return 42;
+    }
+    return 0;
+}

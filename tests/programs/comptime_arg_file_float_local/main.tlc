@@ -1,0 +1,11 @@
+comptime func field(p f64) i32 {
+    if (p == 0.5) {
+        return 42;
+    }
+    return 0;
+}
+
+func main() i32 {
+    const k = 0.5;
+    return field(k);
+}

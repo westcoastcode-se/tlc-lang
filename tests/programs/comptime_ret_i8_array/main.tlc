@@ -1,0 +1,8 @@
+comptime func row() [2]i8 {
+    return [_]i8{4i8, 2i8};
+}
+
+func main() i32 {
+    var r = row();
+    return 0;
+}

@@ -1,0 +1,8 @@
+comptime func grid() [2][2]bool {
+    return [_][2]bool{{true, false}, {false, true}};
+}
+
+func main() i32 {
+    var g = grid();
+    return 0;
+}

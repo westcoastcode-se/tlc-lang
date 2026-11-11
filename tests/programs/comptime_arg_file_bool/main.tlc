@@ -1,0 +1,12 @@
+const flag = true;
+
+comptime func field(p bool) i32 {
+    if (p) {
+        return 42;
+    }
+    return 0;
+}
+
+func main() i32 {
+    return field(flag);
+}

@@ -1,0 +1,8 @@
+comptime func grid() [2][2]f64 {
+    return [_][2]f64{{0.5, 1.0}, {2.0, 0.0}};
+}
+
+func main() i32 {
+    var g = grid();
+    return 0;
+}
