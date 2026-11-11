@@ -786,6 +786,30 @@ std::optional<int> Checker::fold_switch_case(const Expr &expr) {
     if (const std::optional<int> folded = fold_int(expr)) {
         return folded;
     }
+    // `const e = Order.equal` then `e == Order.equal`. A local `const` stays out.
+    const Expr *cursor = &expr;
+    std::unordered_set<std::string> seen;
+    for (int depth = 0; depth < 8 && cursor != nullptr; ++depth) {
+        const auto *named = std::get_if<Expr::Name>(&cursor->data);
+        if (named == nullptr) {
+            break;
+        }
+        if (!seen.insert(named->text).second) {
+            return std::nullopt;
+        }
+        const Symbol *symbol = lookup(named->text);
+        if (symbol == nullptr || symbol->is_auto || symbol->type.kind != TypeKind::Enum) {
+            return std::nullopt;
+        }
+        const VarDecl *var = global_var(named->text);
+        if (var == nullptr || !var->is_const_decl || var->init == nullptr || var->init.get() == cursor) {
+            return std::nullopt;
+        }
+        cursor = var->init.get();
+    }
+    if (cursor != &expr) {
+        return fold_switch_case(*cursor);
+    }
     const auto *selector = std::get_if<Expr::Selector>(&expr.data);
     if (selector == nullptr || selector->base == nullptr) {
         return std::nullopt;
@@ -1360,10 +1384,16 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                         }
                     }
                 }
-                // `Point{.x = 1}.x` is that field. A file-scope name is still loaded. An enumerator is not a field.
+                // `Point{.x = 1}.x` is that field. `const k = 40` then `Point{.x = k}.x` is `k`.
+                // A local `const` stays loaded. An enumerator is not a field.
                 if (node.base != nullptr) {
                     if (const Expr *field = comptime_struct_field(*node.base, node.field)) {
-                        return fold_int(*field);
+                        if (const std::optional<int> folded = fold_int(*field)) {
+                            return folded;
+                        }
+                        if (const std::optional<int> file = file_scope_const_int(*field)) {
+                            return file;
+                        }
                     }
                 }
                 const auto folded_assoc = [&](uint32_t file, const std::string &owner) -> std::optional<int> {
@@ -1463,7 +1493,11 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 if (!is_integer(named) && named.kind != TypeKind::Bool && !is_c_enum(named)) {
                     return std::nullopt;
                 }
-                const std::optional<int> inner = fold_int(*node.expr);
+                std::optional<int> inner = fold_int(*node.expr);
+                // `Integer(k)` when `k` is a file-scope integer `const`. `a + b` is not this cast.
+                if (!inner) {
+                    inner = file_scope_const_int(*node.expr);
+                }
                 if (!inner || is_c_enum(named)) {
                     return inner;
                 }
@@ -1830,27 +1864,40 @@ const Expr *Checker::file_scope_const_float(const Expr &expr) {
 }
 
 const Expr *Checker::file_scope_const_struct(const Expr &expr) {
-    const auto *named = std::get_if<Expr::Name>(&expr.data);
-    if (named == nullptr) {
-        return nullptr;
+    std::unordered_set<std::string> seen;
+    const Expr *cursor = &expr;
+    for (int depth = 0; cursor != nullptr && depth < 8; ++depth) {
+        const auto *named = std::get_if<Expr::Name>(&cursor->data);
+        if (named == nullptr || !seen.insert(named->text).second) {
+            return nullptr;
+        }
+        const Symbol *symbol = lookup(named->text);
+        if (symbol == nullptr || symbol->is_auto || symbol->type.kind != TypeKind::Struct) {
+            return nullptr;
+        }
+        if (symbol->type.struct_id >= 0 && symbol->type.struct_id < static_cast<int>(structs_.size()) &&
+            structs_[static_cast<std::size_t>(symbol->type.struct_id)].is_union) {
+            return nullptr;
+        }
+        const VarDecl *var = global_var(named->text);
+        if (var == nullptr || !var->is_const_decl || var->init == nullptr || var->init.get() == cursor) {
+            return nullptr;
+        }
+        // `const other = origin` keeps walking. `Point{0...}` is that value.
+        const auto *init = std::get_if<Expr::Init>(&var->init->data);
+        if (init == nullptr) {
+            cursor = var->init.get();
+            continue;
+        }
+        if (init->is_tuple || init->array_literal) {
+            return nullptr;
+        }
+        if (init->fields.empty() && init->elements.empty() && !init->zero_rest) {
+            return nullptr;
+        }
+        return var->init.get();
     }
-    const Symbol *symbol = lookup(named->text);
-    if (symbol == nullptr || symbol->is_auto || symbol->type.kind != TypeKind::Struct) {
-        return nullptr;
-    }
-    if (symbol->type.struct_id >= 0 && symbol->type.struct_id < static_cast<int>(structs_.size()) &&
-        structs_[static_cast<std::size_t>(symbol->type.struct_id)].is_union) {
-        return nullptr;
-    }
-    const VarDecl *var = global_var(named->text);
-    if (var == nullptr || !var->is_const_decl || var->init == nullptr) {
-        return nullptr;
-    }
-    const auto *init = std::get_if<Expr::Init>(&var->init->data);
-    if (init == nullptr || init->is_tuple || init->array_literal || (init->fields.empty() && init->elements.empty())) {
-        return nullptr;
-    }
-    return var->init.get();
+    return nullptr;
 }
 
 const Expr *Checker::file_scope_const_enum(const Expr &expr) {
@@ -2191,6 +2238,21 @@ bool Checker::comptime_constant(const Expr &expr) {
             }
             return true;
         }
+        // `Point{.x = k}` when `k` is a file-scope integer `const`. A local `const` stays out.
+        // `Point{0...}` stores 0. `comptime const c = a + b` does not use this walk.
+        if (!init->array_literal) {
+            for (const Expr::FieldInit &field : init->fields) {
+                if (field.value == nullptr) {
+                    return false;
+                }
+                if (constant_operand(*field.value) || file_scope_const_int(*field.value) ||
+                    file_scope_const_enum(*field.value) != nullptr || comptime_constant(*field.value)) {
+                    continue;
+                }
+                return false;
+            }
+            return !init->fields.empty() || init->zero_rest;
+        }
         return constant_operand(expr);
     }
     if (const auto *star = std::get_if<Expr::Unary>(&expr.data);
@@ -2248,10 +2310,10 @@ bool Checker::comptime_constant(const Expr &expr) {
             return false;
         }
         // `const origin = Point{.x = 2, .y = 0}` at file scope. A local const stays out.
+        // `const other = origin` and `Point{0...}` are that value.
         if (!symbol->is_auto && symbol->type.kind == TypeKind::Struct) {
-            if (const VarDecl *var = global_var(named->text);
-                var != nullptr && var->is_const_decl && var->init != nullptr) {
-                return comptime_constant(*var->init);
+            if (const Expr *init = file_scope_const_struct(expr)) {
+                return comptime_constant(*init);
             }
         }
         // `const other = Integer(4)` at file scope. A local const stays out.
@@ -2268,8 +2330,10 @@ bool Checker::comptime_constant(const Expr &expr) {
         return true;
     }
     if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
-        // `Integer(4)` and `BinOp(add)`. A cast of a `var` is not a constant.
-        return cast->expr != nullptr && cast->indirections == 0 && constant_operand(*cast->expr);
+        // `Integer(4)` and `Integer(k)` when `k` is a file-scope integer `const`.
+        // A cast of a `var` is not a constant. `a + b` is not this cast.
+        return cast->expr != nullptr && cast->indirections == 0 &&
+               (constant_operand(*cast->expr) || file_scope_const_int(*cast->expr).has_value());
     }
     if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
         if (unary->postfix || unary->expr == nullptr ||
@@ -3708,10 +3772,39 @@ const Expr *Checker::comptime_struct_field(const Expr &object, const std::string
     return const_struct_field(object, field, [&](const std::string &name) -> const Expr * {
         const Symbol *symbol = lookup(name);
         const Expr *init = symbol != nullptr && symbol->is_constant ? symbol->const_init : nullptr;
-        if (init == nullptr) {
-            if (const VarDecl *var = global_var(name); var != nullptr && var->is_comptime) {
-                init = var->init.get();
+        const auto file_init = [&](const std::string &text, const Symbol *found) -> const Expr * {
+            // A local `const` hides the file-scope name. `is_auto` is that local.
+            if (found != nullptr && found->is_auto) {
+                return nullptr;
             }
+            if (const VarDecl *var = global_var(text);
+                var != nullptr && var->init != nullptr && (var->is_comptime || var->is_const_decl)) {
+                return var->init.get();
+            }
+            return nullptr;
+        };
+        if (init == nullptr) {
+            init = file_init(name, symbol);
+        }
+        std::unordered_set<std::string> seen;
+        seen.insert(name);
+        while (init != nullptr) {
+            const auto *next = std::get_if<Expr::Name>(&init->data);
+            if (next == nullptr) {
+                break;
+            }
+            if (!seen.insert(next->text).second) {
+                return nullptr;
+            }
+            const Symbol *followed = lookup(next->text);
+            const Expr *step = followed != nullptr && followed->is_constant ? followed->const_init : nullptr;
+            if (step == nullptr) {
+                step = file_init(next->text, followed);
+            }
+            if (step == nullptr || step == init) {
+                return nullptr;
+            }
+            init = step;
         }
         if (init == nullptr) {
             return nullptr;

@@ -1,0 +1,13 @@
+type Point struct { x i32; y i32; }
+const origin = Point{0...};
+
+comptime func field(p Point) i32 {
+    return p.x + p.y;
+}
+
+func main() i32 {
+    if (field(origin) == 0) {
+        return 42;
+    }
+    return 0;
+}

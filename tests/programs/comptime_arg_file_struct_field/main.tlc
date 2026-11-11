@@ -1,0 +1,23 @@
+const k = 40;
+
+type Point struct { x i32; y i32; }
+const origin = Point{.x = k, .y = 2};
+const other = origin;
+
+type Integer i32;
+const n = Integer(k);
+
+comptime func field(p Point) i32 {
+    return p.x + p.y;
+}
+
+comptime func id(v Integer) i32 {
+    return i32(v);
+}
+
+func main() i32 {
+    if (field(origin) == 42 && field(other) == 42 && id(n) == 40) {
+        return 42;
+    }
+    return 0;
+}

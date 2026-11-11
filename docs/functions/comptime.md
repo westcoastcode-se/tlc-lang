@@ -1134,6 +1134,8 @@ That `id` is `comptime func id(n Integer) i32 { return i32(n); }`.
 
 A file-scope `const origin = Point{.x = 40, .y = 2}` then `field(origin)` is 42. The call is not emitted. `main` is `movl $42, %eax` and `retq`. `func take(comptime p Point, n i32)` takes that same `origin`. `take(origin, 40)` is 42.
 
+`const k = 40` then `Point{.x = k, .y = 2}` is that struct. `const other = origin` is that value. `Point{0...}` stores 0 in each integer field. `comptime if (origin.x == 40)` keeps that arm. `const e = Order.equal` then `comptime if (e == Order.equal)` keeps that arm.
+
 `const e = Order.equal` then `rank(e)` is that same pair of instructions when the body returns 42 for `Order.equal`.
 
 `type Integer i32` then `const n = Integer(4)` and `id(n)` is `movl $4, %eax` and `retq`.
