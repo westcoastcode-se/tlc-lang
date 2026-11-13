@@ -334,6 +334,8 @@ class Checker {
     std::unordered_map<uint32_t, std::unordered_map<std::string, Symbol>> statics_;
     struct SwitchFrame {
         std::unordered_set<int> values;
+        // Case labels that do not fit in `values`.
+        std::unordered_set<uint64_t> wide_values;
         bool has_default = false;
         // The subject when it is an enum. Invalid means the subject is `i32`.
         Type subject;
@@ -1093,6 +1095,8 @@ class Checker {
     void finish_switch(bool can_skip);
     // The first case whose label is `value`, else the first `default` left in `fallback`.
     bool find_switch_arm(const Stmt &stmt, int value, const Stmt::Case *&match, const Stmt::Case *&fallback);
+    bool find_switch_arm_wide(const Stmt &stmt, const WideInt &value, const Stmt::Case *&match,
+                              const Stmt::Case *&fallback);
     bool switch_reaches_case(const Stmt &stmt, const Stmt::Case *arm) const;
     bool check_switch_from(const Stmt &stmt, const Stmt::Case *arm, bool &active);
     bool check_switch_block(Stmt::Block &block, const Stmt::Case *arm, bool &active);
@@ -1322,9 +1326,16 @@ class Checker {
     // A file-scope constant, or a local `const` whose initializer folds.
     // A `var` and an unfolded `const` hide a file-scope constant.
     std::optional<int> array_length_value(const std::string &name);
+    // A file-scope `const` of `i8`, `u8`, `i16`, or `u16` used as `[n]T`.
+    // A generic value argument does not use this.
+    std::optional<int> narrow_file_length(const std::string &name);
     // `4i64`, `4u32`, and `4u64` when the value fits in `i32`, including a negative `i64`.
     // A value past `i32` is nullopt. `i8` and `i16` stay out.
     std::optional<int> folded_wide_i32(const Expr &expr);
+    // A file-scope `const` whose value fits in `i32`. `3000000000u64` does not.
+    std::optional<int> fitted_file_const(const Expr &expr);
+    // `i64`, `u32`, or `u64`, including a value past `i32`. A `var` is not this value.
+    std::optional<WideInt> switch_subject_wide(const Expr &expr);
     // A signed 64-bit value below zero, including one that does not fit in `i32`.
     bool folded_wide_negative(const Expr &expr);
     // A parameter of the `comptime func` being checked, or a name bound from one.

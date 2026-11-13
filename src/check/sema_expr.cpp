@@ -515,7 +515,10 @@ Type Checker::check_array_literal(Expr::Init &init) {
         int length = init.elem_array_len;
         if (!element_slice) {
             if (!init.elem_array_len_name.empty()) {
-                const std::optional<int> folded = array_length_value(init.elem_array_len_name);
+                std::optional<int> folded = array_length_value(init.elem_array_len_name);
+                if (!folded) {
+                    folded = narrow_file_length(init.elem_array_len_name);
+                }
                 if (!folded) {
                     error(init.loc, "not supported yet");
                     check_loose();

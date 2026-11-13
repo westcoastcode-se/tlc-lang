@@ -208,6 +208,8 @@ A local `const` hides a file-scope `const` of the same name.
 
 `return 42 + row.len` is `movl $42, %eax` and `retq`.
 
+A file-scope `const n = 4i8` then `var row [n]i32` has `row.len` of 4. `main` is `movl $4, %eax` and `retq`. `4u8`, `4i16`, and `4u16` are that length. `width[n]()` is `type mismatch`.
+
 A `var` is `not supported yet`.
 
 `var n const i32 = 4` is `not supported yet`.

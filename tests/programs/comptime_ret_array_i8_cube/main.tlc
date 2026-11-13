@@ -1,8 +1,36 @@
-comptime func deep() [2][2][2]i8 {
-    return [_][2][2]i8{{{1i8, 2i8}, {3i8, 4i8}}, {{5i8, 6i8}, {7i8, 8i8}}};
+comptime func still() [2][2][2]i8 {
+    return [_][2][2]i8{{{40i8, 2i8}, {1i8, 0i8}}, {{3i8, 4i8}, {5i8, 6i8}}};
+}
+
+comptime func grid(n i32) [2][2][2]i8 {
+    var a = n;
+    return [_][2][2]i8{{{i8(a), 2i8}, {1i8, 0i8}}, {{3i8, 4i8}, {5i8, 6i8}}};
+}
+
+comptime func bytes(n i32) [2][2][2]u8 {
+    var a = n;
+    return [_][2][2]u8{{{u8(a), 2u8}, {1u8, 0u8}}, {{3u8, 4u8}, {5u8, 6u8}}};
+}
+
+comptime func half(n i32) [2][2][2]i16 {
+    var a = n;
+    return [_][2][2]i16{{{i16(a), 2i16}, {1i16, 0i16}}, {{3i16, 4i16}, {5i16, 6i16}}};
+}
+
+comptime func wide(n i32) [2][2][2]u16 {
+    var a = n;
+    return [_][2][2]u16{{{u16(a), 2u16}, {1u16, 0u16}}, {{3u16, 4u16}, {5u16, 6u16}}};
 }
 
 func main() i32 {
-    var c = deep();
-    return i32(c[0][0][0]);
+    var c = grid(40);
+    var h = still();
+    var u = bytes(200);
+    var w = half(40);
+    var v = wide(40);
+    if (c[0][0][0] + c[0][0][1] == 42i8 && h[0][0][0] == 40i8 && u[0][0][0] == 200u8 && w[0][0][0] == 40i16 &&
+        v[0][0][0] == 40u16) {
+        return 42;
+    }
+    return 0;
 }

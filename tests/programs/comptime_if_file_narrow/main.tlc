@@ -1,0 +1,21 @@
+const a = 4i8;
+const b = 200u8;
+const c = 40i16;
+const d = 4u64;
+
+func main() i32 {
+    comptime if (a == 4i8 && b == 200u8 && c == 40i16 && d > 0) {
+        comptime switch (a) {
+        case 4i8:
+            comptime switch (d) {
+            case 4u64:
+                return 42;
+            default:
+                return 0;
+            }
+        default:
+            return 0;
+        }
+    }
+    return 0;
+}

@@ -1,0 +1,10 @@
+type Point struct { x i32; y i32; }
+
+comptime func pts() []Point {
+    return [_]Point{Point{.x = 40, .y = 2}};
+}
+
+func main() i32 {
+    var s = pts();
+    return s[0].x;
+}

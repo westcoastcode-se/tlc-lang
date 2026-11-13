@@ -768,12 +768,19 @@ struct Stmt {
         // Set when `comptime switch` folds. Codegen keeps the matching case and the statements that follow until `break`.
         bool folded = false;
         int folded_value = 0;
+        // A value that does not fit in `i32`. `folded_value` is not that integer.
+        bool wide_folded = false;
+        uint64_t wide_value = 0;
+        int wide_bits = 0;
+        bool wide_unsigned = false;
     };
     struct Case {
         SourceLoc loc{};
         std::unique_ptr<Expr> value;
         std::unique_ptr<Stmt> stmt;
         bool is_default = false;
+        // The arm `comptime switch` kept when the value does not fit in `i32`.
+        bool selected = false;
     };
     struct Break {
         SourceLoc loc{};

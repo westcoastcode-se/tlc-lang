@@ -8,7 +8,7 @@ namespace tlc {
 
 namespace {
 
-// One shell of these scalars is a comptime array. `i8` and `i16` stop at two shells.
+// One shell of these scalars is a comptime array. Three shells fold. Four stay out.
 bool comptime_array_leaf(const Type &type) {
     if (type.alias_id != 0) {
         return false;
@@ -29,9 +29,7 @@ int comptime_max_shells(const Type &leaf) {
     if (!comptime_array_leaf(leaf)) {
         return 0;
     }
-    if (leaf.kind == TypeKind::Char || (leaf.kind == TypeKind::Int && leaf.rank == 2)) {
-        return 2;
-    }
+    // Three shells. Four shells stay out.
     return 3;
 }
 
@@ -1245,7 +1243,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 (unmarked_comptime_arg(*node.args[i]) ||
                                  (!comptime_method_base(*node.args[i]) && !argument_is_comptime(*node.args[i]) &&
                                   !folded_local_int(*node.args[i]) && !comptime_constant(*node.args[i]) &&
-                                  !fold_switch_case(*node.args[i])))) {
+                                  !fold_switch_case(*node.args[i]) && !comptime_array_literal(*node.args[i])))) {
                                 error(expr_loc(*node.args[i]), "not supported yet");
                             }
                         }

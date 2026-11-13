@@ -295,13 +295,60 @@ bool CodeGen::emit_folded_from(const Stmt &stmt, const Stmt::Case *arm, bool &ac
         stmt.data);
 }
 
+bool find_selected_arm(const Stmt &stmt, const Stmt::Case *&match, const Stmt::Case *&fallback) {
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Case>) {
+                if (node.selected) {
+                    if (node.is_default) {
+                        fallback = &node;
+                    } else {
+                        match = &node;
+                    }
+                    return true;
+                }
+                if (node.is_default && fallback == nullptr) {
+                    fallback = &node;
+                }
+                return node.stmt != nullptr && find_selected_arm(*node.stmt, match, fallback);
+            } else if constexpr (std::is_same_v<T, Stmt::Block>) {
+                for (const auto &child : node.statements) {
+                    if (child != nullptr && find_selected_arm(*child, match, fallback)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                if (node.then_arm != nullptr && find_selected_arm(*node.then_arm, match, fallback)) {
+                    return true;
+                }
+                return node.else_arm != nullptr && find_selected_arm(*node.else_arm, match, fallback);
+            } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                return node.body != nullptr && find_selected_arm(*node.body, match, fallback);
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (node.init != nullptr && find_selected_arm(*node.init, match, fallback)) {
+                    return true;
+                }
+                return node.body != nullptr && find_selected_arm(*node.body, match, fallback);
+            } else {
+                return false;
+            }
+        },
+        stmt.data);
+}
+
 void CodeGen::emit_folded_switch(const Stmt::Switch &node) {
     if (terminated()) {
         return;
     }
     const Stmt::Case *match = nullptr;
     const Stmt::Case *fallback = nullptr;
-    if (node.body != nullptr) {
+    if (node.wide_folded) {
+        if (node.body != nullptr) {
+            find_selected_arm(*node.body, match, fallback);
+        }
+    } else if (node.body != nullptr) {
         find_switch_arm(*node.body, node.folded_value, match, fallback);
     }
     const Stmt::Case *arm = match != nullptr ? match : fallback;

@@ -1277,6 +1277,10 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.comptime_switch = node.comptime_switch;
                 copy.folded = node.folded;
                 copy.folded_value = node.folded_value;
+                copy.wide_folded = node.wide_folded;
+                copy.wide_value = node.wide_value;
+                copy.wide_bits = node.wide_bits;
+                copy.wide_unsigned = node.wide_unsigned;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Stmt::Case>) {
                 Stmt::Case copy;
@@ -1284,6 +1288,7 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.value = node.value ? clone_expr(*node.value) : nullptr;
                 copy.stmt = node.stmt ? clone_stmt(*node.stmt) : nullptr;
                 copy.is_default = node.is_default;
+                copy.selected = node.selected;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
                 Stmt::Decl copy;

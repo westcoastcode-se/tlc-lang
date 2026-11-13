@@ -1386,14 +1386,38 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         cond_false_ = saved_false;
         std::optional<int> folded = fold_switch_case(*sw->cond);
         // `comptime switch` also reads a local `const`. An ordinary `switch` does not.
-        // `4u64` fits in the case integer. A value past `i32` does not.
+        // `4u64` fits in the case integer. A value past `i32` uses the wide arm.
         if (!folded && sw->comptime_switch) {
             folded = fold_runtime_const(*sw->cond);
         }
         if (!folded && sw->comptime_switch) {
             folded = folded_wide_i32(*sw->cond);
         }
+        if (!folded && sw->comptime_switch) {
+            folded = fitted_file_const(*sw->cond);
+        }
+        const std::optional<WideInt> wide = !folded && sw->comptime_switch ? switch_subject_wide(*sw->cond) : std::nullopt;
         const bool scalar = got.kind == TypeKind::Int || got.kind == TypeKind::Enum || got.kind == TypeKind::Char;
+        if (wide && scalar) {
+            const Stmt::Case *match = nullptr;
+            const Stmt::Case *fallback = nullptr;
+            if (sw->body != nullptr) {
+                find_switch_arm_wide(*sw->body, *wide, match, fallback);
+            }
+            const Stmt::Case *arm = match != nullptr ? match : fallback;
+            if (arm == nullptr || sw->body == nullptr) {
+                return;
+            }
+            const int saved_depth = folded_switch_depth_;
+            const bool saved_stop = folded_switch_stop_;
+            folded_switch_stop_ = false;
+            ++folded_switch_depth_;
+            bool active = false;
+            expand_folded_switch(std::move(sw->body), arm, active, fn, names, exprs, out, defer);
+            folded_switch_depth_ = saved_depth;
+            folded_switch_stop_ = saved_stop;
+            return;
+        }
         if (folded && scalar) {
             const Stmt::Case *match = nullptr;
             const Stmt::Case *fallback = nullptr;
@@ -2052,10 +2076,20 @@ void Checker::check_case_label(const Stmt::Case &node) {
             error(expr_loc(*node.value), "type mismatch");
         } else if (switch_case_matches(switches_.back(), got)) {
             const std::optional<int> folded = fold_switch_case(*node.value);
-            if (!folded) {
+            if (folded) {
+                if (!switches_.back().values.insert(*folded).second) {
+                    error(expr_loc(*node.value), "redefinition");
+                }
+            } else if (const std::optional<WideInt> wide = fold_wide_int(*node.value)) {
+                // `case 3000000000u64`. `4u64` already folded above.
+                const bool kept = wide->bits == 64 || (wide->bits == 32 && wide->is_unsigned);
+                if (!kept) {
+                    error(node.loc, "not supported yet");
+                } else if (!switches_.back().wide_values.insert(wide->value).second) {
+                    error(expr_loc(*node.value), "redefinition");
+                }
+            } else {
                 error(node.loc, "not supported yet");
-            } else if (!switches_.back().values.insert(*folded).second) {
-                error(expr_loc(*node.value), "redefinition");
             }
         }
     }
@@ -2113,6 +2147,49 @@ bool Checker::find_switch_arm(const Stmt &stmt, int value, const Stmt::Case *&ma
                     return true;
                 }
                 return node.body != nullptr && find_switch_arm(*node.body, value, match, fallback);
+            } else {
+                return false;
+            }
+        },
+        stmt.data);
+}
+
+bool Checker::find_switch_arm_wide(const Stmt &stmt, const WideInt &value, const Stmt::Case *&match,
+                                   const Stmt::Case *&fallback) {
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Case>) {
+                if (!node.is_default && node.value != nullptr) {
+                    const std::optional<WideInt> folded = fold_wide_int(*node.value);
+                    if (folded && folded->bits == value.bits && folded->is_unsigned == value.is_unsigned &&
+                        folded->value == value.value) {
+                        match = &node;
+                        return true;
+                    }
+                } else if (node.is_default && fallback == nullptr) {
+                    fallback = &node;
+                }
+                return node.stmt != nullptr && find_switch_arm_wide(*node.stmt, value, match, fallback);
+            } else if constexpr (std::is_same_v<T, Stmt::Block>) {
+                for (const auto &child : node.statements) {
+                    if (child != nullptr && find_switch_arm_wide(*child, value, match, fallback)) {
+                        return true;
+                    }
+                }
+                return false;
+            } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                if (node.then_arm != nullptr && find_switch_arm_wide(*node.then_arm, value, match, fallback)) {
+                    return true;
+                }
+                return node.else_arm != nullptr && find_switch_arm_wide(*node.else_arm, value, match, fallback);
+            } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
+                return node.body != nullptr && find_switch_arm_wide(*node.body, value, match, fallback);
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (node.init != nullptr && find_switch_arm_wide(*node.init, value, match, fallback)) {
+                    return true;
+                }
+                return node.body != nullptr && find_switch_arm_wide(*node.body, value, match, fallback);
             } else {
                 return false;
             }
@@ -2310,6 +2387,40 @@ void Checker::check_switch(const Stmt::Switch &node) {
             if (!folded) {
                 folded = folded_wide_i32(*node.cond);
             }
+            if (!folded) {
+                folded = fitted_file_const(*node.cond);
+            }
+        }
+        const std::optional<WideInt> wide =
+            !folded && legal && node.cond != nullptr ? switch_subject_wide(*node.cond) : std::nullopt;
+        if (!folded && wide) {
+            Stmt::Switch &sw_node = const_cast<Stmt::Switch &>(node);
+            sw_node.folded = true;
+            sw_node.wide_folded = true;
+            sw_node.wide_value = wide->value;
+            sw_node.wide_bits = wide->bits;
+            sw_node.wide_unsigned = wide->is_unsigned;
+            const Stmt::Case *match = nullptr;
+            const Stmt::Case *fallback = nullptr;
+            if (node.body != nullptr) {
+                find_switch_arm_wide(*node.body, *wide, match, fallback);
+            }
+            const Stmt::Case *arm = match != nullptr ? match : fallback;
+            if (arm == nullptr) {
+                return;
+            }
+            const_cast<Stmt::Case *>(arm)->selected = true;
+            FlowFrame frame;
+            frame.kind = FlowFrame::Kind::Switch;
+            frame.entry = assign_;
+            flow_frames_.push_back(std::move(frame));
+            switches_.push_back(std::move(sw));
+            bool active = false;
+            if (node.body != nullptr) {
+                check_switch_from(*node.body, arm, active);
+            }
+            finish_switch(false);
+            return;
         }
         if (!folded) {
             // A `comptime` parameter is comptime. This copy still receives it, so every case stays.

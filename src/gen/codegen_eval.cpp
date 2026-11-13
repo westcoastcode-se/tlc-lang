@@ -20,7 +20,7 @@ constexpr const char *kPoolName = "tlc.comptime.pool";
 constexpr const char *kUsedName = "tlc.comptime.used";
 
 // One row of a comptime array. `max_shells` is `[N]T`, `[N][N]T`, or `[N][N][N]T`.
-// `i8` and `i16` stop at two shells. Four shells stay out.
+// Four shells stay out.
 struct ElemShape {
     const char *name;
     int bits;
@@ -34,8 +34,8 @@ const ElemShape *elem_shape(const std::string &name) {
     static const ElemShape table[] = {
         {"i32", 32, false, false, false, 3}, {"i64", 64, false, false, false, 3},
         {"u32", 32, true, false, false, 3},  {"u64", 64, true, false, false, 3},
-        {"i16", 16, false, false, false, 2}, {"u16", 16, true, false, false, 2},
-        {"i8", 8, false, false, false, 2},   {"u8", 8, true, false, false, 2},
+        {"i16", 16, false, false, false, 3}, {"u16", 16, true, false, false, 3},
+        {"i8", 8, false, false, false, 3},   {"u8", 8, true, false, false, 3},
         {"f32", 32, false, true, false, 3},  {"f64", 64, false, true, false, 3},
         {"bool", 1, false, false, true, 3},
     };

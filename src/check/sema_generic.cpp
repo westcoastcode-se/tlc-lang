@@ -1625,6 +1625,27 @@ std::optional<int> Checker::array_length_value(const std::string &name) {
     return constant_index(*symbol->promote_init);
 }
 
+std::optional<int> Checker::narrow_file_length(const std::string &name) {
+    Expr expr;
+    Expr::Name named;
+    named.text = name;
+    expr.data = std::move(named);
+    const std::optional<WideInt> wide = file_scope_const_wide(expr);
+    if (!wide || (wide->bits != 8 && wide->bits != 16)) {
+        return std::nullopt;
+    }
+    if (wide->is_unsigned) {
+        return static_cast<int>(wide->value);
+    }
+    const uint64_t mask = (uint64_t{1} << static_cast<unsigned>(wide->bits)) - 1u;
+    const uint64_t sign = uint64_t{1} << static_cast<unsigned>(wide->bits - 1);
+    uint64_t value = wide->value & mask;
+    if ((value & sign) != 0) {
+        value |= ~mask;
+    }
+    return static_cast<int>(static_cast<int64_t>(value));
+}
+
 bool Checker::spell_type(const Type &type, SpecArg &out) const {
     const Type *cursor = &type;
     // Look through pointers only to find an array. A plain `*T` stays on `cursor` and is counted below.
@@ -2127,7 +2148,10 @@ void Checker::prepare_written(std::string &type_name, std::string &type_package,
     (void)indirections;
     (void)optional;
     if (!array_len_name.empty()) {
-        const std::optional<int> value = array_length_value(array_len_name);
+        std::optional<int> value = array_length_value(array_len_name);
+        if (!value) {
+            value = narrow_file_length(array_len_name);
+        }
         if (value && *value >= 0) {
             array_len = *value;
             array_len_name.clear();
@@ -2319,7 +2343,10 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
     }
     TypeArg concrete = arg;
     if (!concrete.array_len_name.empty()) {
-        const std::optional<int> len = array_length_value(concrete.array_len_name);
+        std::optional<int> len = array_length_value(concrete.array_len_name);
+        if (!len) {
+            len = narrow_file_length(concrete.array_len_name);
+        }
         if (!len) {
             error(arg.loc, "not supported yet");
             return false;

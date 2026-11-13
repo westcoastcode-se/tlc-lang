@@ -1,0 +1,14 @@
+comptime func sum(s []i32) i32 {
+    return s[0] + s[1];
+}
+
+comptime func bytes(s []u8) i32 {
+    return i32(s[0]) + i32(s[1]);
+}
+
+func main() i32 {
+    if (sum([_]i32{40, 2}) == 42 && bytes([_]u8{40u8, 2u8}) == 42) {
+        return 42;
+    }
+    return 0;
+}

@@ -648,13 +648,17 @@ std::optional<int> Checker::fold_condition(const Expr &expr) {
                     }
                 }
                 // `comptime const n = 4u64` then `comptime if (n > 0)`.
-                // `[n]i32` and a generic value argument do not use this fold. `comptime switch` stays `i32`.
+                // `const n = 4i8` is that comparison too. `[n]i32` and a generic value argument do not use this fold.
                 const bool compare = node.op == TokenKind::EqEq || node.op == TokenKind::BangEq ||
                                      node.op == TokenKind::Lt || node.op == TokenKind::Gt || node.op == TokenKind::Le ||
                                      node.op == TokenKind::Ge;
                 if (compare) {
                     const auto as_wide = [&](const Expr &side) -> std::optional<WideInt> {
                         if (const std::optional<WideInt> wide = fold_wide_int(side)) {
+                            return wide;
+                        }
+                        // `const n = 4u64` then `comptime if (n > 0)`. A `var` is not this value.
+                        if (const std::optional<WideInt> wide = file_scope_const_wide(side)) {
                             return wide;
                         }
                         if (const std::optional<int> narrow = fold_int(side)) {
@@ -1299,6 +1303,50 @@ std::optional<int> Checker::folded_wide_i32(const Expr &expr) {
         return std::nullopt;
     }
     return static_cast<int>(wide->value);
+}
+
+std::optional<int> Checker::fitted_file_const(const Expr &expr) {
+    const std::optional<WideInt> wide = file_scope_const_wide(expr);
+    if (!wide) {
+        return std::nullopt;
+    }
+    if (!wide->is_unsigned) {
+        const uint64_t mask = wide->bits >= 64 ? ~uint64_t{0} : (uint64_t{1} << static_cast<unsigned>(wide->bits)) - 1u;
+        uint64_t value = wide->value & mask;
+        if (wide->bits < 64) {
+            const uint64_t sign = uint64_t{1} << static_cast<unsigned>(wide->bits - 1);
+            if ((value & sign) != 0) {
+                value |= ~mask;
+            }
+        }
+        const int64_t signed_value = static_cast<int64_t>(value);
+        if (signed_value < static_cast<int64_t>(-2147483647 - 1) || signed_value > 2147483647) {
+            return std::nullopt;
+        }
+        return static_cast<int>(signed_value);
+    }
+    if (wide->value > 2147483647ULL) {
+        return std::nullopt;
+    }
+    return static_cast<int>(wide->value);
+}
+
+std::optional<Checker::WideInt> Checker::switch_subject_wide(const Expr &expr) {
+    std::optional<WideInt> wide = fold_wide_int(expr);
+    if (!wide) {
+        wide = file_scope_const_wide(expr);
+    }
+    if (!wide) {
+        return std::nullopt;
+    }
+    // `i8` and `i16` fit in the case integer. These widths keep a value past `i32`.
+    const bool i64 = wide->bits == 64 && !wide->is_unsigned;
+    const bool u32 = wide->bits == 32 && wide->is_unsigned;
+    const bool u64 = wide->bits == 64 && wide->is_unsigned;
+    if (!i64 && !u32 && !u64) {
+        return std::nullopt;
+    }
+    return wide;
 }
 
 bool Checker::folded_wide_negative(const Expr &expr) {
@@ -2995,7 +3043,8 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
                 literal = folded_string(*text, loc);
-            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i])) {
+            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i]) ||
+                       comptime_array_literal(*call.args[i])) {
                 // The name of a file-scope const becomes its initializer. An enumerator stays the selector.
                 literal = comptime_substitute(*call.args[i]);
             }
@@ -3187,7 +3236,8 @@ bool Checker::fold_comptime_wide(const Expr::Call &call) {
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
                 literal = folded_string(*text, loc);
-            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i])) {
+            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i]) ||
+                       comptime_array_literal(*call.args[i])) {
                 literal = comptime_substitute(*call.args[i]);
             }
         }
@@ -3382,7 +3432,8 @@ bool Checker::fold_comptime_f64(const Expr::Call &call) {
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
                 literal = folded_string(*text, loc);
-            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i])) {
+            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i]) ||
+                       comptime_array_literal(*call.args[i])) {
                 literal = comptime_substitute(*call.args[i]);
             }
         }
@@ -3574,7 +3625,8 @@ bool Checker::fold_comptime_enum(const Expr::Call &call) {
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
                 literal = folded_string(*text, loc);
-            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i])) {
+            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i]) ||
+                       comptime_array_literal(*call.args[i])) {
                 literal = comptime_substitute(*call.args[i]);
             }
         }
@@ -3743,7 +3795,8 @@ bool Checker::fold_comptime_string(const Expr::Call &call) {
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
                 literal = folded_string(*text, loc);
-            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i])) {
+            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i]) ||
+                       comptime_array_literal(*call.args[i])) {
                 literal = comptime_substitute(*call.args[i]);
             }
         }
@@ -3984,7 +4037,8 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
             std::unordered_set<std::string> seen;
             if (const std::optional<std::string> text = constant_string(*call.args[i], seen)) {
                 literal = folded_string(*text, loc);
-            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i])) {
+            } else if (comptime_constant(*call.args[i]) || fold_switch_case(*call.args[i]) ||
+                       comptime_array_literal(*call.args[i])) {
                 literal = comptime_substitute(*call.args[i]);
             }
         }
@@ -4430,7 +4484,7 @@ void Checker::require_comptime_method_call(const Expr::Call &call, const Expr *r
             }
             if (unmarked_comptime_arg(*arg) ||
                 (!comptime_method_base(*arg) && !argument_is_comptime(*arg) && !folded_local_int(*arg) &&
-                 !comptime_constant(*arg) && !fold_switch_case(*arg))) {
+                 !comptime_constant(*arg) && !fold_switch_case(*arg) && !comptime_array_literal(*arg))) {
                 error(expr_loc(*arg), "not supported yet");
             }
         }

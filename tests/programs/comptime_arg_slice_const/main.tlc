@@ -1,0 +1,9 @@
+const row = [_]i32{40, 2};
+
+comptime func sum(s []i32) i32 {
+    return s[0] + s[1];
+}
+
+func main() i32 {
+    return sum(row);
+}

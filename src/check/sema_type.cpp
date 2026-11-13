@@ -3067,7 +3067,10 @@ void Checker::fold_shells(std::vector<TypeShell> &shells, SourceLoc loc) {
         if (shell.kind != TypeShell::Kind::Array || shell.length_name.empty()) {
             continue;
         }
-        const std::optional<int> value = array_length_value(shell.length_name);
+        std::optional<int> value = array_length_value(shell.length_name);
+        if (!value) {
+            value = narrow_file_length(shell.length_name);
+        }
         if (value && *value >= 0) {
             shell.length = *value;
             shell.length_name.clear();

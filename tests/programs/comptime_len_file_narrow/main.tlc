@@ -1,0 +1,15 @@
+const a = 4i8;
+const b = 4u8;
+const c = 4i16;
+const d = 4u16;
+
+func main() i32 {
+    var ra [a]i32;
+    var rb [b]i32;
+    var rc [c]i32;
+    var rd [d]i32;
+    if (ra.len == 4 && rb.len == 4 && rc.len == 4 && rd.len == 4) {
+        return 42;
+    }
+    return 0;
+}

@@ -564,7 +564,7 @@ retq
 
 The program returns 42. `u32` is the same call. `wide(0)` is `3000000000u32`.
 
-`u64` is that result. `wide(0)` is `4u64`. A body with statements is compiled and run. The call is not emitted. `comptime if (n > 0)` keeps that arm when `n` is `4u64`. `comptime if (wide(0) > 0u64)` keeps it too. `comptime switch (n)` on `4u64` keeps that arm. `main` is `movl $42, %eax` and `retq`. A `var` is `not supported yet`. `3000000000u64` is `not supported yet`. An ordinary `switch` on a `u64` is `type mismatch: expected i32, found u64`.
+`u64` is that result. `wide(0)` is `4u64`. A body with statements is compiled and run. The call is not emitted. `comptime if (n > 0)` keeps that arm when `n` is `4u64`. `comptime if (wide(0) > 0u64)` keeps it too. `comptime switch (n)` on `4u64` keeps that arm. `3000000000u64`, `3000000000u32`, and `-3000000000` keep that arm too. `main` is `movl $42, %eax` and `retq`. A `var` is `not supported yet`. An ordinary `switch` on a `u64` is `type mismatch: expected i32, found u64`.
 
 ```c
 comptime func wide(n i32) u64 {
@@ -592,7 +592,7 @@ retq
 
 The program returns 42.
 
-`[2]f32` is that result. `row()` is `{0.5f, 1.0f}`. `[2]u64` is that result. `row(0)[0]` is `4u64`. `[2]i16`, `[2]u16`, `[2]i8`, and `[2]u8` are that call. `[2][2]i64`, `[2][2]u32`, `[2][2]u64`, `[2][2]f64`, `[2][2]f32`, and `[2][2]bool` are that call. `[2][2]i8`, `[2][2]u8`, `[2][2]i16`, and `[2][2]u16` are that call. `[2][2][2]i32` is that call, and so are `i64`, `u32`, `u64`, `f64`, `f32`, and `bool`. `[]i32` and `[]u8` are that call. `i16`, `u16`, `i8`, and `u8` are results too. A pointer, `[2][2][2]i8`, and `[2][2][2][2]i32` stay out. `200i8` and `40000i16` are `value does not fit`. `200u8` keeps its bits.
+`[2]f32` is that result. `row()` is `{0.5f, 1.0f}`. `[2]u64` is that result. `row(0)[0]` is `4u64`. `[2]i16`, `[2]u16`, `[2]i8`, and `[2]u8` are that call. `[2][2]i64`, `[2][2]u32`, `[2][2]u64`, `[2][2]f64`, `[2][2]f32`, and `[2][2]bool` are that call. `[2][2]i8`, `[2][2]u8`, `[2][2]i16`, and `[2][2]u16` are that call. `[2][2][2]i32` is that call, and so are `i64`, `u32`, `u64`, `f64`, `f32`, and `bool`. `[2][2][2]i8`, `[2][2][2]u8`, `[2][2][2]i16`, and `[2][2][2]u16` are that call. `[]i32` and `[]u8` are that call. `i16`, `u16`, `i8`, and `u8` are results too. A pointer, `[2][2][2][2]i8`, and `[2][2][2][2]i32` stay out. `200i8` and `40000i16` are `value does not fit`. `200u8` keeps its bits.
 
 `[2]bool` is that result. `flags(1)` stores `true` in `r[0]`. The call is not emitted. `r[1]` is not read, so that store is removed.
 
@@ -806,7 +806,7 @@ retq
 
 The program returns 42.
 
-`[2][2]i8` is that result. `grid(40)` stores 40 and 2. `g[0][0] + g[0][1]` is 42. `[2][2]u8`, `[2][2]i16`, and `[2][2]u16` are the same call. `200u8` keeps its bits. The call is not emitted. `[2][2][2]i8` is `not supported yet`.
+`[2][2]i8` is that result. `grid(40)` stores 40 and 2. `g[0][0] + g[0][1]` is 42. `[2][2]u8`, `[2][2]i16`, and `[2][2]u16` are the same call. `200u8` keeps its bits. The call is not emitted.
 
 ```c
 comptime func grid(n i32) [2][2]i8 {
@@ -878,7 +878,45 @@ retq
 
 The program returns 42.
 
-`[]i32` is that result. `cut(40)` stores 40 and 2. `s[0] + s[1]` is 42. `[]u8` is the same call, and so is a slice of the other scalars. `[]const u8` stays the string. The call is not emitted. A pointer is `not supported yet`.
+`[2][2][2]i8` is that result. `grid(40)` stores 40 and 2. `c[0][0][0] + c[0][0][1]` is 42. `[2][2][2]u8`, `[2][2][2]i16`, and `[2][2][2]u16` are the same call. `200u8` keeps its bits. The call is not emitted. `[2][2][2][2]i8` is `not supported yet`.
+
+```c
+comptime func grid(n i32) [2][2][2]i8 {
+    var a = n;
+    return [_][2][2]i8{{{i8(a), 2i8}, {1i8, 0i8}}, {{3i8, 4i8}, {5i8, 6i8}}};
+}
+
+func main() i32 {
+    var c = grid(40);
+    return c[0][0][0] + c[0][0][1];
+}
+```
+
+```asm
+main:
+subq $40, %rsp                   # allocate
+movb $40, 32(%rsp)               # c[0][0][0]
+movb $2, 33(%rsp)                # c[0][0][1]
+leaq 32(%rsp), %rax              # c[0][0]
+movq %rax, 24(%rsp)
+movq 24(%rsp), %rax
+movsbl (%rax), %eax              # c[0][0][0]
+movl %eax, 4(%rsp)
+leaq 32(%rsp), %rax              # c[0][0]
+movq %rax, 8(%rsp)
+movl 4(%rsp), %eax
+movq 8(%rsp), %rcx
+movsbl 1(%rcx), %ecx             # c[0][0][1]
+addl %ecx, %eax                  # c[0][0][0] + c[0][0][1]
+addq $40, %rsp                   # release
+retq
+```
+
+The program returns 42.
+
+`[]i32` is that result. `cut(40)` stores 40 and 2. `s[0] + s[1]` is 42. `[]u8` is the same call, and so is a slice of the other scalars. `[]const u8` stays the string. The call is not emitted. A pointer, `[]Point`, and `[][2]i32` are `not supported yet`.
+
+`sum([_]i32{40, 2})` when `sum` takes `[]i32` and returns `s[0] + s[1]` is `movl $42, %eax` and `retq`. `[]u8` of `[_]u8{40u8, 2u8}` is that call. A `var` is `not supported yet`. `const row = [_]i32{40, 2}` then `sum(row)` is `type mismatch: expected []i32, found [2]i32`.
 
 ```c
 comptime func cut(n i32) []i32 {
@@ -1173,7 +1211,7 @@ retq
 
 The program returns 42.
 
-A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an `i64`, not a `u32`, not a `u64`, not an `i16`, not a `u16`, not an `i8`, not a `u8`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, not an `[N]i64`, not an `[N]u32`, not an `[N]u64`, not an `[N]f32`, not an `[N]f64`, not an `[N]i16`, not an `[N]u16`, not an `[N]i8`, not an `[N]u8`, not an `[N]bool`, not a `[2][2]i32`, not a `[2][2]i64`, not a `[2][2]u32`, not a `[2][2]u64`, not a `[2][2]f64`, not a `[2][2]f32`, not a `[2][2]bool`, not a `[2][2]i8`, not a `[2][2]u8`, not a `[2][2]i16`, not a `[2][2]u16`, not a `[2][2][2]i32`, not a `[2][2][2]i64`, not a `[2][2][2]u32`, not a `[2][2][2]u64`, not a `[2][2][2]f64`, not a `[2][2][2]f32`, not a `[2][2][2]bool`, not a `[]i32`, not a `[]u8`, and not a constant `[]const u8` is `not supported yet`. An enumerator whose underlying type is `i8`, `u8`, `i16`, `u16`, `u32`, `bool`, `i64`, or `u64` is that call. `[2][2][2]i8`, `[2][2][2][2]i32`, and a pointer stay `not supported yet`.
+A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an `i64`, not a `u32`, not a `u64`, not an `i16`, not a `u16`, not an `i8`, not a `u8`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, not an `[N]i64`, not an `[N]u32`, not an `[N]u64`, not an `[N]f32`, not an `[N]f64`, not an `[N]i16`, not an `[N]u16`, not an `[N]i8`, not an `[N]u8`, not an `[N]bool`, not a `[2][2]i32`, not a `[2][2]i64`, not a `[2][2]u32`, not a `[2][2]u64`, not a `[2][2]f64`, not a `[2][2]f32`, not a `[2][2]bool`, not a `[2][2]i8`, not a `[2][2]u8`, not a `[2][2]i16`, not a `[2][2]u16`, not a `[2][2][2]i32`, not a `[2][2][2]i64`, not a `[2][2][2]u32`, not a `[2][2][2]u64`, not a `[2][2][2]f64`, not a `[2][2][2]f32`, not a `[2][2][2]bool`, not a `[]i32`, not a `[]u8`, not a `[2][2][2]i8`, not a `[2][2][2]u8`, not a `[2][2][2]i16`, not a `[2][2][2]u16`, and not a constant `[]const u8` is `not supported yet`. An enumerator whose underlying type is `i8`, `u8`, `i16`, `u16`, `u32`, `bool`, `i64`, or `u64` is that call. `[2][2][2][2]i8`, `[2][2][2][2]i32`, `[]Point`, `[][2]i32`, and a pointer stay `not supported yet`.
 
 `emit` is not valid in a `comptime func`.
 
@@ -2384,6 +2422,10 @@ retq                             # return
 `const k = 0.5f` and `const flag = true` are that call. `main` is those two instructions. A local `const` is `not supported yet`.
 
 `const k = 3000000000u32` then `field(k)` is those two instructions. `const k = 3000000000` against `i64` and `const k = 4u64` against `u64` are that call. `40u32` and `40i64` are too. `const a = 40i8` against `i8` is that call. `200u8`, `40i16`, and `40000u16` are too. `(k, 42)` passes that value in the tuple. A local `const` is `not supported yet`. `const k = 200i8` is `value does not fit`.
+
+`const n = 4i8` then `var row [n]i32` has `row.len` of 4. `main` is `movl $4, %eax` and `retq`. `4u8`, `4i16`, and `4u16` are that length. `width[4i8]()` and `width[n]()` are `type mismatch`.
+
+`const n = 4i8` then `comptime if (n == 4i8)` keeps that arm. `comptime switch (n)` with `case 4i8` keeps it too. `200u8`, `40i16`, and `4u64` are that value. `main` is `movl $42, %eax` and `retq`. A `var` is `not supported yet`.
 
 ```c
 const k = 3000000000u32;
