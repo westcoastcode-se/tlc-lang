@@ -9,7 +9,7 @@ namespace tlc {
 namespace {
 
 // One shell of these scalars is a comptime array. Three shells fold.
-// `i8` and `i32` also fold a fourth shell. A fifth shell stays out.
+// `i8`, `u8`, and `i32` also fold a fourth shell. A fifth shell stays out.
 bool comptime_array_leaf(const Type &type) {
     if (type.alias_id != 0) {
         return false;
@@ -49,11 +49,16 @@ bool comptime_i8_leaf(const Type &type) {
            !type.is_unsigned;
 }
 
+bool comptime_u8_leaf(const Type &type) {
+    return type.alias_id == 0 && type.kind == TypeKind::Char && type.rank == 1 && !type.plain_char &&
+           type.is_unsigned;
+}
+
 int comptime_max_shells(const Type &leaf) {
     if (!comptime_array_leaf(leaf)) {
         return 0;
     }
-    if (comptime_i32_leaf(leaf) || comptime_i8_leaf(leaf)) {
+    if (comptime_i32_leaf(leaf) || comptime_i8_leaf(leaf) || comptime_u8_leaf(leaf)) {
         return 4;
     }
     return 3;
@@ -1341,7 +1346,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         node.comptime_struct = std::move(kept.value);
                         return result;
                     }
-                    // `[]Point` and `[][2]i32`. A slice of another array, and `[]const u8`, stay out.
+                    // `[]Point`, `[][2]i32`, and `[][2][2]i32`. A further array shell, and `[]const u8`, stay out.
                     const bool struct_slice =
                         is_slice(result) && result.element != nullptr && result.element->kind == TypeKind::Struct &&
                         result.element->alias_id == 0 && result.element->struct_id >= 0 &&
@@ -1351,8 +1356,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                          result.element->kind == TypeKind::Array && !is_slice(*result.element) &&
                                          result.element->length > 0 && result.element->alias_id == 0 &&
                                          result.element->element != nullptr && comptime_i32_leaf(*result.element->element);
+                    const Type *row = i32_row || result.element == nullptr ? nullptr : result.element->element.get();
+                    const bool i32_grid = is_slice(result) && row != nullptr && row->kind == TypeKind::Array &&
+                                          !is_slice(*row) && row->length > 0 && row->alias_id == 0 &&
+                                          row->element != nullptr && comptime_i32_leaf(*row->element);
                     if (is_slice(result) && result.element != nullptr &&
-                        (comptime_array_leaf(*result.element) || struct_slice || i32_row) &&
+                        (comptime_array_leaf(*result.element) || struct_slice || i32_row || i32_grid) &&
                         !slice_of_const_u8(result)) {
                         KeptStruct kept = fold_comptime_struct(node);
                         if (kept.status == KeptStruct::Status::NotConstant) {
@@ -1420,7 +1429,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                         return result;
                     }
-                    // Four shells of `i8` and `i32`. Three of the other scalars. A fifth shell stays out.
+                    // Four shells of `i8`, `u8`, and `i32`. Three of the other scalars. A fifth shell stays out.
                     if (comptime_array_result(result)) {
                         KeptStruct kept = fold_comptime_struct(node);
                         if (kept.status == KeptStruct::Status::NotConstant) {
@@ -1438,7 +1447,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         node.comptime_struct = std::move(kept.value);
                         return result;
                     }
-                    // `*i32` when the body returns `&` of a file-scope name. `**T` and `?*T` stay out.
+                    // `*i32` when the body returns `&` of a file-scope name, or `&` of one field of that name.
+                    // `**T` and `?*T` stay out.
                     if (result.kind == TypeKind::Pointer && !result.optional && !result.decayed_array &&
                         result.alias_id == 0 && result.pointee != nullptr &&
                         result.pointee->kind != TypeKind::Pointer && result.pointee->kind != TypeKind::Function &&
@@ -1449,10 +1459,16 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             return type_invalid();
                         }
                         const auto *unary = kept.value == nullptr ? nullptr : std::get_if<Expr::Unary>(&kept.value->data);
-                        const auto *named =
-                            unary == nullptr || unary->expr == nullptr ? nullptr : std::get_if<Expr::Name>(&unary->expr->data);
+                        const Expr *target = unary == nullptr ? nullptr : unary->expr.get();
+                        const auto *named = target == nullptr ? nullptr : std::get_if<Expr::Name>(&target->data);
+                        const auto *selector = target == nullptr ? nullptr : std::get_if<Expr::Selector>(&target->data);
+                        const auto *base = selector == nullptr || selector->base == nullptr
+                                               ? nullptr
+                                               : std::get_if<Expr::Name>(&selector->base->data);
+                        const bool whole = named != nullptr && !named->text.empty();
+                        const bool field = base != nullptr && !base->text.empty() && !selector->field.empty();
                         if (kept.status != KeptStruct::Status::Value || unary == nullptr || unary->op != TokenKind::Amp ||
-                            named == nullptr || named->text.empty()) {
+                            (!whole && !field)) {
                             if (diags_.size() == before) {
                                 error(node.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
                                 recheck_fault_.clear();

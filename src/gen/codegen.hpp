@@ -100,11 +100,20 @@ struct ComptimeSlot {
     std::vector<ComptimeSlot> children;
 };
 
+struct ComptimeField {
+    std::string name;
+    uint64_t offset = 0;
+    // Fingerprint of the field's stored type.
+    std::string type;
+};
+
 struct ComptimeGlobal {
     std::string symbol;
     std::string name;
-    // Fingerprint of the global's stored type. A pointer result must name that type.
+    // Fingerprint of the global's stored type. A pointer result must name that type,
+    // or one field of it.
     std::string type;
+    std::vector<ComptimeField> fields;
 };
 
 struct ComptimeStructImage {

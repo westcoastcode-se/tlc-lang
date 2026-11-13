@@ -5,11 +5,14 @@ type Point struct {
 
 var p = Point{.x = 40, .y = 2};
 
-comptime func field() *i32 {
+comptime func ex() *i32 {
     return &p.x;
 }
 
+comptime func why() *i32 {
+    return &p.y;
+}
+
 func main() i32 {
-    var q = field();
-    return *q;
+    return *ex() + *why();
 }
