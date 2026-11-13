@@ -1,0 +1,29 @@
+// A cast from a float to an integer drops the fraction, folded or at run time.
+assert(i32(2.7) == 2, "i32(2.7)");
+assert(i32(-2.7) == -2, "i32(-2.7)");
+assert(i64(2.5) == 2i64, "i64(2.5)");
+assert(u8(200.9) == 200u8, "u8(200.9)");
+
+comptime const W = f64(i32(2.7));
+var I f64 = i32(2.7);
+
+comptime func dropped() f64 {
+    return f64(i32(2.7));
+}
+
+func main() i32 {
+    if (W != 2.0) { return 1; }
+    if (I != 2.0) { return 2; }
+    if (dropped() != 2.0) { return 3; }
+    var t = (i32(2.7) == 2.7) ? 1 : 2;
+    if (t != 2) { return 4; }
+    var y = 3e9;
+    if (u32(y) != 3000000000u32) { return 5; }
+    comptime const c = u32(3e9);
+    if (c != 3000000000u32) { return 6; }
+    var z = 1e19;
+    if (u64(z) != 10000000000000000000u64) { return 7; }
+    var h = 0.5;
+    if (!bool(h)) { return 8; }
+    return 42;
+}

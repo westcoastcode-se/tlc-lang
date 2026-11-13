@@ -1,0 +1,16 @@
+// A file-scope comptime const below i32 keeps its sign. The minimum of i64 is one too.
+comptime const F = -3000000000;
+comptime const G = -2147483649;
+comptime const H = -9223372036854775807i64 - 1i64;
+comptime const J = -9223372036854775807i64;
+func main() i32 {
+    if (F >= 0) { return 1; }
+    if (F != -3000000000) { return 2; }
+    if (G != -2147483649) { return 3; }
+    if (H != J - 1i64) { return 4; }
+    if (H >= 0i64) { return 5; }
+    var h = H;
+    var j = J;
+    if (h + 1i64 != j) { return 6; }
+    return 42;
+}

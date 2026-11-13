@@ -1,0 +1,16 @@
+// `var p = &grid` is `*[N][M]...T`. Reading through it is the same as a written pointer type.
+func mk() [2][2]f64 {
+    return [_][2]f64{{1.0, 2.0}, {3.0, 4.0}};
+}
+
+func main() i32 {
+    var a [2]i32 = [_]i32{1, 2};
+    var p = &a;
+    if ((*p)[1] != 2 || p[0] != 1) { return 1; }
+    var g [2][2][2]u8 = [_][2][2]u8{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}};
+    var q = &g;
+    if ((*q)[1][1][1] != 8u8 || q[1][0][0] != 5u8) { return 2; }
+    var m = mk();
+    if (m[1][1] != 4.0) { return 3; }
+    return 42;
+}

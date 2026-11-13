@@ -451,6 +451,26 @@ struct TypedValue {
     bool local_array = false;
 };
 
+// The element a value describes: the leaf type and every constructor in `shells`.
+// `Binding`, `TypedValue`, and `Lowered` each carry these fields. Copy them together, so a nested
+// `[][M][K]T` keeps the shells past the first row. The caller still sets `depth`, `is_slice`,
+// `is_array`, and `array_len`, which say how this value holds that element.
+template <class To, class From>
+void copy_element(To &to, const From &from) {
+    to.elem_char = from.elem_char;
+    to.struct_id = from.struct_id;
+    to.elem_void = from.elem_void;
+    to.elem_bool = from.elem_bool;
+    to.elem_bits = from.elem_bits;
+    to.elem_unsigned = from.elem_unsigned;
+    to.elem_float = from.elem_float;
+    to.enum_id = from.enum_id;
+    to.inner_array_len = from.inner_array_len;
+    to.elem_slice = from.elem_slice;
+    to.shells = from.shells;
+    to.tuple_parts = from.tuple_parts;
+}
+
 // How an extern function passes one struct on x86-64 System V.
 // Clang lowers that ABI in the frontend. A plain LLVM struct in the
 // signature does not match gcc.
@@ -1658,6 +1678,10 @@ class CodeGen {
     void emit_for_each(const Stmt::For &node);
     void emit_unrolled_for(const Stmt::For &node);
     void emit_bind(const Stmt::Bind &node);
+    // A new local holding a copy of `got`. The slice keeps its header. The array is copied whole.
+    // `got.shells` is the element, at any depth. `var` and `for` bind through these.
+    Binding bind_slice_copy(const std::string &name, const TypedValue &got, SourceLoc loc);
+    std::optional<Binding> bind_array_copy(const std::string &name, const TypedValue &got, SourceLoc loc);
     // A missing local initializer. One store per leaf, so a later store or an unread leaf can be deleted.
     void zero_slot(llvm::Value *slot, llvm::Type *ty);
     void zero_leaves(llvm::Value *slot, llvm::Type *ty);

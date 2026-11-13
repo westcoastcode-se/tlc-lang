@@ -1,0 +1,16 @@
+// `*[]T` keeps the element type. `(*p)[i]` reads a `u8`, an `f64`, or a `bool`, not an `i32`.
+func main() i32 {
+    var a [3]u8 = [_]u8{1, 2, 3};
+    var s []u8 = a[:];
+    var p = &s;
+    if ((*p)[2] != 3u8) { return 1; }
+    var f [2]f64 = [_]f64{0.25, 0.5};
+    var fs []f64 = f[:];
+    var fp = &fs;
+    if ((*fp)[1] != 0.5) { return 2; }
+    var b [2]bool = [_]bool{false, true};
+    var bs []bool = b[:];
+    var bp = &bs;
+    if (!(*bp)[1] || (*bp)[0]) { return 3; }
+    return 42;
+}

@@ -577,6 +577,55 @@ void CodeGen::zero_slot(llvm::Value *slot, llvm::Type *ty) {
     zero_leaves(slot, ty);
 }
 
+Binding CodeGen::bind_slice_copy(const std::string &name, const TypedValue &got, SourceLoc loc) {
+    llvm::AllocaInst *slot = alloca_typed(slice_type(), name);
+    llvm::Value *stored =
+        got.value != nullptr && got.value->getType() == slice_type() ? got.value : as_slice_value(got, loc);
+    builder_.CreateStore(stored, slot);
+    Binding binding;
+    binding.value = slot;
+    binding.is_slice = true;
+    binding.array_len = -1;
+    binding.local_array = got.local_array || local_array_address(got.value);
+    // A string literal is still a pointer here. The slice element is what that pointer addresses.
+    binding.depth =
+        got.value != nullptr && got.value->getType() != slice_type() && got.depth > 0 ? got.depth - 1 : got.depth;
+    copy_element(binding, got);
+    binding.alias_owner = got.alias_owner;
+    binding.alias_file = got.alias_file;
+    return binding;
+}
+
+std::optional<Binding> CodeGen::bind_array_copy(const std::string &name, const TypedValue &got, SourceLoc loc) {
+    auto *array_ty = llvm::cast<llvm::ArrayType>(got.array_type);
+    llvm::AllocaInst *slot = alloca_typed(array_ty, name);
+    llvm::Value *loaded = array_bits(got.value, array_ty, loc);
+    if (loaded == nullptr || terminated()) {
+        return std::nullopt;
+    }
+    builder_.CreateStore(loaded, slot);
+    Binding binding;
+    copy_element(binding, got);
+    binding.value = slot;
+    binding.depth = 0;
+    binding.is_array = true;
+    binding.array_len = static_cast<int>(array_ty->getNumElements());
+    // The value's shells are the element. The binding names the whole array, so the outer `[N]` comes first.
+    TypeShell outer;
+    outer.kind = TypeShell::Kind::Array;
+    outer.length = binding.array_len;
+    binding.shells.insert(binding.shells.begin(), outer);
+    // `var got = pair(...)` when the result is `[2]T` and `T` is a tuple. Each element stays the tuple.
+    binding.inner_array_len = 0;
+    if (binding.shells.size() >= 2 && binding.shells[1].kind == TypeShell::Kind::Array) {
+        binding.inner_array_len = binding.shells[1].length;
+    }
+    if (binding.shells.size() >= 2 && binding.shells[1].kind == TypeShell::Kind::Slice) {
+        binding.elem_slice = true;
+    }
+    return binding;
+}
+
 void CodeGen::emit_bind(const Stmt::Bind &node) {
     if (node.value == nullptr || node.names.empty() || scopes_.empty()) {
         error(node.loc, "type mismatch");
@@ -685,31 +734,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         }
         // A designator's depth is the return depth. The value itself is already a function pointer.
         if (got.is_slice) {
-            llvm::AllocaInst *slot = alloca_typed(slice_type(), name);
-            llvm::Value *stored = got.value != nullptr && got.value->getType() == slice_type() ? got.value
-                                                                                              : as_slice_value(got, node.loc);
-            builder_.CreateStore(stored, slot);
-            Binding binding;
-            binding.value = slot;
-            binding.is_slice = true;
-            binding.array_len = -1;
-            binding.local_array = got.local_array || local_array_address(got.value);
-            // A string literal is still a pointer here. The slice element is what that pointer addresses.
-            binding.depth = got.value != nullptr && got.value->getType() != slice_type() && got.depth > 0 ? got.depth - 1
-                                                                                                          : got.depth;
-            binding.elem_char = got.elem_char;
-            binding.struct_id = got.struct_id;
-            binding.elem_void = got.elem_void;
-            binding.elem_bool = got.elem_bool;
-            binding.elem_bits = got.elem_bits;
-            binding.elem_unsigned = got.elem_unsigned;
-            binding.elem_float = got.elem_float;
-            binding.enum_id = got.enum_id;
-            binding.inner_array_len = got.inner_array_len;
-            binding.elem_slice = got.elem_slice;
-            binding.tuple_parts = got.tuple_parts;
-            binding.alias_owner = got.alias_owner;
-            binding.alias_file = got.alias_file;
+            const Binding binding = bind_slice_copy(name, got, node.loc);
             scopes_.back()[name] = binding;
             alias_capture(name, binding);
             note(name, binding);
@@ -717,44 +742,13 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
         }
         // `var copy = row` copies the array. `*i32(row)` has no array type and stays a pointer.
         if (got.array_type != nullptr && got.array_type->isArrayTy() && got.value != nullptr) {
-            auto *array_ty = llvm::cast<llvm::ArrayType>(got.array_type);
-            llvm::AllocaInst *slot = alloca_typed(array_ty, name);
-            llvm::Value *loaded = array_bits(got.value, array_ty, node.loc);
-            if (loaded == nullptr || terminated()) {
+            const std::optional<Binding> binding = bind_array_copy(name, got, node.loc);
+            if (!binding) {
                 return;
             }
-            builder_.CreateStore(loaded, slot);
-            Binding binding;
-            binding.value = slot;
-            binding.depth = 0;
-            binding.is_array = true;
-            binding.array_len = static_cast<int>(array_ty->getNumElements());
-            binding.elem_char = got.elem_char;
-            binding.struct_id = got.struct_id;
-            binding.elem_void = got.elem_void;
-            binding.elem_bool = got.elem_bool;
-            binding.elem_bits = got.elem_bits;
-            binding.elem_unsigned = got.elem_unsigned;
-            binding.elem_float = got.elem_float;
-            binding.enum_id = got.enum_id;
-            binding.elem_slice = got.elem_slice;
-            TypeShell outer;
-            outer.kind = TypeShell::Kind::Array;
-            outer.length = binding.array_len;
-            binding.shells.push_back(outer);
-            binding.shells.insert(binding.shells.end(), got.shells.begin(), got.shells.end());
-            // `var got = pair(...)` when the result is `[2]T` and `T` is a tuple.
-            // The copy is that array. Each element stays the tuple.
-            binding.tuple_parts = got.tuple_parts;
-            if (binding.shells.size() >= 2 && binding.shells[1].kind == TypeShell::Kind::Array) {
-                binding.inner_array_len = binding.shells[1].length;
-            }
-            if (binding.shells.size() >= 2 && binding.shells[1].kind == TypeShell::Kind::Slice) {
-                binding.elem_slice = true;
-            }
-            scopes_.back()[name] = binding;
-            alias_capture(name, binding);
-            note(name, binding);
+            scopes_.back()[name] = *binding;
+            alias_capture(name, *binding);
+            note(name, *binding);
             return;
         }
         // `var p = id(&row)` when the result is `*[2](i32, i32)`. The slot holds that pointer.
@@ -763,15 +757,12 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             llvm::AllocaInst *slot = alloca_typed(ptr_type(), name);
             builder_.CreateStore(got.value, slot);
             Binding binding;
+            copy_element(binding, got);
             binding.value = slot;
             binding.depth = got.depth;
-            binding.shells = got.shells;
-            binding.tuple_parts = got.tuple_parts;
             binding.ptr_to_array = got.ptr_to_array;
             binding.ptr_array_len = got.ptr_array_len;
-            binding.inner_array_len = got.inner_array_len;
             binding.array_len = got.array_len;
-            binding.elem_slice = got.elem_slice;
             scopes_.back()[name] = binding;
             alias_capture(name, binding);
             note(name, binding);
@@ -1386,6 +1377,16 @@ void CodeGen::emit_for_each(const Stmt::For &node) {
         if (address.value != nullptr) {
             if (want_ref) {
                 builder_.CreateStore(address.value, slot);
+            } else if (address.array_type != nullptr && address.array_type->isArrayTy()) {
+                // An element `[M]...T` is copied as `var r = row` copies it. Its shells stay whole.
+                if (const std::optional<Binding> row = bind_array_copy(node.each_name, address, node.loc)) {
+                    scopes_.back()[node.each_name] = *row;
+                }
+            } else if (address.is_slice && address.value->getType()->isPointerTy()) {
+                // An element `[]...T` is one header in memory.
+                TypedValue header = address;
+                header.value = builder_.CreateLoad(slice_type(), address.value);
+                scopes_.back()[node.each_name] = bind_slice_copy(node.each_name, header, node.loc);
             } else {
                 llvm::Value *loaded = builder_.CreateLoad(slot_type, address.value);
                 builder_.CreateStore(loaded, slot);
@@ -1587,7 +1588,17 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                                                                 : as_slice_value(value, node.loc);
                     if (eval_ && packed != nullptr) {
                         uint64_t elem_size = 4;
-                        if (value.value != nullptr) {
+                        // `[][M]...T` steps by the whole row. The shells after the slice are that element.
+                        llvm::Type *row = nullptr;
+                        if (!value.shells.empty() && value.shells.front().kind == TypeShell::Kind::Slice &&
+                            value.shells.size() >= 2) {
+                            const std::vector<TypeShell> rest(value.shells.begin() + 1, value.shells.end());
+                            row = shell_type(rest, value.depth, value.elem_char, value.struct_id, value.elem_bool,
+                                             value.elem_bits, value.elem_float);
+                        }
+                        if (row != nullptr && row->isSized()) {
+                            elem_size = module_.getDataLayout().getTypeAllocSize(row).getFixedValue();
+                        } else if (value.value != nullptr) {
                             if (llvm::Type *object = object_type(value.value); object != nullptr && object->isArrayTy()) {
                                 elem_size = module_.getDataLayout()
                                                 .getTypeAllocSize(llvm::cast<llvm::ArrayType>(object)->getElementType())

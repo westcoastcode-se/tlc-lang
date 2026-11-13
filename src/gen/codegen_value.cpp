@@ -258,6 +258,17 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             // `(&grid)[i:j]` steps by the row. A flat array leaves this at 0.
                             pointer.inner_array_len = binding->inner_array_len;
                             pointer.elem_slice = binding->elem_slice;
+                            pointer.tuple_parts = binding->tuple_parts;
+                            // `var p = &grid` is `*[N][M]...T`, the same shells a written `*[N][M]T` has.
+                            // The pointer shell holds the indirection, so `depth` is the leaf's again.
+                            if (!binding->shells.empty() && binding->shells.front().kind == TypeShell::Kind::Array) {
+                                TypeShell shell;
+                                shell.kind = TypeShell::Kind::Pointer;
+                                pointer.shells.push_back(shell);
+                                pointer.shells.insert(pointer.shells.end(), binding->shells.begin(),
+                                                      binding->shells.end());
+                                pointer.depth = binding->depth;
+                            }
                             return pointer;
                         }
                     }
@@ -1903,6 +1914,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                      low.elem_float};
                     value.array_len = low.array_len;
                     value.inner_array_len = low.inner_array_len;
+                    // As on a loaded array name, the shells are the element: `[M]...` after the outer `[N]`.
+                    if (!low.shells.empty() && low.shells.front().kind == TypeShell::Kind::Array) {
+                        value.shells.assign(low.shells.begin() + 1, low.shells.end());
+                    }
+                    value.elem_slice = low.elem_slice;
+                    value.array_type = slot->getAllocatedType();
                     value.fn_ty = low.fn_ty;
                     value.fn_ret_depth = low.fn_ret_depth;
                     value.fn_ret_float = low.fn_ret_float;

@@ -1,0 +1,9 @@
+// A tuple holds an array literal by value, at any depth.
+func main() i32 {
+    var t = ([_][2][2]i32{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, 7);
+    var a = t[0];
+    if (a[1][1][1] != 8 || t[1] != 7 || t[0][1][0][1] != 6) { return 1; }
+    var f = ([_][2]f64{{0.5, 1.5}, {2.5, 3.5}}, true);
+    if (f[0][1][0] != 2.5 || !f[1]) { return 2; }
+    return 42;
+}

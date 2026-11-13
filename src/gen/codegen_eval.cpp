@@ -19,8 +19,10 @@ constexpr const char *kBodyName = "tlc.comptime.body";
 constexpr const char *kPoolName = "tlc.comptime.pool";
 constexpr const char *kUsedName = "tlc.comptime.used";
 
-// One row of a comptime array. `max_shells` is three, or four for `i8`, `u8`, and `i32`.
-// A fifth shell stays out.
+// The leaf of a comptime array. The schema walk is recursive, so every leaf takes the same
+// number of shells. Same limit as `kComptimeMaxShells` in the checker.
+constexpr int kMaxShells = 16;
+
 struct ElemShape {
     const char *name;
     int bits;
@@ -32,12 +34,12 @@ struct ElemShape {
 
 const ElemShape *elem_shape(const std::string &name) {
     static const ElemShape table[] = {
-        {"i32", 32, false, false, false, 4}, {"i64", 64, false, false, false, 3},
-        {"u32", 32, true, false, false, 3},  {"u64", 64, true, false, false, 3},
-        {"i16", 16, false, false, false, 3}, {"u16", 16, true, false, false, 3},
-        {"i8", 8, false, false, false, 4},   {"u8", 8, true, false, false, 4},
-        {"f32", 32, false, true, false, 3},  {"f64", 64, false, true, false, 3},
-        {"bool", 1, false, false, true, 3},
+        {"i32", 32, false, false, false, kMaxShells}, {"i64", 64, false, false, false, kMaxShells},
+        {"u32", 32, true, false, false, kMaxShells},  {"u64", 64, true, false, false, kMaxShells},
+        {"i16", 16, false, false, false, kMaxShells}, {"u16", 16, true, false, false, kMaxShells},
+        {"i8", 8, false, false, false, kMaxShells},   {"u8", 8, true, false, false, kMaxShells},
+        {"f32", 32, false, true, false, kMaxShells},  {"f64", 64, false, true, false, kMaxShells},
+        {"bool", 1, false, false, true, kMaxShells},
     };
     for (const ElemShape &item : table) {
         if (name == item.name) {
@@ -1020,6 +1022,54 @@ struct Decoded {
     std::unique_ptr<Expr> expr;
 };
 
+const char *leaf_name(const ComptimeSlot &leaf) {
+    if (leaf.kind == ComptimeSlot::Kind::Int) {
+        return int_elem_name(leaf.bits, leaf.is_unsigned);
+    }
+    if (leaf.kind == ComptimeSlot::Kind::F32) {
+        return "f32";
+    }
+    if (leaf.kind == ComptimeSlot::Kind::F64) {
+        return "f64";
+    }
+    if (leaf.kind == ComptimeSlot::Kind::Bool) {
+        return "bool";
+    }
+    return nullptr;
+}
+
+// The element of an array literal decoded from `element`: a leaf, or `[N][M]...` of one.
+// `elem_shells` lists every inner length when there is more than one. False when the leaf is not a number.
+bool element_shape(const ComptimeSlot &element, Expr::Init &init) {
+    const ComptimeSlot *cursor = &element;
+    std::vector<int> lens;
+    while (cursor->kind == ComptimeSlot::Kind::Array && cursor->children.size() == 1 &&
+           lens.size() < static_cast<std::size_t>(kMaxShells)) {
+        lens.push_back(static_cast<int>(cursor->count));
+        cursor = &cursor->children.front();
+    }
+    const char *name = leaf_name(*cursor);
+    if (name == nullptr || elem_shape(name) == nullptr) {
+        return false;
+    }
+    init.type_name = name;
+    if (lens.empty()) {
+        return true;
+    }
+    init.elem_is_array = true;
+    init.elem_array_len = lens.front();
+    if (lens.size() > 1) {
+        init.elem_shells.reserve(lens.size());
+        for (const int len : lens) {
+            TypeShell shell;
+            shell.kind = TypeShell::Kind::Array;
+            shell.length = len;
+            init.elem_shells.push_back(shell);
+        }
+    }
+    return true;
+}
+
 Decoded decode_slot(const ComptimeSlot &slot, const uint8_t *base, uint64_t base_size, bool little,
                     const uint8_t *pool, uint64_t pool_size, const std::unordered_map<uint64_t, std::string> &functions,
                     const GlobalTable &globals);
@@ -1247,30 +1297,11 @@ Decoded decode_slot(const ComptimeSlot &slot, const uint8_t *base, uint64_t base
                 if (init.type_name.empty()) {
                     return unsupported();
                 }
-            } else if (child.kind == ComptimeSlot::Kind::Array && child.count > 0 && !child.children.empty() &&
-                       child.children.front().kind == ComptimeSlot::Kind::Int && child.children.front().bits == 32 &&
-                       !child.children.front().is_unsigned) {
-                // `[][N]i32`. The element is that row.
-                init.type_name = "i32";
-                init.elem_is_array = true;
-                init.elem_array_len = static_cast<int>(child.count);
-            } else if (child.kind == ComptimeSlot::Kind::Array && child.count > 0 && !child.children.empty() &&
-                       child.children.front().kind == ComptimeSlot::Kind::Array && child.children.front().count > 0 &&
-                       !child.children.front().children.empty() &&
-                       child.children.front().children.front().kind == ComptimeSlot::Kind::Int &&
-                       child.children.front().children.front().bits == 32 &&
-                       !child.children.front().children.front().is_unsigned) {
-                // `[][N][M]i32`. One more array shell stays out.
-                init.type_name = "i32";
-                init.elem_is_array = true;
-                TypeShell outer;
-                outer.kind = TypeShell::Kind::Array;
-                outer.length = static_cast<int>(child.count);
-                TypeShell inner;
-                inner.kind = TypeShell::Kind::Array;
-                inner.length = static_cast<int>(child.children.front().count);
-                init.elem_shells.push_back(outer);
-                init.elem_shells.push_back(inner);
+            } else if (child.kind == ComptimeSlot::Kind::Array && child.count > 0) {
+                // `[][N]T`, `[][N][M]T`, and every deeper row. The element is that row.
+                if (!element_shape(child, init)) {
+                    return unsupported();
+                }
             } else {
                 return unsupported();
             }
@@ -1354,46 +1385,8 @@ Decoded decode_slot(const ComptimeSlot &slot, const uint8_t *base, uint64_t base
         auto expr = std::make_unique<Expr>();
         Expr::Init init;
         init.array_literal = true;
-        const auto shape_name = [](const ComptimeSlot &inner) -> const char * {
-            if (inner.kind == ComptimeSlot::Kind::Int) {
-                return int_elem_name(inner.bits, inner.is_unsigned);
-            }
-            if (inner.kind == ComptimeSlot::Kind::F32) {
-                return "f32";
-            }
-            if (inner.kind == ComptimeSlot::Kind::F64) {
-                return "f64";
-            }
-            if (inner.kind == ComptimeSlot::Kind::Bool) {
-                return "bool";
-            }
-            return nullptr;
-        };
-        const ComptimeSlot *cursor = &slot.children.front();
-        std::vector<int> inner_lens;
-        while (cursor->kind == ComptimeSlot::Kind::Array && cursor->children.size() == 1 && inner_lens.size() < 4) {
-            inner_lens.push_back(static_cast<int>(cursor->count));
-            cursor = &cursor->children.front();
-        }
-        const char *name = shape_name(*cursor);
-        const ElemShape *shape = name == nullptr ? nullptr : elem_shape(name);
-        const int shells = static_cast<int>(inner_lens.size()) + (name == nullptr ? 0 : 1);
-        if (shape != nullptr && shells >= 1 && shells <= shape->max_shells) {
-            init.type_name = name;
-            if (!inner_lens.empty()) {
-                init.elem_is_array = true;
-                init.elem_array_len = inner_lens.front();
-                if (inner_lens.size() > 1) {
-                    init.elem_shells.reserve(inner_lens.size());
-                    for (const int len : inner_lens) {
-                        TypeShell shell;
-                        shell.kind = TypeShell::Kind::Array;
-                        shell.length = len;
-                        init.elem_shells.push_back(shell);
-                    }
-                }
-            }
-        }
+        // The element is the leaf, or the rows below it. A struct or a pointer leaves the name empty.
+        element_shape(slot.children.front(), init);
         init.elements.reserve(static_cast<std::size_t>(slot.count));
         for (uint64_t index = 0; index < slot.count; ++index) {
             const uint64_t at = index * slot.stride;
@@ -1540,7 +1533,6 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
         }
     }
     // One shell from `elem_shape`, up to `max_shells`. A scalar slice is copied into the pool.
-    // Four shells are `i8`, `u8`, and `i32`. A fifth shell stays out.
     const ElemShape *shape = fn.results.size() == 1 ? elem_shape(fn.results.front().type_name) : nullptr;
     const bool one_array = !many_results && shape != nullptr && fn.results.front().is_array &&
                            fn.results.front().array_len > 0 && fn.results.front().indirections == 0 &&
@@ -1550,23 +1542,21 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
     const bool plain_slice = slot != nullptr && slot->is_array && slot->array_len < 0 && slot->indirections == 0 &&
                              !slot->is_tuple && !slot->is_fn_ptr && slot->type_package.empty();
     const bool one_slice = !many_results && plain_slice && shape != nullptr && array_shells == 0;
-    int i32_array_shells = 0;
-    bool i32_arrays = !many_results && plain_slice && shape != nullptr && shape->bits == 32 && !shape->is_unsigned &&
-                      !shape->is_float && !shape->is_bool && !slot->shells.empty() &&
-                      slot->shells.front().kind == TypeShell::Kind::Slice;
-    if (i32_arrays) {
+    // `[][N]T`, `[][N][M]T`, and every deeper `[][...]T`: a slice whose element is an array of a leaf.
+    int row_shells = 0;
+    bool row_slice = !many_results && plain_slice && shape != nullptr && !slot->shells.empty() &&
+                     slot->shells.front().kind == TypeShell::Kind::Slice;
+    if (row_slice) {
         for (std::size_t index = 1; index < slot->shells.size(); ++index) {
             const TypeShell &shell = slot->shells[index];
             if (shell.kind != TypeShell::Kind::Array || shell.length <= 0) {
-                i32_arrays = false;
+                row_slice = false;
                 break;
             }
-            ++i32_array_shells;
+            ++row_shells;
         }
     }
-    // `[][N]i32` is one array shell. `[][N][M]i32` is two. A third stays out.
-    const bool one_row = i32_arrays && i32_array_shells == 1;
-    const bool one_grid = i32_arrays && i32_array_shells == 2;
+    const bool one_row = row_slice && row_shells >= 1 && row_shells < shape->max_shells;
     int struct_slice_id = -1;
     if (!many_results && plain_slice && shape == nullptr && slot->shells.size() == 1 &&
         slot->shells[0].kind == TypeShell::Kind::Slice) {
@@ -1580,7 +1570,7 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
     }
     const bool one_struct_slice = struct_slice_id >= 0;
     const StructLayout *layout = nullptr;
-    if (!many_results && !one_tuple && !one_array && !one_slice && !one_row && !one_grid && !one_struct_slice &&
+    if (!many_results && !one_tuple && !one_array && !one_slice && !one_row && !one_struct_slice &&
         !one_pointer) {
         const Lowered ret = lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, false, 0, false);
         if (ret.struct_id < 0 || ret.struct_id >= static_cast<int>(structs_.size()) || ret.depth != 0 || ret.is_array ||
@@ -1794,7 +1784,7 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
         if (image.root.kind != ComptimeSlot::Kind::Array) {
             return give_up();
         }
-    } else if (one_slice || one_row || one_grid || one_struct_slice) {
+    } else if (one_slice || one_row || one_struct_slice) {
         auto *packed = llvm::dyn_cast<llvm::StructType>(measured);
         if (packed == nullptr || !packed->isSized() || packed->getNumElements() < 2) {
             return give_up();
@@ -1816,32 +1806,35 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
             image.root.stride = element.size;
             image.root.children.push_back(std::move(element));
         } else if (one_row) {
-            const int length = slot->shells[1].length;
+            // The element is `[N][M]...T`. Build that array type from the inside out.
+            llvm::Type *leaf = shape->is_bool    ? static_cast<llvm::Type *>(i1())
+                               : shape->is_float ? (shape->bits >= 64 ? f64_ty() : f32_ty())
+                                                 : static_cast<llvm::Type *>(bits_type(shape->bits));
+            llvm::Type *row = leaf;
+            for (std::size_t index = slot->shells.size(); index-- > 1;) {
+                row = llvm::ArrayType::get(row, static_cast<uint64_t>(slot->shells[index].length));
+            }
             FieldLayout field;
-            field.type = llvm::ArrayType::get(i32(), static_cast<uint64_t>(length));
+            field.type = row;
             field.is_array = true;
-            field.array_len = length;
+            field.array_len = slot->shells[1].length;
+            if (shape->is_float) {
+                field.elem_float = true;
+                field.elem_bits = shape->bits;
+            } else if (shape->is_bool) {
+                field.elem_bool = true;
+            } else if (shape->bits != 32) {
+                field.elem_bits = shape->bits;
+                field.elem_unsigned = shape->is_unsigned;
+            } else if (shape->is_unsigned) {
+                field.elem_unsigned = true;
+                field.elem_bits = 32;
+            }
             ComptimeSlot element = schema_field(schema_field, field);
             if (element.kind != ComptimeSlot::Kind::Array || element.size == 0 || element.stride == 0) {
                 return give_up();
             }
-            image.root.type_name = "i32";
-            image.root.stride = element.size;
-            image.root.children.push_back(std::move(element));
-        } else if (one_grid) {
-            const int outer = slot->shells[1].length;
-            const int inner = slot->shells[2].length;
-            FieldLayout field;
-            field.type = llvm::ArrayType::get(llvm::ArrayType::get(i32(), static_cast<uint64_t>(inner)),
-                                              static_cast<uint64_t>(outer));
-            field.is_array = true;
-            field.array_len = outer;
-            ComptimeSlot element = schema_field(schema_field, field);
-            if (element.kind != ComptimeSlot::Kind::Array || element.size == 0 || element.stride == 0 ||
-                element.children.empty() || element.children.front().kind != ComptimeSlot::Kind::Array) {
-                return give_up();
-            }
-            image.root.type_name = "i32";
+            image.root.type_name = shape->name;
             image.root.stride = element.size;
             image.root.children.push_back(std::move(element));
         } else {
@@ -2235,7 +2228,8 @@ ComptimeStructValue eval_comptime_struct(
 }
 
 llvm::Value *CodeGen::retain_eval_slice(llvm::Value *packed, uint64_t elem_size) {
-    if (!eval_ || packed == nullptr || elem_size == 0 || elem_size > 16 || packed->getType() != slice_type()) {
+    // Any element size. The pool bound below rejects a copy that does not fit.
+    if (!eval_ || packed == nullptr || elem_size == 0 || packed->getType() != slice_type()) {
         return packed;
     }
     auto *pool = module_.getNamedGlobal(kPoolName);

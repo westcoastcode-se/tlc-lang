@@ -1,0 +1,24 @@
+// `for` binds an element that is itself an array or a slice, at any depth.
+func main() i32 {
+    var a [2][2][2]i32 = [_][2][2]i32{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}};
+    var sum = 0;
+    for (var row : a) {
+        sum = sum + row[1][1];
+    }
+    if (sum != 12) { return 1; }
+    var s [][2][2]i32 = a[:];
+    var last = 0;
+    for (var row : s) {
+        last = row[0][1];
+    }
+    if (last != 6) { return 2; }
+    var b [2]bool = [_]bool{true, false};
+    var c [2]bool = [_]bool{false, true};
+    var rows [2][]bool = [_][]bool{b[:], c[:]};
+    var count = 0;
+    for (var row : rows) {
+        if (row[1]) { count = count + 1; }
+    }
+    if (count != 1) { return 3; }
+    return 42;
+}

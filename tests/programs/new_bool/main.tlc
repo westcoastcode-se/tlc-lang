@@ -1,0 +1,12 @@
+// `new [n]bool` names the element with the keyword `bool`.
+func main() i32 {
+    var n = 3;
+    var flags = new [n]bool;
+    flags[0] = false;
+    flags[1] = true;
+    flags[2] = false;
+    var ok = flags[1] && !flags[0] && flags.len == 3;
+    delete flags;
+    if (ok) { return 42; }
+    return 1;
+}

@@ -166,11 +166,75 @@ Type type_tuple(std::vector<Type> results) {
     return type;
 }
 
+namespace {
+
+// A fixed array is its elements. `const [2][2]i32`, `[2]const [2]i32`, and `[2][2]const i32` are one type,
+// at any depth. A slice, a pointer, and a tuple keep their own `const`: it does not reach what they refer to.
+bool fixed_array(const Type &type) {
+    return type.kind == TypeKind::Array && type.length >= 0 && type.element != nullptr;
+}
+
+bool same_type_const(const Type &lhs, bool lhs_const, const Type &rhs, bool rhs_const) {
+    if (lhs.alias_id != rhs.alias_id || lhs.kind != rhs.kind) {
+        return false;
+    }
+    lhs_const = lhs_const || lhs.is_const;
+    rhs_const = rhs_const || rhs.is_const;
+    if (fixed_array(lhs) || fixed_array(rhs)) {
+        return fixed_array(lhs) && fixed_array(rhs) && lhs.length == rhs.length &&
+               same_type_const(*lhs.element, lhs_const, *rhs.element, rhs_const);
+    }
+    if (lhs_const != rhs_const) {
+        return false;
+    }
+    Type bare_lhs = lhs;
+    Type bare_rhs = rhs;
+    bare_lhs.is_const = false;
+    bare_rhs.is_const = false;
+    return same_type(bare_lhs, bare_rhs);
+}
+
+bool allows_added_const_from(const Type &got, bool got_const, const Type &want, bool want_const) {
+    if (got.alias_id != want.alias_id || got.kind != want.kind) {
+        return false;
+    }
+    got_const = got_const || got.is_const;
+    want_const = want_const || want.is_const;
+    if (fixed_array(got) || fixed_array(want)) {
+        return fixed_array(got) && fixed_array(want) && got.length == want.length &&
+               allows_added_const_from(*got.element, got_const, *want.element, want_const);
+    }
+    if (got_const && !want_const) {
+        return false;
+    }
+    if (got.kind == TypeKind::Array) {
+        return got.length == want.length && got.element && want.element &&
+               allows_added_const_from(*got.element, false, *want.element, false);
+    }
+    if (got.kind == TypeKind::Pointer) {
+        return got.optional == want.optional && got.pointee && want.pointee &&
+               allows_added_const_from(*got.pointee, false, *want.pointee, false);
+    }
+    Type bare_got = got;
+    Type bare_want = want;
+    bare_got.is_const = false;
+    bare_want.is_const = false;
+    return same_type(bare_got, bare_want);
+}
+
+} // namespace
+
 bool same_type(const Type &lhs, const Type &rhs) {
     if (lhs.alias_id != rhs.alias_id) {
         return false;
     }
-    if (lhs.kind != rhs.kind || lhs.is_const != rhs.is_const) {
+    if (lhs.kind != rhs.kind) {
+        return false;
+    }
+    if (fixed_array(lhs) && lhs.alias_id == 0) {
+        return same_type_const(lhs, false, rhs, false);
+    }
+    if (lhs.is_const != rhs.is_const) {
         return false;
     }
     if (lhs.kind == TypeKind::Pointer) {
@@ -275,25 +339,7 @@ bool is_slice(const Type &type) {
 
 // `[]i32` converts to `[]const i32`. `[]const i32` does not convert to `[]i32`.
 bool allows_added_const(const Type &got, const Type &want) {
-    if (got.alias_id != want.alias_id || got.kind != want.kind) {
-        return false;
-    }
-    if (got.is_const && !want.is_const) {
-        return false;
-    }
-    if (got.kind == TypeKind::Array) {
-        return got.length == want.length && got.element && want.element &&
-               allows_added_const(*got.element, *want.element);
-    }
-    if (got.kind == TypeKind::Pointer) {
-        return got.optional == want.optional && got.pointee && want.pointee &&
-               allows_added_const(*got.pointee, *want.pointee);
-    }
-    Type bare_got = got;
-    Type bare_want = want;
-    bare_got.is_const = false;
-    bare_want.is_const = false;
-    return same_type(bare_got, bare_want);
+    return allows_added_const_from(got, false, want, false);
 }
 
 bool accepts_slice(const Type &got, const Type &want) {

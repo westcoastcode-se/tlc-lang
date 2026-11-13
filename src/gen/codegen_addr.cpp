@@ -265,6 +265,16 @@ llvm::Value *CodeGen::emit_short_circuit(const Expr::Binary &expr, bool is_and) 
 
 TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript, SourceLoc loc) {
     if (!base.shells.empty() && subscript != nullptr) {
+        // A slice header carries its length. `s[i]` past it panics, as on the path without shells.
+        const bool data_pointer = slice_data_addr_ && llvm::isa<llvm::ConstantInt>(subscript) &&
+                                  llvm::cast<llvm::ConstantInt>(subscript)->isZero();
+        if (base.shells.front().kind == TypeShell::Kind::Slice && base.value != nullptr &&
+            base.value->getType() == slice_type() && !data_pointer) {
+            trap_index(subscript, builder_.CreateExtractValue(base.value, 1), loc);
+            if (terminated()) {
+                return {};
+            }
+        }
         return index_shells(base, subscript);
     }
     if (base.is_slice) {
@@ -502,12 +512,15 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
         TypedValue out;
         out.value = slot;
         carry(out);
-        // `view[i]` on `[][M]T` is that row. A further index reads one element.
-        if (rest.size() == 1 && rest.front().kind == TypeShell::Kind::Array) {
+        // `view[i]` on `[][M]...T` is that row, a decayed `[M]` whose element is the shells after it.
+        // A further index reads the next level the same way, at any depth.
+        if (!rest.empty() && rest.front().kind == TypeShell::Kind::Array) {
             out.row_decay = true;
             out.array_len = rest.front().length;
             out.depth = base.depth + 1;
             out.array_type = element_of(rest);
+            mark(out, std::vector<TypeShell>(rest.begin() + 1, rest.end()));
+            out.is_slice = false;
             note_tuple(out);
             return out;
         }
@@ -1288,7 +1301,11 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
     const bool decayed_slice_elems = base.is_slice && !packed_slice && base.array_len > 0 && base.value != nullptr &&
                                      base.value->getType()->isPointerTy() && !base.shells.empty() &&
                                      base.shells.front().kind == TypeShell::Kind::Slice;
-    if (decayed_slice_elems) {
+    // A decayed `[N]E` keeps the element shells `E`: `[M]...` or `[]...`. The range is `[]E` at any depth.
+    // A parameter spells its decay as a leading `Pointer` shell. `decayed_headers` covers that form.
+    const bool decayed_rows = !packed_slice && !base.is_slice && !base.shells.empty() &&
+                              base.shells.front().kind != TypeShell::Kind::Pointer;
+    if (decayed_slice_elems || decayed_rows) {
         TypeShell header;
         header.kind = TypeShell::Kind::Slice;
         range_shells.push_back(header);
@@ -1324,7 +1341,7 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
         llvm::Value *end_index = nullptr;
         // A header element steps by `tlc.slice`. A row `[M]T` steps by that row.
         // A parameter `[N][]T` is a pointer. The range steps by the element after that pointer.
-        if (decayed_slice_elems) {
+        if (decayed_slice_elems || decayed_rows) {
             element = shell_type(base.shells, elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
                                  base.elem_float);
         } else if (!base.shells.empty() && base.shells.front().kind == TypeShell::Kind::Slice) {

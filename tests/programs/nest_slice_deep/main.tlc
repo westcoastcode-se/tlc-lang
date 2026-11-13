@@ -1,0 +1,28 @@
+// A slice of arrays indexes every row the same way, at any depth.
+func get(s [][2][2][2]u8) u8 {
+    return s[1][1][1][1];
+}
+
+func tail(s [][2][2]f64) [][2][2]f64 {
+    return s[1:];
+}
+
+type Holder struct {
+    rows [][2][2][2]i32;
+};
+
+func main() i32 {
+    var a [2][2][2][2]u8 = [_][2][2][2]u8{{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {{{9, 10}, {11, 12}}, {{13, 14}, {15, 16}}}};
+    var s [][2][2][2]u8 = a[:];
+    if (s[1][1][1][1] != 16u8 || s.len != 2 || get(a[:]) != 16u8) { return 1; }
+    var inferred = a[:];
+    if (inferred[1][0][1][0] != 11u8) { return 2; }
+    var f [2][2][2]f64 = [_][2][2]f64{{{1.0, 2.0}, {3.0, 4.0}}, {{5.0, 6.0}, {7.0, 8.0}}};
+    var t = tail(f[:]);
+    if (t.len != 1 || t[0][1][1] != 8.0) { return 3; }
+    var g [2][2][2][2]i32 = [_][2][2][2]i32{{{{0, 0}, {0, 0}}, {{0, 0}, {0, 0}}}, {{{0, 0}, {0, 0}}, {{0, 0}, {0, 0}}}};
+    var h Holder = Holder{.rows = g[:]};
+    h.rows[1][1][1][1] = 42;
+    if (g[1][1][1][1] != 42) { return 4; }
+    return 42;
+}

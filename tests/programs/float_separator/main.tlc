@@ -1,0 +1,12 @@
+// A digit separator in a float literal is not part of the value.
+const G = 1'000.5;
+
+func main() i32 {
+    var f = 1'000.5;
+    if (f != 1000.5) { return 1; }
+    if (G != 1000.5) { return 2; }
+    if (0x1'0p0 != 16.0) { return 3; }
+    if (1.2'5 != 1.25) { return 4; }
+    if (1e1'0 != 1e10) { return 5; }
+    return 42;
+}

@@ -1,0 +1,16 @@
+// `const` on an array is the `const` of its elements at every depth. `[]const [2]i32` is `[][2]const i32`.
+const grid [2][2]i32 = [_][2]i32{{1, 2}, {3, 40}};
+
+func last(rows []const [2]i32) i32 {
+    return rows[1][1];
+}
+
+func corner(cells [][2][2]const i32) i32 {
+    return cells[0][1][1];
+}
+
+const cube [1][2][2]i32 = [_][2][2]i32{{{1, 2}, {3, 2}}};
+
+func main() i32 {
+    return last(grid[:]) + corner(cube[:]);
+}

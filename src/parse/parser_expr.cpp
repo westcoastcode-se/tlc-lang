@@ -479,6 +479,34 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
     node.indirections = prefix.count;
     node.optional = prefix.optional;
     node.const_pointee = prefix.const_pointee;
+    // `new [n]bool`. `bool` is a keyword, not an identifier, and still names the element type.
+    if (check(TokenKind::KwBool)) {
+        node.type_name = "bool";
+        ++pos_;
+        if (check(TokenKind::LBrace)) {
+            node.init = parse_init();
+        }
+        node.count = std::move(count);
+        node.count_inferred = inferred;
+        return make_expr(std::move(node));
+    }
+    // `new [n][m]T` and `new [n][]T` allocate an element that is itself an array or a slice.
+    // The element of `new` is one named type. Report the form once instead of a cascade.
+    if (check(TokenKind::LBracket) && (count || inferred)) {
+        error_here("not supported yet");
+        int bracket = 0;
+        while (!eof() && !check(TokenKind::Semicolon) && !(bracket == 0 && check(TokenKind::RParen))) {
+            if (check(TokenKind::LBracket) || check(TokenKind::LBrace) || check(TokenKind::LParen)) {
+                ++bracket;
+            } else if (check(TokenKind::RBracket) || check(TokenKind::RBrace) || check(TokenKind::RParen)) {
+                --bracket;
+            }
+            ++pos_;
+        }
+        node.count = std::move(count);
+        node.count_inferred = inferred;
+        return make_expr(std::move(node));
+    }
     if (!check(TokenKind::Identifier)) {
         error_here("expected a type");
         node.count = std::move(count);

@@ -1119,6 +1119,14 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
                                bool elem_slice, const std::vector<TypeShell> &shells) {
             const Lowered low = lower(current_file_, name, package, is_struct, indirections, false, 0, false, elem_slice,
                                       shells);
+            // `[][M][K]T` keeps every shell after the slice. An index reads each row the same way.
+            if (low.is_slice && !low.shells.empty()) {
+                result.shells = low.shells;
+                result.inner_array_len = low.inner_array_len;
+                if (result.tuple_parts.empty()) {
+                    result.tuple_parts = low.tuple_parts;
+                }
+            }
             if (low.alias_owner.empty()) {
                 return;
             }
@@ -1138,7 +1146,8 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         }
         return result;
     }
-    if (call.elem_float) {
+    // `[N]f64` is an array result. Only a scalar float returns here.
+    if (call.elem_float && !inst->getType()->isArrayTy()) {
         return {inst, 0, false, -1, false, false, false, call.elem_bits >= 64 ? 64 : 32, false, -1, true};
     }
     if (inst->getType()->isVoidTy()) {
@@ -1176,7 +1185,7 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         }
         llvm::Value *first = builder_.CreateInBoundsGEP(array_ty, slot, {const_i32(0), const_i32(0)});
         TypedValue result = tagged({first, call.depth + 1, call.elem_char, call.struct_id, false, call.elem_void,
-                                    call.elem_bool, call.elem_bits, call.elem_unsigned});
+                                    call.elem_bool, call.elem_bits, call.elem_unsigned, -1, call.elem_float});
         // The address is the first row. Shells after the outer array are that row, as on a local.
         if (call.decl != nullptr && call.decl->results.size() == 1) {
             const std::vector<TypeShell> &shells = call.decl->results.front().shells;

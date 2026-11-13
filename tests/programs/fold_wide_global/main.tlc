@@ -1,0 +1,35 @@
+// A file-scope integer past i32 keeps its whole value. The i32 fold does not wrap it.
+var X i64 = 5000000000;
+var Z u64 = 3000000000u32;
+const M = -3000000000;
+const K = 5000000000 >> 1;
+const L = 1i64 << 40;
+const S = 18446744073709551615u64 >> 60u64;
+const Q u64 = 18446744073709551615u64 % 10u64;
+
+type P struct {
+    a i32;
+    b i64;
+};
+
+var g P = P{.a = 1, .b = 5000000000};
+comptime const pair = (5000000000, 3000000000u32);
+
+func main() i32 {
+    if (X != 5000000000) { return 1; }
+    if (Z != 3000000000u64) { return 2; }
+    if (M >= 0) { return 3; }
+    if (M != -3000000000) { return 4; }
+    if (K != 2500000000) { return 5; }
+    if (L != 1099511627776i64) { return 6; }
+    if (S != 15u64) { return 7; }
+    if (Q != 5u64) { return 8; }
+    if (g.b != 5000000000) { return 9; }
+    var p = pair[0];
+    if (p != 5000000000) { return 10; }
+    var t = 4294967296 > 1 ? 1 : 2;
+    if (t != 1) { return 11; }
+    var l = P{.a = 1, .b = 5000000000}.b;
+    if (l != 5000000000) { return 12; }
+    return 42;
+}

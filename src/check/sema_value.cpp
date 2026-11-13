@@ -26,10 +26,6 @@ bool comptime_array_leaf(const Type &type) {
     return type.kind == TypeKind::Int && (type.rank == 2 || type.rank == 3 || type.rank == 5);
 }
 
-bool comptime_i32_leaf(const Type &type) {
-    return type.alias_id == 0 && type.kind == TypeKind::Int && type.rank == 3 && !type.is_unsigned;
-}
-
 // Rank 1 is 8 bits, 2 is 16, 3 is 32, and 5 is 64. An unsuffixed integer is rank 3.
 int integer_width(const Type &type) {
     if (type.kind == TypeKind::Char || type.rank == 1) {
@@ -44,24 +40,15 @@ int integer_width(const Type &type) {
     return 32;
 }
 
-bool comptime_i8_leaf(const Type &type) {
-    return type.alias_id == 0 && type.kind == TypeKind::Char && type.rank == 1 && !type.plain_char &&
-           !type.is_unsigned;
-}
-
-bool comptime_u8_leaf(const Type &type) {
-    return type.alias_id == 0 && type.kind == TypeKind::Char && type.rank == 1 && !type.plain_char &&
-           type.is_unsigned;
-}
+// The schema that copies a comptime array is recursive, so every leaf takes the same depth.
+// Same limit as `kMaxShells` in `gen/codegen_eval.cpp`.
+constexpr int kComptimeMaxShells = 16;
 
 int comptime_max_shells(const Type &leaf) {
     if (!comptime_array_leaf(leaf)) {
         return 0;
     }
-    if (comptime_i32_leaf(leaf) || comptime_i8_leaf(leaf) || comptime_u8_leaf(leaf)) {
-        return 4;
-    }
-    return 3;
+    return kComptimeMaxShells;
 }
 
 bool comptime_array_result(const Type &type) {
@@ -75,7 +62,7 @@ bool comptime_array_result(const Type &type) {
            cursor->element != nullptr) {
         ++shells;
         cursor = cursor->element.get();
-        if (shells > 4) {
+        if (shells > kComptimeMaxShells) {
             return false;
         }
     }
@@ -1346,22 +1333,17 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         node.comptime_struct = std::move(kept.value);
                         return result;
                     }
-                    // `[]Point`, `[][2]i32`, and `[][2][2]i32`. A further array shell, and `[]const u8`, stay out.
+                    // `[]Point` and `[]E` when `E` is an array result: `[][2]i32`, `[][2][2]f64`, and every
+                    // deeper row. `[]const u8` is the string below.
                     const bool struct_slice =
                         is_slice(result) && result.element != nullptr && result.element->kind == TypeKind::Struct &&
                         result.element->alias_id == 0 && result.element->struct_id >= 0 &&
                         result.element->struct_id < static_cast<int>(structs_.size()) &&
                         !structs_[static_cast<std::size_t>(result.element->struct_id)].is_union;
-                    const bool i32_row = is_slice(result) && result.element != nullptr &&
-                                         result.element->kind == TypeKind::Array && !is_slice(*result.element) &&
-                                         result.element->length > 0 && result.element->alias_id == 0 &&
-                                         result.element->element != nullptr && comptime_i32_leaf(*result.element->element);
-                    const Type *row = i32_row || result.element == nullptr ? nullptr : result.element->element.get();
-                    const bool i32_grid = is_slice(result) && row != nullptr && row->kind == TypeKind::Array &&
-                                          !is_slice(*row) && row->length > 0 && row->alias_id == 0 &&
-                                          row->element != nullptr && comptime_i32_leaf(*row->element);
+                    const bool array_rows =
+                        is_slice(result) && result.element != nullptr && comptime_array_result(*result.element);
                     if (is_slice(result) && result.element != nullptr &&
-                        (comptime_array_leaf(*result.element) || struct_slice || i32_row || i32_grid) &&
+                        (comptime_array_leaf(*result.element) || struct_slice || array_rows) &&
                         !slice_of_const_u8(result)) {
                         KeptStruct kept = fold_comptime_struct(node);
                         if (kept.status == KeptStruct::Status::NotConstant) {
@@ -1429,7 +1411,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                         return result;
                     }
-                    // Four shells of `i8`, `u8`, and `i32`. Three of the other scalars. A fifth shell stays out.
+                    // `[N]...T` of an integer, float, or `bool` leaf, up to `kComptimeMaxShells`.
                     if (comptime_array_result(result)) {
                         KeptStruct kept = fold_comptime_struct(node);
                         if (kept.status == KeptStruct::Status::NotConstant) {
