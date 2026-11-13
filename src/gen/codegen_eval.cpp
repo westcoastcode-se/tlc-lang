@@ -398,8 +398,13 @@ bool CodeGen::define_comptime_string(const PackageGraph &graph, const FunctionDe
     return diags_.size() == prepared && !wrapper->isDeclaration();
 }
 
+int fault_kind = 0;
+
+int comptime_fault_kind() { return fault_kind; }
+
 SourceLoc read_comptime_fault(llvm::orc::LLJIT &jit) {
     SourceLoc loc;
+    fault_kind = 0;
     auto file_or = jit.lookup("tlc.comptime.fail_file");
     auto off_or = jit.lookup("tlc.comptime.fail_off");
     if (!file_or || !off_or) {
@@ -413,6 +418,11 @@ SourceLoc read_comptime_fault(llvm::orc::LLJIT &jit) {
     }
     const int32_t file = *file_or->toPtr<int32_t *>();
     const int32_t off = *off_or->toPtr<int32_t *>();
+    if (auto kind_or = jit.lookup("tlc.comptime.fail_kind")) {
+        fault_kind = *kind_or->toPtr<int32_t *>();
+    } else {
+        llvm::consumeError(kind_or.takeError());
+    }
     if (file <= 0) {
         return loc;
     }
@@ -956,6 +966,42 @@ std::unique_ptr<Expr> make_float_expr(const uint8_t *bytes, uint64_t size, bool 
     return expr;
 }
 
+struct GlobalHit {
+    std::string name;
+    std::string type;
+};
+
+std::string type_fingerprint(llvm::Type *ty) {
+    if (ty == nullptr) {
+        return {};
+    }
+    if (ty->isIntegerTy()) {
+        return "i" + std::to_string(ty->getIntegerBitWidth());
+    }
+    if (ty->isFloatTy()) {
+        return "f32";
+    }
+    if (ty->isDoubleTy()) {
+        return "f64";
+    }
+    if (auto *array = llvm::dyn_cast<llvm::ArrayType>(ty)) {
+        return "a" + std::to_string(array->getNumElements()) + type_fingerprint(array->getElementType());
+    }
+    if (auto *aggregate = llvm::dyn_cast<llvm::StructType>(ty)) {
+        if (aggregate->hasName()) {
+            return "s" + aggregate->getName().str();
+        }
+        std::string text = "s{";
+        for (llvm::Type *field : aggregate->elements()) {
+            text += type_fingerprint(field);
+            text += ",";
+        }
+        text += "}";
+        return text;
+    }
+    return "t" + std::to_string(static_cast<int>(ty->getTypeID()));
+}
+
 struct Decoded {
     ComptimeStructValue::Status status = ComptimeStructValue::Status::Unsupported;
     std::unique_ptr<Expr> expr;
@@ -963,11 +1009,11 @@ struct Decoded {
 
 Decoded decode_slot(const ComptimeSlot &slot, const uint8_t *base, uint64_t base_size, bool little,
                     const uint8_t *pool, uint64_t pool_size, const std::unordered_map<uint64_t, std::string> &functions,
-                    const std::unordered_map<uint64_t, std::string> &globals);
+                    const std::unordered_map<uint64_t, GlobalHit> &globals);
 
 Decoded decode_slot(const ComptimeSlot &slot, const uint8_t *base, uint64_t base_size, bool little,
                     const uint8_t *pool, uint64_t pool_size, const std::unordered_map<uint64_t, std::string> &functions,
-                    const std::unordered_map<uint64_t, std::string> &globals) {
+                    const std::unordered_map<uint64_t, GlobalHit> &globals) {
     Decoded out;
     if (base == nullptr || slot.offset > base_size || slot.size > base_size - slot.offset) {
         return out;
@@ -1097,7 +1143,10 @@ Decoded decode_slot(const ComptimeSlot &slot, const uint8_t *base, uint64_t base
                 return fail_constant();
             }
             const auto found = globals.find(raw);
-            if (found == globals.end() || found->second.empty()) {
+            // `&p.x` has the same address as `&p` when `x` is the first field. The result type
+            // still has to be the global's type. A field pointer stays unsupported.
+            if (found == globals.end() || found->second.name.empty() ||
+                (!slot.type_name.empty() && found->second.type != slot.type_name)) {
                 return unsupported();
             }
             auto expr = std::make_unique<Expr>();
@@ -1105,7 +1154,7 @@ Decoded decode_slot(const ComptimeSlot &slot, const uint8_t *base, uint64_t base
             node.op = TokenKind::Amp;
             auto named = std::make_unique<Expr>();
             Expr::Name name;
-            name.text = found->second;
+            name.text = found->second.name;
             named->data = std::move(name);
             node.expr = std::move(named);
             expr->data = std::move(node);
@@ -1737,6 +1786,15 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
             image.size = data_layout.getTypeAllocSize(ptr_type()).getFixedValue();
         }
         image.root.size = image.size;
+        std::vector<TypeShell> shells = slot->shells;
+        if (!shells.empty() && shells.front().kind == TypeShell::Kind::Pointer) {
+            shells.erase(shells.begin());
+        }
+        const Lowered pointee = lower(file, slot->type_name, slot->type_package, slot->is_struct, 0, false, 0, false,
+                                      false, shells);
+        if (pointee.type != nullptr) {
+            image.root.type_name = type_fingerprint(stored_type(pointee));
+        }
     } else {
         auto *packed = llvm::dyn_cast<llvm::StructType>(measured);
         if (packed == nullptr || !packed->isSized()) {
@@ -1853,7 +1911,11 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
                 symbol.first.find('.') != std::string::npos) {
                 continue;
             }
-            image.globals.emplace_back(global->getName().str(), symbol.first);
+            ComptimeGlobal item;
+            item.symbol = global->getName().str();
+            item.name = symbol.first;
+            item.type = type_fingerprint(global->getValueType());
+            image.globals.push_back(std::move(item));
         }
     }
     auto *pool_ty = llvm::ArrayType::get(i8(), kPoolBytes);
@@ -2022,14 +2084,14 @@ ComptimeStructValue eval_comptime_struct(
         }
         functions.emplace(symbol->getValue(), item.second);
     }
-    std::unordered_map<uint64_t, std::string> globals;
+    std::unordered_map<uint64_t, GlobalHit> globals;
     for (const auto &item : image.globals) {
-        auto symbol = jit->lookup(item.first);
+        auto symbol = jit->lookup(item.symbol);
         if (!symbol) {
             llvm::consumeError(symbol.takeError());
             continue;
         }
-        globals.emplace(symbol->getValue(), item.second);
+        globals.emplace(symbol->getValue(), GlobalHit{item.name, item.type});
     }
     const uint64_t align = image.align == 0 ? 1 : image.align;
     std::vector<uint8_t> raw(static_cast<std::size_t>(image.size + align), 0);

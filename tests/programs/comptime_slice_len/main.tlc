@@ -1,0 +1,9 @@
+comptime func cut(n i32) []i32 {
+    var a = n;
+    return [_]i32{a, 2, 3};
+}
+
+func main() i32 {
+    var s = cut(40);
+    return s.len + cut(40).len();
+}

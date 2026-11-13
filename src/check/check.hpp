@@ -132,6 +132,8 @@ struct Symbol {
     int init_id = 0;
     // Leaves of the object a tracked pointer refers to. 0 when the pointee is not tracked.
     int pointee_id = 0;
+    // This local slice's data is an array in the same function. Returning it would dangle.
+    bool local_slice = false;
 };
 
 struct Scope {
@@ -779,6 +781,10 @@ class Checker {
     enum class ComptimeCallee { Unknown, Comptime, Runtime };
     ComptimeCallee comptime_callee_kind(const Expr::Call &call);
     bool comptime_func_body() const;
+    // The slice data is an array in this function, or a slice already marked that way.
+    bool slice_refers_to_local(const Expr &expr);
+    void reject_escaping_slice(const Expr &expr, const Type &want);
+    void note_local_slice(Symbol &symbol, const Expr *init);
     // `malloc`, `realloc`, or `free`, including `Malloc`'s methods.
     bool function_is_heap(const FunctionDecl &fn) const;
     bool function_body_uses_heap(const FunctionDecl &fn, std::unordered_set<const FunctionDecl *> &seen);
@@ -873,6 +879,8 @@ class Checker {
     int comptime_overload_score(const FunctionDecl *fn, const Expr::Call &call, std::size_t skip);
     std::unordered_set<const FunctionDecl *> comptime_expanding_;
     std::unordered_set<const FunctionDecl *> comptime_folding_;
+    // A constant div or shift fault is reported once when the same expression is checked again.
+    std::unordered_set<const Expr *> constant_faults_;
     // Nonzero while checking a `comptime func` or a `macro`. Nested calls are not expanded there.
     int comptime_depth_ = 0;
     // Nonzero while checking `comptime { ... }` in an ordinary function.

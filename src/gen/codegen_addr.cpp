@@ -1249,6 +1249,7 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
         result.elem_unsigned = base.elem_unsigned;
         result.elem_float = base.elem_float;
         result.enum_id = base.enum_id;
+        result.local_array = base.local_array || local_array_address(base.value);
         return result;
     }
     // An omitted low bound is 0. An omitted high bound is the length already in the slice.
@@ -1418,6 +1419,7 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
     if (!base.tuple_parts.empty() && base.shells.empty() && !base.elem_slice && base.inner_array_len <= 0) {
         result.tuple_parts = base.tuple_parts;
     }
+    result.local_array = base.local_array || local_array_address(base.value);
     return result;
 }
 

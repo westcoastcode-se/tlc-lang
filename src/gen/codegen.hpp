@@ -100,6 +100,13 @@ struct ComptimeSlot {
     std::vector<ComptimeSlot> children;
 };
 
+struct ComptimeGlobal {
+    std::string symbol;
+    std::string name;
+    // Fingerprint of the global's stored type. A pointer result must name that type.
+    std::string type;
+};
+
 struct ComptimeStructImage {
     bool not_constant = false;
     bool little = true;
@@ -108,9 +115,12 @@ struct ComptimeStructImage {
     ComptimeSlot root;
     // LLVM symbol, then the source name. The address is filled in after the call.
     std::vector<std::pair<std::string, std::string>> functions;
-    // Same pair for a file-scope variable. A pointer result is `&` of that source name.
-    std::vector<std::pair<std::string, std::string>> globals;
+    // A file-scope variable. A pointer result is `&` of that source name when the type matches.
+    std::vector<ComptimeGlobal> globals;
 };
+
+// Kind stored by the last comptime fault. 1 is division by zero, 2 is a shift past the width.
+int comptime_fault_kind();
 
 // What running a struct-returning comptime func produced.
 struct ComptimeStructValue {

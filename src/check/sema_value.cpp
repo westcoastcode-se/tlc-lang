@@ -30,6 +30,20 @@ bool comptime_i32_leaf(const Type &type) {
     return type.alias_id == 0 && type.kind == TypeKind::Int && type.rank == 3 && !type.is_unsigned;
 }
 
+// Rank 1 is 8 bits, 2 is 16, 3 is 32, and 5 is 64. An unsuffixed integer is rank 3.
+int integer_width(const Type &type) {
+    if (type.kind == TypeKind::Char || type.rank == 1) {
+        return 8;
+    }
+    if (type.rank == 2) {
+        return 16;
+    }
+    if (type.rank == 5) {
+        return 64;
+    }
+    return 32;
+}
+
 bool comptime_i8_leaf(const Type &type) {
     return type.alias_id == 0 && type.kind == TypeKind::Char && type.rank == 1 && !type.plain_char &&
            !type.is_unsigned;
@@ -835,6 +849,24 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_invalid();
                 }
                 const Type common = usual(lhs, rhs);
+                // A constant divisor of 0, or a constant shift past the width, is poison.
+                // Report it here so `--check` sees the same fault codegen reports.
+                if (node.rhs != nullptr &&
+                    (node.op == TokenKind::Slash || node.op == TokenKind::Percent || node.op == TokenKind::LtLt ||
+                     node.op == TokenKind::GtGt)) {
+                    if (const std::optional<int> amount = fold_int(*node.rhs)) {
+                        const bool shift = node.op == TokenKind::LtLt || node.op == TokenKind::GtGt;
+                        const int width = integer_width(common);
+                        const bool zero = !shift && *amount == 0;
+                        const bool wide = shift && (*amount < 0 || *amount >= width);
+                        if ((zero || wide) && constant_faults_.insert(&expr).second) {
+                            error(node.loc, zero ? "division by zero" : "shift out of range");
+                        }
+                        if (zero || wide) {
+                            return type_invalid();
+                        }
+                    }
+                }
                 switch (node.op) {
                 case TokenKind::EqEq:
                 case TokenKind::BangEq:
@@ -876,6 +908,21 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (!same_type(usual(place, rhs), place)) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
+                    }
+                    if (node.rhs != nullptr) {
+                        if (const std::optional<int> amount = fold_int(*node.rhs)) {
+                            const bool div = node.op == TokenKind::SlashEq || node.op == TokenKind::PercentEq;
+                            const int width = integer_width(place);
+                            const bool shift = node.op == TokenKind::LtLtEq || node.op == TokenKind::GtGtEq;
+                            const bool zero = div && *amount == 0;
+                            const bool wide = shift && (*amount < 0 || *amount >= width);
+                            if ((zero || wide) && constant_faults_.insert(&expr).second) {
+                                error(node.loc, zero ? "division by zero" : "shift out of range");
+                            }
+                            if (zero || wide) {
+                                return type_invalid();
+                            }
+                        }
                     }
                     return place;
                 }
@@ -1203,6 +1250,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 const std::size_t before = diags_.size();
                 check_against(*node.rhs, symbol->type);
                 init_store_if(*node.lhs, before);
+                if (diags_.size() == before && node.rhs != nullptr) {
+                    if (Symbol *live = lookup(std::get<Expr::Name>(node.lhs->data).text)) {
+                        note_local_slice(*live, node.rhs.get());
+                    }
+                }
                 return symbol->type;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
                 if (const FunctionDecl *fn = node.callee != nullptr ? mem_compare_callee(node) : nullptr) {

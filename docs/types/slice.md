@@ -206,6 +206,8 @@ At file scope, `const N = (&row).len` is that length and can be an array length.
 
 `row[0:2]`, `row[i:]`, `row[:j]`, and `row[:]` on a parameter `[N]T` are `[]T`. `return row` where `[]T` is expected is that slice.
 
+`return row`, `return row[:]`, `return grid.cells[:]`, and `return [_]i32{40, 2}` are `address escapes the function` when the array is local and the result is `[]T`. `var s []i32 = row` then `return s`, `var s = row[:]` then `return s`, and `s = row` then `return s` are that error. The array dies with the frame. A parameter `[N]T`, a slice parameter, and a file-scope array stay valid. Using the slice inside the function, as in `s[0]` or `row[1:3]`, stays valid. A `comptime func` copies the bytes out, so that return stays valid.
+
 `var s []i32 = row` is that slice. `var copy = row` keeps that length, so `copy[0]` is the same element as `row[0]`. `row.len` is that `N`.
 
 A parameter `[N][M]T` gives `[][M]T` for a range of the outer dimension. A range of `[_][2]i32` is a slice of `[2]i32`.

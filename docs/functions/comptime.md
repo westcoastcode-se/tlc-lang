@@ -986,7 +986,7 @@ retq
 
 The program returns 42.
 
-`[]i32` is that result. `cut(40)` stores 40 and 2. `s[0] + s[1]` is 42. `[]u8` is the same call, and so is a slice of the other scalars. `[]const u8` stays the string. The call is not emitted. `[]Point` and `[][2]i32` are that call. A pointer to a file-scope name is that call. `[][2][2]i32`, `**i32`, and `?*i32` stay `not supported yet`.
+`[]i32` is that result. `cut(40)` stores 40 and 2. `s[0] + s[1]` is 42. `[]u8` is the same call, and so is a slice of the other scalars. `[]const u8` stays the string. The call is not emitted. `[]Point` and `[][2]i32` are that call. A pointer to a file-scope name is that call. `[][2][2]i32`, `**i32`, `?*i32`, and `&p.x` as `*i32` stay `not supported yet`.
 
 `sum([_]i32{40, 2})` when `sum` takes `[]i32` and returns `s[0] + s[1]` is `movl $42, %eax` and `retq`. `[]u8` of `[_]u8{40u8, 2u8}` is that call. A `var` is `not supported yet`. `const row = [_]i32{40, 2}` then `sum(row)` is `type mismatch: expected []i32, found [2]i32`.
 
@@ -1016,6 +1016,8 @@ retq
 ```
 
 The program returns 42.
+
+`cut(40).len` and `s.len` are the element count. Three elements are `movl $3, %eax` and `retq`. `.len()` is that count. An empty array is 0.
 
 `[]Point` is that result. `pts(40)` stores 40 and 2. `s[0].x + s[0].y` is 42. The call is not emitted. `[][2][2]i32` is `not supported yet`.
 
@@ -1085,7 +1087,7 @@ retq
 
 The program returns 42.
 
-A pointer to a file-scope name is that result. `give()` is `&n`. `*p` is 42. The call is not emitted. A local `var` stays `not supported yet`. `**i32` and `?*i32` stay `not supported yet`.
+A pointer to a file-scope name is that result. `give()` is `&n`. `*p` is 42. The call is not emitted. A local `var` stays `not supported yet`. `**i32` and `?*i32` stay `not supported yet`. `&p.x` as `*i32` stays `not supported yet`. `&p` as `*Point` stays the address. A pointer field stays `global initializer is not a constant`.
 
 ```c
 var n i32 = 42;

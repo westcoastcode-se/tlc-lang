@@ -5,6 +5,54 @@
 
 namespace tlc {
 
+bool CodeGen::local_array_address(const llvm::Value *value) const {
+    const llvm::Value *cursor = value;
+    bool saw_array = false;
+    while (cursor != nullptr) {
+        // A slice header is `{ data, len }`. The data pointer is insert index 0.
+        if (const auto *inserted = llvm::dyn_cast<llvm::InsertValueInst>(cursor)) {
+            const llvm::ArrayRef<unsigned> indices = inserted->getIndices();
+            if (!indices.empty() && indices.front() == 0 &&
+                local_array_address(inserted->getInsertedValueOperand())) {
+                return true;
+            }
+            cursor = inserted->getAggregateOperand();
+            continue;
+        }
+        cursor = cursor->stripPointerCasts();
+        if (const auto *gep = llvm::dyn_cast<llvm::GEPOperator>(cursor)) {
+            const llvm::Type *source = gep->getSourceElementType();
+            const llvm::Type *result = gep->getResultElementType();
+            if ((source != nullptr && source->isArrayTy()) || (result != nullptr && result->isArrayTy())) {
+                saw_array = true;
+            }
+            cursor = gep->getPointerOperand();
+            continue;
+        }
+        break;
+    }
+    const auto *slot = llvm::dyn_cast_or_null<llvm::AllocaInst>(cursor);
+    if (slot == nullptr || function_ == nullptr || slot->getFunction() != function_) {
+        return false;
+    }
+    const llvm::Type *ty = slot->getAllocatedType();
+    if (ty != nullptr && ty->isArrayTy()) {
+        return true;
+    }
+    return saw_array;
+}
+
+void CodeGen::mark_local_array(const std::string &name) {
+    for (auto it = scopes_.rbegin(); it != scopes_.rend(); ++it) {
+        const auto found = it->find(name);
+        if (found == it->end()) {
+            continue;
+        }
+        found->second.local_array = true;
+        return;
+    }
+}
+
 void CodeGen::collect_cases(const Stmt &stmt, std::vector<CaseArm> &arms) const {
     std::visit(
         [&](const auto &node) {
@@ -645,6 +693,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.value = slot;
             binding.is_slice = true;
             binding.array_len = -1;
+            binding.local_array = got.local_array || local_array_address(got.value);
             // A string literal is still a pointer here. The slice element is what that pointer addresses.
             binding.depth = got.value != nullptr && got.value->getType() != slice_type() && got.depth > 0 ? got.depth - 1
                                                                                                           : got.depth;
@@ -772,6 +821,7 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             binding.ptr_array_len = got.ptr_array_len;
             // `var copy = row` on a parameter `[N]T` copies the pointer and keeps `N`.
             binding.array_len = got.array_len > 0 ? got.array_len : 0;
+            binding.local_array = got.local_array || local_array_address(got.value);
             binding.elem_slice = got.elem_slice;
             binding.fn_ty = got.fn_ty;
             binding.fn_ret_depth = got.fn_ret_depth;
@@ -1526,6 +1576,13 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                 }
                 if (return_type_ == slice_type() && node.value != nullptr) {
                     const TypedValue value = emit_rvalue(*node.value);
+                    // A slice is a header. The data has to outlive this frame. An array alloca does not.
+                    // A comptime func is evaluated and its bytes are copied out. Its runtime body is not that return.
+                    const bool comptime_body = emitting_fn_ != nullptr && emitting_fn_->is_comptime;
+                    if (!eval_ && !comptime_body && (value.local_array || local_array_address(value.value))) {
+                        error(node.loc, "address escapes the function");
+                        return;
+                    }
                     llvm::Value *packed = value.value == nullptr ? llvm::ConstantAggregateZero::get(slice_type())
                                                                 : as_slice_value(value, node.loc);
                     if (eval_ && packed != nullptr) {
@@ -1884,12 +1941,14 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         if (var.init != nullptr) {
                             const TypedValue value = emit_rvalue(*var.init);
                             if (!terminated()) {
+                                // The store packs a header. The flag has to be read from the array address.
+                                binding.local_array = value.local_array || local_array_address(value.value);
                                 builder_.CreateStore(as_slice_value(value, var.loc), slot);
                             }
                         } else if (!var.is_extern && !var.is_const_decl) {
                             zero_slot(slot, slice_type());
                         }
-                        if (hides) {
+                        if (hides || binding.local_array) {
                             publish(binding);
                         }
                         continue;

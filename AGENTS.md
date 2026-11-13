@@ -8,17 +8,21 @@ The language is the reference in `docs`. `docs/grammar.md` is the syntax. A feat
 
 `tlc` is a modern replacement for C. The syntax mixes Go and Zig, with a little extra care. It should be fast, and it should help the programmer avoid bugs and write efficient code.
 
-Question a language change against that before you implement it. A rule that copies, allocates, or hides a runtime lookup where a compile-time fact is enough works against the language. Say so, and wait. Do not add the mechanism because C, or another language, has it.
+Question a language change against that before you implement it, and before you name it as a next step. A rule that copies, allocates, or hides a runtime lookup where a compile-time fact is enough works against the language. Say so, and wait. Do not add the mechanism because C, or another language, has it.
+
+`TODO.md` lists forms the compiler rejects. A line there is not a request to implement that form. The value has to exist in the finished program, or fold to a value the compiler already has. If the only way to accept the form is to allocate, copy, or keep compiler memory after the compile, it does not fit. Say so, leave it rejected, and do not put it on a list of next work.
 
 `typeof` is one case. A type is a compile-time constant, so the value is a pointer to the type the compiler already built, `*const builtin.CompiledType`. Copying that type does no work the pointer does not do.
 
 There is no vtable. A trait is checked while compiling and then monomorphized. A closed set of cases is a checked enum or a tuple, not a table of function pointers looked up at run time.
 
+A `comptime func` runs in a throwaway module, and the call is not emitted. A pointer result is `&` of a file-scope name that is already an object in the program. The address of a local is not that result. The frame is gone when evaluation ends, and the name is not in the caller. Do not recommend returning it. Do not invent a hidden global or a hidden slot in the caller to hold it.
+
 ## Before a language change
 
 Read the feature page and the matching section of `TODO.md`. Check the change against the section above. Implement that behavior. Remove a `TODO.md` entry when the form works. Add an entry for a form you parsed and left rejected.
 
-Ask before inventing syntax, a diagnostic, or a runtime rule that the reference and `TODO.md` do not already describe. Leave neighboring unsupported forms as they are.
+Ask before inventing syntax, a diagnostic, or a runtime rule that the reference and `TODO.md` do not already describe. Leave neighboring unsupported forms as they are. A form you recommend has to pass the test in the section above. Skip a rejected form that has no object or folded value in the finished program.
 
 ## Where the compiler work goes
 

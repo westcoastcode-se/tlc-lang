@@ -14,9 +14,10 @@ func use(items seq.Seq[i32]) i32 {
     return items.len() + items.at(0);
 }
 
+var made = [_]i32{1, 2, 3};
+
 func make() Row {
-    var xs = [_]i32{1, 2, 3};
-    return xs;
+    return made;
 }
 
 func main() i32 {

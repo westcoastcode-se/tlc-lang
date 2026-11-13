@@ -380,15 +380,20 @@ void CodeGen::install_eval_fault() {
                                                const_i32(0), "tlc.comptime.fail_file");
     eval_fail_off_ = new llvm::GlobalVariable(module_, i32(), false, llvm::GlobalValue::ExternalLinkage, const_i32(0),
                                               "tlc.comptime.fail_off");
+    eval_fail_kind_ = new llvm::GlobalVariable(module_, i32(), false, llvm::GlobalValue::ExternalLinkage, const_i32(0),
+                                               "tlc.comptime.fail_kind");
 }
 
-void CodeGen::eval_fail(SourceLoc loc) {
+void CodeGen::eval_fail(SourceLoc loc, int kind) {
     if (terminated() || function_ == nullptr) {
         return;
     }
     if (eval_fail_file_ != nullptr && eval_fail_off_ != nullptr) {
         builder_.CreateStore(const_i32(static_cast<int>(loc.file)), eval_fail_file_);
         builder_.CreateStore(const_i32(static_cast<int>(loc.offset)), eval_fail_off_);
+    }
+    if (eval_fail_kind_ != nullptr) {
+        builder_.CreateStore(const_i32(kind), eval_fail_kind_);
     }
     llvm::Type *ret = function_->getReturnType();
     if (ret->isVoidTy()) {

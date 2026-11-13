@@ -394,6 +394,8 @@ struct Binding {
     uint32_t alias_file = 0;
     // A parameter `[0]T`. `array_len` is 0, which is also an ordinary pointer.
     bool empty_decay = false;
+    // The slice data is an array alloca in this function. Returning it would dangle.
+    bool local_array = false;
 };
 
 struct TypedValue {
@@ -445,6 +447,8 @@ struct TypedValue {
     uint32_t alias_file = 0;
     // A parameter `[0]T`. Indexing it is out of range.
     bool empty_decay = false;
+    // The slice data is an array alloca in this function.
+    bool local_array = false;
 };
 
 // How an extern function passes one struct on x86-64 System V.
@@ -579,6 +583,7 @@ class CodeGen {
     // Set when that run hits an assert or an index check. The host reads them after the call.
     llvm::GlobalVariable *eval_fail_file_ = nullptr;
     llvm::GlobalVariable *eval_fail_off_ = nullptr;
+    llvm::GlobalVariable *eval_fail_kind_ = nullptr;
     // `lower` is const. The struct is created the first time a slice is lowered.
     mutable llvm::StructType *slice_ty_ = nullptr;
     // `-g`. Line numbers and variable locations for a debugger.
@@ -1184,6 +1189,7 @@ class CodeGen {
             loaded.tuple_parts = binding.tuple_parts;
             loaded.alias_owner = binding.alias_owner;
             loaded.alias_file = binding.alias_file;
+            loaded.local_array = binding.local_array;
             return loaded;
         }
         if (binding.is_array) {
@@ -1267,6 +1273,7 @@ class CodeGen {
         loaded.tuple_parts = binding.tuple_parts;
         loaded.inner_array_len = binding.inner_array_len;
         loaded.array_len = binding.array_len;
+        loaded.local_array = binding.local_array;
         loaded.empty_decay = binding.empty_decay;
         loaded.fn_ty = binding.fn_ty;
         loaded.fn_ret_depth = binding.fn_ret_depth;
@@ -1676,7 +1683,11 @@ class CodeGen {
     void abort_panic(SourceLoc loc, const char *message);
     // Records `loc` and returns from the function being evaluated.
     void install_eval_fault();
-    void eval_fail(SourceLoc loc);
+    // `kind` 1 is division by zero. `kind` 2 is a shift past the bit width. 0 is the index fault.
+    void eval_fail(SourceLoc loc, int kind = 0);
+    bool local_array_address(const llvm::Value *value) const;
+    // A named slice in this function now holds a pointer into a local array.
+    void mark_local_array(const std::string &name);
     // `index < 0` or `index >= length` calls `panic("index out of range")`.
     void trap_index(llvm::Value *index, llvm::Value *length, SourceLoc loc);
     // `base[low:high]`. The result is a slice header.

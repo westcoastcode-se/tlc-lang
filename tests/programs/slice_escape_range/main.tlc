@@ -1,0 +1,8 @@
+func cut() []i32 {
+    var row = [_]i32{40, 2};
+    return row[:];
+}
+
+func main() i32 {
+    return cut()[0];
+}

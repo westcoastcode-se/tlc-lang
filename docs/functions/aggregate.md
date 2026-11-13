@@ -36,6 +36,8 @@ A slice parameter or result is `[]T`. It is passed and returned as the slice, an
 
 `row[i:j]` on an array produces `[]T`.
 
+`return row` when `row` is a local array and the result is `[]T` is `address escapes the function`. `return row[:]`, `return grid.cells[:]`, `return [_]i32{40, 2}`, and `var s []i32 = row` then `return s` are that error. A parameter `[N]T` and a file-scope array stay valid.
+
 ## An array parameter is already a pointer
 
 An array parameter is already a pointer. `return row` when the result is `[2]i32` copies those elements.

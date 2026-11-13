@@ -645,14 +645,65 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 case TokenKind::Plus: return widened(builder_.CreateAdd(lhs, rhs));
                 case TokenKind::Minus: return widened(builder_.CreateSub(lhs, rhs));
                 case TokenKind::Star: return widened(builder_.CreateMul(lhs, rhs));
-                case TokenKind::Slash: return widened(uns ? builder_.CreateUDiv(lhs, rhs) : signed_div(false));
-                case TokenKind::Percent: return widened(uns ? builder_.CreateURem(lhs, rhs) : signed_div(true));
+                case TokenKind::Slash:
+                case TokenKind::Percent: {
+                    if (const auto *divisor = llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
+                        if (divisor->isZero()) {
+                            if (eval_ && !terminated() && function_ != nullptr) {
+                                install_eval_fault();
+                                eval_fail(node.loc, 1);
+                            } else {
+                                error(node.loc, "division by zero");
+                            }
+                            return widened(llvm::ConstantInt::get(lhs->getType(), 0));
+                        }
+                    } else if (eval_ && !terminated() && function_ != nullptr) {
+                        install_eval_fault();
+                        llvm::Value *bad = builder_.CreateICmpEQ(rhs, llvm::ConstantInt::get(rhs->getType(), 0));
+                        auto *fail = llvm::BasicBlock::Create(context_, "div.fail", function_);
+                        auto *ok = llvm::BasicBlock::Create(context_, "div.ok", function_);
+                        builder_.CreateCondBr(bad, fail, ok);
+                        builder_.SetInsertPoint(fail);
+                        eval_fail(node.loc, 1);
+                        builder_.SetInsertPoint(ok);
+                    }
+                    if (node.op == TokenKind::Slash) {
+                        return widened(uns ? builder_.CreateUDiv(lhs, rhs) : signed_div(false));
+                    }
+                    return widened(uns ? builder_.CreateURem(lhs, rhs) : signed_div(true));
+                }
                 case TokenKind::Amp: return widened(builder_.CreateAnd(lhs, rhs));
                 case TokenKind::Pipe: return widened(builder_.CreateOr(lhs, rhs));
                 case TokenKind::Caret: return widened(builder_.CreateXor(lhs, rhs));
-                case TokenKind::LtLt: return widened(builder_.CreateShl(lhs, rhs));
-                case TokenKind::GtGt:
+                case TokenKind::LtLt:
+                case TokenKind::GtGt: {
+                    const int width = common_bits > 0 ? common_bits : 32;
+                    if (const auto *amount = llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
+                        if (amount->getLimitedValue() >= static_cast<uint64_t>(width)) {
+                            if (eval_ && !terminated() && function_ != nullptr) {
+                                install_eval_fault();
+                                eval_fail(node.loc, 2);
+                            } else {
+                                error(node.loc, "shift out of range");
+                            }
+                            return widened(llvm::ConstantInt::get(lhs->getType(), 0));
+                        }
+                    } else if (eval_ && !terminated() && function_ != nullptr) {
+                        install_eval_fault();
+                        llvm::Value *bad = builder_.CreateICmpUGE(
+                            rhs, llvm::ConstantInt::get(rhs->getType(), static_cast<uint64_t>(width)));
+                        auto *fail = llvm::BasicBlock::Create(context_, "shift.fail", function_);
+                        auto *ok = llvm::BasicBlock::Create(context_, "shift.ok", function_);
+                        builder_.CreateCondBr(bad, fail, ok);
+                        builder_.SetInsertPoint(fail);
+                        eval_fail(node.loc, 2);
+                        builder_.SetInsertPoint(ok);
+                    }
+                    if (node.op == TokenKind::LtLt) {
+                        return widened(builder_.CreateShl(lhs, rhs));
+                    }
                     return widened(uns ? builder_.CreateLShr(lhs, rhs) : builder_.CreateAShr(lhs, rhs));
+                }
                 case TokenKind::EqEq: return compared(llvm::CmpInst::ICMP_EQ);
                 case TokenKind::BangEq: return compared(llvm::CmpInst::ICMP_NE);
                 case TokenKind::Lt: return compared(uns ? llvm::CmpInst::ICMP_ULT : llvm::CmpInst::ICMP_SLT);
@@ -763,6 +814,11 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 const TypedValue rhs = emit_rvalue(*node.rhs);
                 if (slot.is_slice) {
                     if (slot.value != nullptr && rhs.value != nullptr && !terminated()) {
+                        if ((rhs.local_array || local_array_address(rhs.value)) && node.lhs != nullptr) {
+                            if (const auto *named = std::get_if<Expr::Name>(&node.lhs->data)) {
+                                mark_local_array(named->text);
+                            }
+                        }
                         builder_.CreateStore(as_slice_value(rhs, node.loc), slot.value);
                     }
                     return rhs;
@@ -1024,11 +1080,21 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         return {const_i32(node.len_value), 0};
                     }
                     const TypedValue base = node.base != nullptr ? emit_rvalue(*node.base) : TypedValue{};
-                    if (base.value == nullptr || !base.is_slice) {
-                        error(node.loc, "type mismatch");
-                        return {zero(), 0};
+                    if (base.is_slice && base.value != nullptr) {
+                        return {builder_.CreateExtractValue(base.value, 1), 0};
                     }
-                    return {builder_.CreateExtractValue(base.value, 1), 0};
+                    // `var s = cut(40)` keeps the folded array. `.len` is that count.
+                    if (base.array_len > 0) {
+                        return {const_i32(base.array_len), 0};
+                    }
+                    if (base.value != nullptr) {
+                        if (llvm::Type *object = object_type(base.value); object != nullptr && object->isArrayTy()) {
+                            return {const_i32(static_cast<int>(llvm::cast<llvm::ArrayType>(object)->getNumElements())),
+                                    0};
+                        }
+                    }
+                    error(node.loc, "type mismatch");
+                    return {zero(), 0};
                 }
                 if (!node.resolved_owner.empty()) {
                     const std::string key = node.resolved_owner + "." + node.field;

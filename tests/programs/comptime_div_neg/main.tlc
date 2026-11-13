@@ -1,0 +1,7 @@
+comptime func q(n i32) i32 {
+    return 40 / n;
+}
+
+func main() i32 {
+    return q(-1);
+}

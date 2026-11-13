@@ -1,0 +1,8 @@
+comptime func q(n i32) i32 {
+    var d = n;
+    return 1 << d;
+}
+
+func main() i32 {
+    return q(40);
+}

@@ -644,6 +644,76 @@ bool Checker::comptime_func_body() const {
            !checking_.back()->is_macro;
 }
 
+bool Checker::slice_refers_to_local(const Expr &expr) {
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Name>) {
+                const Symbol *symbol = lookup(node.text);
+                if (symbol == nullptr) {
+                    return false;
+                }
+                if (symbol->local_slice) {
+                    return true;
+                }
+                // A parameter `[N]T` is a pointer. A file-scope array is not in this function.
+                const int here = scopes_.empty() ? 0 : scopes_.back().function_id;
+                return here != 0 && symbol->function_id == here && symbol->type.kind == TypeKind::Array &&
+                       symbol->type.length >= 0 && !is_slice(symbol->type);
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                return node.is_range && node.base != nullptr && slice_refers_to_local(*node.base);
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                // `grid.cells` is the array inside this frame. A slice field points elsewhere.
+                if (node.base == nullptr) {
+                    return false;
+                }
+                const auto *named = std::get_if<Expr::Name>(&node.base->data);
+                if (named == nullptr) {
+                    return false;
+                }
+                const Symbol *symbol = lookup(named->text);
+                const int here = scopes_.empty() ? 0 : scopes_.back().function_id;
+                if (symbol == nullptr || here == 0 || symbol->function_id != here ||
+                    symbol->type.kind != TypeKind::Struct) {
+                    return false;
+                }
+                Type field;
+                if (!lookup_field(symbol->type, node.field, field)) {
+                    return false;
+                }
+                return field.kind == TypeKind::Array && field.length >= 0 && !is_slice(field);
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                // `[_]i32{40, 2}` and `{40, 2}` allocate a temporary. A struct literal names fields.
+                return !node.is_tuple && node.fields.empty() && (node.array_literal || !node.elements.empty());
+            } else {
+                return false;
+            }
+        },
+        expr.data);
+}
+
+void Checker::reject_escaping_slice(const Expr &expr, const Type &want) {
+    if (comptime_func_body() || !is_slice(want)) {
+        return;
+    }
+    if (slice_refers_to_local(expr)) {
+        error(expr_loc(expr), "address escapes the function");
+    }
+}
+
+void Checker::note_local_slice(Symbol &symbol, const Expr *init) {
+    if (init == nullptr || !is_slice(symbol.type)) {
+        return;
+    }
+    const int here = scopes_.empty() ? 0 : scopes_.back().function_id;
+    if (here == 0 || symbol.function_id != here) {
+        return;
+    }
+    if (slice_refers_to_local(*init)) {
+        symbol.local_slice = true;
+    }
+}
+
 Checker::ComptimeCallee Checker::comptime_callee_kind(const Expr::Call &call) {
     if (call.callee == nullptr) {
         return ComptimeCallee::Unknown;
@@ -2726,6 +2796,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                                                  : check_expr(*exprs[i], true);
                             if (i < return_type_.results.size()) {
                                 match_return(got, return_type_.results[i]);
+                                if (exprs[i] != nullptr) {
+                                    reject_escaping_slice(*exprs[i], return_type_.results[i]);
+                                }
                             }
                         }
                     }
@@ -2741,6 +2814,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                 } else {
                     match_return(supplied(*node.value, return_type_), return_type_);
+                    reject_escaping_slice(*node.value, return_type_);
                 }
                 if (reached && !checking_.empty()) {
                     ReachedReturn item;
@@ -3390,6 +3464,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                             init_open(*live);
                             init_cover(*live, node.value.get());
                             note_pointer(*live);
+                            note_local_slice(*live, node.value.get());
                         }
                     }
                 };
@@ -3424,6 +3499,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                             init_open(*live);
                             init_cover(*live, node.value.get());
                             note_pointer(*live);
+                            note_local_slice(*live, node.value.get());
                         }
                     }
                 };
@@ -3584,6 +3660,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                                 note_promotable(*live, var.init.get());
                             }
                             init_cover(*live, var.init.get());
+                            note_local_slice(*live, var.init.get());
                             if (const auto *created = std::get_if<Expr::New>(&var.init->data);
                                 created != nullptr && created->count == nullptr && !created->count_inferred &&
                                 live->type.kind == TypeKind::Pointer && live->type.pointee != nullptr) {

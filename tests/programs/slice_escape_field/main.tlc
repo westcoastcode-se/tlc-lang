@@ -1,0 +1,13 @@
+type Grid struct {
+    cells [4]i32;
+};
+
+func cut() []i32 {
+    var grid Grid;
+    grid.cells[0] = 40;
+    return grid.cells[:];
+}
+
+func main() i32 {
+    return cut()[0];
+}

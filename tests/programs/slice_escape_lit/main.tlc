@@ -1,0 +1,7 @@
+func cut() []i32 {
+    return [_]i32{40, 2};
+}
+
+func main() i32 {
+    return cut()[0];
+}
