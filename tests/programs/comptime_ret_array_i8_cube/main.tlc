@@ -1,0 +1,8 @@
+comptime func deep() [2][2][2]i8 {
+    return [_][2][2]i8{{{1i8, 2i8}, {3i8, 4i8}}, {{5i8, 6i8}, {7i8, 8i8}}};
+}
+
+func main() i32 {
+    var c = deep();
+    return i32(c[0][0][0]);
+}

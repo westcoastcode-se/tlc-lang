@@ -550,6 +550,12 @@ bool Checker::switch_case_matches(const SwitchFrame &frame, const Type &got) con
     if (same_type(got, type_int())) {
         return true;
     }
+    // `comptime switch` on `u64` matches `case 4u64`. The case keeps that width.
+    if (is_integer(frame.subject) && frame.subject.alias_id == 0 && is_integer(got) && got.alias_id == 0 &&
+        !(frame.subject.kind == TypeKind::Int && frame.subject.rank == 3 && !frame.subject.is_unsigned)) {
+        return got.kind == frame.subject.kind && got.rank == frame.subject.rank &&
+               got.is_unsigned == frame.subject.is_unsigned && got.plain_char == frame.subject.plain_char;
+    }
     // `case Flag.On` and `case 1` are the same integer on an `extern(abi="c")` enum.
     return frame.c_enum && frame.subject.kind == TypeKind::Enum && same_type(got, frame.subject);
 }
@@ -1774,13 +1780,20 @@ std::optional<Checker::WideInt> Checker::file_scope_const_wide(const Expr &expr)
         return std::nullopt;
     }
     const Symbol *symbol = lookup(named->text);
-    if (symbol == nullptr || symbol->is_auto || symbol->type.alias_id != 0 || symbol->type.kind != TypeKind::Int) {
+    if (symbol == nullptr || symbol->is_auto || symbol->type.alias_id != 0) {
         return std::nullopt;
     }
-    const bool i64 = symbol->type.rank == 5 && !symbol->type.is_unsigned;
-    const bool u32 = symbol->type.rank == 3 && symbol->type.is_unsigned;
-    const bool u64 = symbol->type.rank == 5 && symbol->type.is_unsigned;
-    if (!i64 && !u32 && !u64) {
+    int want_bits = 0;
+    if (symbol->type.kind == TypeKind::Char && symbol->type.rank == 1 && !symbol->type.plain_char) {
+        want_bits = 8;
+    } else if (symbol->type.kind == TypeKind::Int && symbol->type.rank == 2) {
+        want_bits = 16;
+    } else if (symbol->type.kind == TypeKind::Int && symbol->type.rank == 3 && symbol->type.is_unsigned) {
+        want_bits = 32;
+    } else if (symbol->type.kind == TypeKind::Int && symbol->type.rank == 5) {
+        want_bits = 64;
+    }
+    if (want_bits == 0) {
         return std::nullopt;
     }
     const VarDecl *var = global_var(named->text);
@@ -1788,16 +1801,7 @@ std::optional<Checker::WideInt> Checker::file_scope_const_wide(const Expr &expr)
         return std::nullopt;
     }
     const std::optional<WideInt> wide = fold_wide_int(*var->init);
-    if (!wide) {
-        return std::nullopt;
-    }
-    if (i64 && !(wide->bits == 64 && !wide->is_unsigned)) {
-        return std::nullopt;
-    }
-    if (u32 && !(wide->bits == 32 && wide->is_unsigned)) {
-        return std::nullopt;
-    }
-    if (u64 && !(wide->bits == 64 && wide->is_unsigned)) {
+    if (!wide || wide->bits != want_bits || wide->is_unsigned != symbol->type.is_unsigned) {
         return std::nullopt;
     }
     return wide;

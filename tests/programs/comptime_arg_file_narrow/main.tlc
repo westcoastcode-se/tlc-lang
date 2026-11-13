@@ -1,0 +1,46 @@
+const a = 40i8;
+const b = 200u8;
+const c = 40i16;
+const d = 40000u16;
+
+comptime func ia(p i8) i32 {
+    if (p == 40i8) {
+        return 10;
+    }
+    return 0;
+}
+
+comptime func ua(p u8) i32 {
+    if (p == 200u8) {
+        return 10;
+    }
+    return 0;
+}
+
+comptime func is(p i16) i32 {
+    if (p == 40i16) {
+        return 11;
+    }
+    return 0;
+}
+
+comptime func us(p u16) i32 {
+    if (p == 40000u16) {
+        return 11;
+    }
+    return 0;
+}
+
+comptime func pair(p (i8, i32)) i32 {
+    if (i32(p[0]) + p[1] == 42) {
+        return 1;
+    }
+    return 0;
+}
+
+func main() i32 {
+    if (ia(a) + ua(b) + is(c) + us(d) == 42 && pair((a, 2)) == 1) {
+        return 42;
+    }
+    return 0;
+}

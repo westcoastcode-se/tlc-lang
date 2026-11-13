@@ -1,0 +1,10 @@
+func main() i32 {
+    const k = 40i8;
+    comptime func field(p i8) i32 {
+        if (p == 40i8) {
+            return 42;
+        }
+        return 0;
+    }
+    return field(k);
+}

@@ -1,8 +1,23 @@
-comptime func cut() []i32 {
+comptime func still() []i32 {
     return [_]i32{40, 2};
 }
 
+comptime func cut(n i32) []i32 {
+    var a = n;
+    return [_]i32{a, 2};
+}
+
+comptime func bytes(n i32) []u8 {
+    var a = n;
+    return [_]u8{u8(a), 2u8};
+}
+
 func main() i32 {
-    var s = cut();
-    return s[0];
+    var s = cut(40);
+    var t = still();
+    var u = bytes(40);
+    if (s[0] + s[1] == 42 && t[0] == 40 && u[0] == 40u8) {
+        return 42;
+    }
+    return 0;
 }

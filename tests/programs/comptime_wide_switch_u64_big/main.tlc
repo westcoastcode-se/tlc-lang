@@ -1,0 +1,9 @@
+func main() i32 {
+    comptime const n = 3000000000u64;
+    comptime switch (n) {
+    case 3000000000u64:
+        return 42;
+    default:
+        return 0;
+    }
+}

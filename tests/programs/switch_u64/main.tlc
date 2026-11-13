@@ -1,0 +1,9 @@
+func main() i32 {
+    var n = 4u64;
+    switch (n) {
+    case 4u64:
+        return 42;
+    default:
+        return 0;
+    }
+}

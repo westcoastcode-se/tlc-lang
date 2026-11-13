@@ -1386,8 +1386,12 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         cond_false_ = saved_false;
         std::optional<int> folded = fold_switch_case(*sw->cond);
         // `comptime switch` also reads a local `const`. An ordinary `switch` does not.
+        // `4u64` fits in the case integer. A value past `i32` does not.
         if (!folded && sw->comptime_switch) {
             folded = fold_runtime_const(*sw->cond);
+        }
+        if (!folded && sw->comptime_switch) {
+            folded = folded_wide_i32(*sw->cond);
         }
         const bool scalar = got.kind == TypeKind::Int || got.kind == TypeKind::Enum || got.kind == TypeKind::Char;
         if (folded && scalar) {
@@ -2281,9 +2285,16 @@ void Checker::check_switch(const Stmt::Switch &node) {
             sw.c_enum = is_c_enum(cond);
             legal = true;
         } else if (cond.kind != TypeKind::Invalid) {
-            const std::size_t mark = diags_.size();
-            expect(cond, type_int(), expr_loc(*node.cond));
-            legal = diags_.size() == mark;
+            // `comptime switch (n)` when `n` is `u64`. An ordinary `switch` stays `i32`.
+            if (node.comptime_switch && is_integer(cond) && cond.alias_id == 0 &&
+                !(cond.kind == TypeKind::Int && cond.rank == 3 && !cond.is_unsigned)) {
+                sw.subject = cond;
+                legal = true;
+            } else {
+                const std::size_t mark = diags_.size();
+                expect(cond, type_int(), expr_loc(*node.cond));
+                legal = diags_.size() == mark;
+            }
         }
     }
     // An ordinary `switch` typechecks every case. `comptime switch` keeps one path when the value folds.
@@ -2295,6 +2306,9 @@ void Checker::check_switch(const Stmt::Switch &node) {
             // A local `const` is this value. `fold_switch_case` stays a case label.
             if (!folded) {
                 folded = fold_runtime_const(*node.cond);
+            }
+            if (!folded) {
+                folded = folded_wide_i32(*node.cond);
             }
         }
         if (!folded) {

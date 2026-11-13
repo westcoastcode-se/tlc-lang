@@ -843,6 +843,14 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     continue;
                 } else {
                     type = check_expr(*var->init, true);
+                    // `40i8` is `i8`. A use in arithmetic still widens. The binding keeps the suffix.
+                    if (var->is_const_decl && type.kind != TypeKind::Invalid && var->init != nullptr) {
+                        if (const auto *number = std::get_if<Expr::Int>(&var->init->data)) {
+                            if (number->suffix.bits == 8 || number->suffix.bits == 16) {
+                                type = type_rank(number->suffix.bits == 8 ? 1 : 2, number->suffix.is_unsigned);
+                            }
+                        }
+                    }
                     // `null` has no pointee until a pointer type is written around it.
                     if (type.kind == TypeKind::Tuple || type.kind == TypeKind::Void || type.kind == TypeKind::Nullptr) {
                         error(var->loc, "type mismatch");

@@ -1481,6 +1481,23 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     const TypedValue value = emit_rvalue(*node.value);
                     llvm::Value *packed = value.value == nullptr ? llvm::ConstantAggregateZero::get(slice_type())
                                                                 : as_slice_value(value, node.loc);
+                    if (eval_ && packed != nullptr) {
+                        uint64_t elem_size = 4;
+                        if (value.value != nullptr) {
+                            if (llvm::Type *object = object_type(value.value); object != nullptr && object->isArrayTy()) {
+                                elem_size = module_.getDataLayout()
+                                                .getTypeAllocSize(llvm::cast<llvm::ArrayType>(object)->getElementType())
+                                                .getFixedValue();
+                            } else if (value.elem_float) {
+                                elem_size = value.elem_bits >= 64 ? 8 : 4;
+                            } else if (value.elem_bool) {
+                                elem_size = 1;
+                            } else if (value.elem_bits > 0) {
+                                elem_size = static_cast<uint64_t>((value.elem_bits + 7) / 8);
+                            }
+                        }
+                        packed = retain_eval_slice(packed, elem_size == 0 ? 1 : elem_size);
+                    }
                     if (!terminated()) {
                         emit_defers_from(0);
                     }

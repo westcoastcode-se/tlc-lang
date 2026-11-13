@@ -871,6 +871,8 @@ class CodeGen {
     // Every `[]T` is this one struct. The pointer addresses the first element.
     llvm::StructType *slice_type() const;
     llvm::Value *as_slice_value(const TypedValue &value, SourceLoc loc);
+    // Copy a comptime slice into the eval pool before the callee's frame is gone.
+    llvm::Value *retain_eval_slice(llvm::Value *packed, uint64_t elem_size);
     llvm::Value *adapt(const TypedValue &value, llvm::Type *slot, SourceLoc loc);
     llvm::Type *mem_type(int depth, bool elem_char = false) const { return leaf_type(depth, elem_char, -1); }
     llvm::Type *f32_ty() const { return llvm::Type::getFloatTy(context_); }

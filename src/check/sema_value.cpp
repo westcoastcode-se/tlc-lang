@@ -8,7 +8,7 @@ namespace tlc {
 
 namespace {
 
-// One shell of these scalars is a comptime array. Two shells skip `i8` and `i16`.
+// One shell of these scalars is a comptime array. `i8` and `i16` stop at two shells.
 bool comptime_array_leaf(const Type &type) {
     if (type.alias_id != 0) {
         return false;
@@ -25,11 +25,32 @@ bool comptime_array_leaf(const Type &type) {
     return type.kind == TypeKind::Int && (type.rank == 2 || type.rank == 3 || type.rank == 5);
 }
 
-bool comptime_nested_leaf(const Type &type) {
-    if (type.kind == TypeKind::Char || (type.kind == TypeKind::Int && type.rank == 2)) {
+int comptime_max_shells(const Type &leaf) {
+    if (!comptime_array_leaf(leaf)) {
+        return 0;
+    }
+    if (leaf.kind == TypeKind::Char || (leaf.kind == TypeKind::Int && leaf.rank == 2)) {
+        return 2;
+    }
+    return 3;
+}
+
+bool comptime_array_result(const Type &type) {
+    if (type.kind != TypeKind::Array || is_slice(type) || type.length <= 0 || type.alias_id != 0 ||
+        type.element == nullptr) {
         return false;
     }
-    return comptime_array_leaf(type);
+    int shells = 0;
+    const Type *cursor = &type;
+    while (cursor->kind == TypeKind::Array && !is_slice(*cursor) && cursor->length > 0 && cursor->alias_id == 0 &&
+           cursor->element != nullptr) {
+        ++shells;
+        cursor = cursor->element.get();
+        if (shells > 4) {
+            return false;
+        }
+    }
+    return shells >= 1 && shells <= comptime_max_shells(*cursor);
 }
 
 // `i32` stays on the original evaluator. These widths use the wide one.
@@ -1258,6 +1279,23 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         node.comptime_struct = std::move(kept.value);
                         return result;
                     }
+                    if (is_slice(result) && result.element != nullptr && comptime_array_leaf(*result.element) &&
+                        !slice_of_const_u8(result)) {
+                        KeptStruct kept = fold_comptime_struct(node);
+                        if (kept.status == KeptStruct::Status::NotConstant) {
+                            error(node.loc, "global initializer is not a constant");
+                            return type_invalid();
+                        }
+                        if (kept.status != KeptStruct::Status::Value || kept.value == nullptr) {
+                            if (diags_.size() == before) {
+                                error(node.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
+                                recheck_fault_.clear();
+                            }
+                            return type_invalid();
+                        }
+                        node.comptime_struct = std::move(kept.value);
+                        return result;
+                    }
                     if (slice_of_const_u8(result)) {
                         if (!fold_comptime_string(node)) {
                             if (diags_.size() == before) {
@@ -1300,16 +1338,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                         return result;
                     }
-                    // One shell of `i32`, `i64`, `u32`, `u64`, `i16`, `u16`, `i8`, `u8`, `f32`, `f64`,
-                    // or `bool`. Two shells of those except `i8` and `i16`. A slice, a pointer, and
-                    // `[2][2][2]i32` stay out.
-                    const Type *elem = result.element.get();
-                    const bool leaf = elem != nullptr && comptime_array_leaf(*elem);
-                    const bool row = elem != nullptr && elem->kind == TypeKind::Array && !is_slice(*elem) &&
-                                     elem->length > 0 && elem->alias_id == 0 && elem->element != nullptr &&
-                                     comptime_nested_leaf(*elem->element);
-                    if (result.kind == TypeKind::Array && !is_slice(result) && result.length > 0 &&
-                        result.alias_id == 0 && (leaf || row)) {
+                    // Up to two shells of `i8` and `i16`, and three of the wider scalars.
+                    // A slice, a pointer, and a fourth shell stay out.
+                    if (comptime_array_result(result)) {
                         KeptStruct kept = fold_comptime_struct(node);
                         if (kept.status == KeptStruct::Status::NotConstant) {
                             error(node.loc, "global initializer is not a constant");

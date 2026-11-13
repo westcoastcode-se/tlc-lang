@@ -19,24 +19,25 @@ constexpr const char *kBodyName = "tlc.comptime.body";
 constexpr const char *kPoolName = "tlc.comptime.pool";
 constexpr const char *kUsedName = "tlc.comptime.used";
 
-// One row of a comptime array. `nest` is a second shell, `[2][2]T`. `i8` and `i16` stay one shell.
+// One row of a comptime array. `max_shells` is `[N]T`, `[N][N]T`, or `[N][N][N]T`.
+// `i8` and `i16` stop at two shells. Four shells stay out.
 struct ElemShape {
     const char *name;
     int bits;
     bool is_unsigned;
     bool is_float;
     bool is_bool;
-    bool nest;
+    int max_shells;
 };
 
 const ElemShape *elem_shape(const std::string &name) {
     static const ElemShape table[] = {
-        {"i32", 32, false, false, false, true},  {"i64", 64, false, false, false, true},
-        {"u32", 32, true, false, false, true},   {"u64", 64, true, false, false, true},
-        {"i16", 16, false, false, false, false}, {"u16", 16, true, false, false, false},
-        {"i8", 8, false, false, false, false},   {"u8", 8, true, false, false, false},
-        {"f32", 32, false, true, false, true},   {"f64", 64, false, true, false, true},
-        {"bool", 1, false, false, true, true},
+        {"i32", 32, false, false, false, 3}, {"i64", 64, false, false, false, 3},
+        {"u32", 32, true, false, false, 3},  {"u64", 64, true, false, false, 3},
+        {"i16", 16, false, false, false, 2}, {"u16", 16, true, false, false, 2},
+        {"i8", 8, false, false, false, 2},   {"u8", 8, true, false, false, 2},
+        {"f32", 32, false, true, false, 3},  {"f64", 64, false, true, false, 3},
+        {"bool", 1, false, false, true, 3},
     };
     for (const ElemShape &item : table) {
         if (name == item.name) {
@@ -1115,22 +1116,60 @@ Decoded decode_slot(const ComptimeSlot &slot, const uint8_t *base, uint64_t base
         if (len < 0) {
             return fail_constant();
         }
-        std::string text;
+        const uint64_t elem_size = slot.stride == 0 ? 1 : slot.stride;
+        const uint64_t nbytes = static_cast<uint64_t>(len) * elem_size;
+        const uint8_t *data = nullptr;
         if (len == 0) {
-            text.clear();
+            data = pool;
         } else if (raw == 0 || pool == nullptr) {
             return fail_constant();
         } else {
             const auto addr = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(pool));
-            if (raw < addr || raw - addr > pool_size || static_cast<uint64_t>(len) > pool_size - (raw - addr)) {
+            if (raw < addr || raw - addr > pool_size || nbytes > pool_size - (raw - addr)) {
                 return fail_constant();
             }
-            text.assign(reinterpret_cast<const char *>(raw), static_cast<std::size_t>(len));
+            data = pool + (raw - addr);
+        }
+        if (slot.type_name.empty()) {
+            std::string text;
+            if (len != 0 && data != nullptr) {
+                text.assign(reinterpret_cast<const char *>(data), static_cast<std::size_t>(len));
+            }
+            auto expr = std::make_unique<Expr>();
+            Expr::String node;
+            node.text = std::move(text);
+            expr->data = std::move(node);
+            out.status = ComptimeStructValue::Status::Value;
+            out.expr = std::move(expr);
+            return out;
         }
         auto expr = std::make_unique<Expr>();
-        Expr::String node;
-        node.text = std::move(text);
-        expr->data = std::move(node);
+        Expr::Init init;
+        init.array_literal = true;
+        init.type_name = slot.type_name;
+        init.elements.reserve(static_cast<std::size_t>(len));
+        for (int32_t index = 0; index < len; ++index) {
+            ComptimeSlot one;
+            if (slot.type_name == "f64") {
+                one.kind = ComptimeSlot::Kind::F64;
+            } else if (slot.type_name == "f32") {
+                one.kind = ComptimeSlot::Kind::F32;
+            } else if (slot.type_name == "bool") {
+                one.kind = ComptimeSlot::Kind::Bool;
+            } else {
+                one.kind = ComptimeSlot::Kind::Int;
+                one.bits = slot.bits;
+                one.is_unsigned = slot.is_unsigned;
+            }
+            one.size = elem_size;
+            const uint8_t *at = data + static_cast<uint64_t>(index) * elem_size;
+            Decoded part = decode_slot(one, at, elem_size, little, pool, pool_size, functions);
+            if (part.status != ComptimeStructValue::Status::Value || part.expr == nullptr) {
+                return part;
+            }
+            init.elements.push_back(std::move(part.expr));
+        }
+        expr->data = std::move(init);
         out.status = ComptimeStructValue::Status::Value;
         out.expr = std::move(expr);
         return out;
@@ -1166,18 +1205,30 @@ Decoded decode_slot(const ComptimeSlot &slot, const uint8_t *base, uint64_t base
             }
             return nullptr;
         };
-        const ComptimeSlot &child = slot.children.front();
-        if (child.kind == ComptimeSlot::Kind::Array && child.children.size() == 1) {
-            // Two shells. `i8` and `i16` do not nest. A third shell leaves `type_name` empty.
-            const char *name = shape_name(child.children.front());
-            const ElemShape *shape = name == nullptr ? nullptr : elem_shape(name);
-            if (shape != nullptr && shape->nest) {
-                init.type_name = name;
-                init.elem_is_array = true;
-                init.elem_array_len = static_cast<int>(child.count);
-            }
-        } else if (const char *name = shape_name(child)) {
+        const ComptimeSlot *cursor = &slot.children.front();
+        std::vector<int> inner_lens;
+        while (cursor->kind == ComptimeSlot::Kind::Array && cursor->children.size() == 1 && inner_lens.size() < 4) {
+            inner_lens.push_back(static_cast<int>(cursor->count));
+            cursor = &cursor->children.front();
+        }
+        const char *name = shape_name(*cursor);
+        const ElemShape *shape = name == nullptr ? nullptr : elem_shape(name);
+        const int shells = static_cast<int>(inner_lens.size()) + (name == nullptr ? 0 : 1);
+        if (shape != nullptr && shells >= 1 && shells <= shape->max_shells) {
             init.type_name = name;
+            if (!inner_lens.empty()) {
+                init.elem_is_array = true;
+                init.elem_array_len = inner_lens.front();
+                if (inner_lens.size() > 1) {
+                    init.elem_shells.reserve(inner_lens.size());
+                    for (const int len : inner_lens) {
+                        TypeShell shell;
+                        shell.kind = TypeShell::Kind::Array;
+                        shell.length = len;
+                        init.elem_shells.push_back(shell);
+                    }
+                }
+            }
         }
         init.elements.reserve(static_cast<std::size_t>(slot.count));
         for (uint64_t index = 0; index < slot.count; ++index) {
@@ -1318,16 +1369,20 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
             }
         }
     }
-    // One shell from `elem_shape`. Two shells when that row nests. A slice, a pointer, and
-    // `[2][2]i8` stay out.
+    // One shell from `elem_shape`, up to `max_shells`. A slice is copied into the pool.
+    // A pointer and a fourth shell stay out.
     const ElemShape *shape = fn.results.size() == 1 ? elem_shape(fn.results.front().type_name) : nullptr;
     const bool one_array = !many_results && shape != nullptr && fn.results.front().is_array &&
                            fn.results.front().array_len > 0 && fn.results.front().indirections == 0 &&
                            !fn.results.front().is_tuple && !fn.results.front().is_fn_ptr &&
-                           fn.results.front().type_package.empty() &&
-                           (array_shells <= 1 || (array_shells == 2 && shape->nest));
+                           fn.results.front().type_package.empty() && array_shells >= 1 &&
+                           array_shells <= shape->max_shells;
+    const bool one_slice = !many_results && shape != nullptr && fn.results.front().is_array &&
+                           fn.results.front().array_len < 0 && fn.results.front().indirections == 0 &&
+                           !fn.results.front().is_tuple && !fn.results.front().is_fn_ptr &&
+                           fn.results.front().type_package.empty();
     const StructLayout *layout = nullptr;
-    if (!many_results && !one_tuple && !one_array) {
+    if (!many_results && !one_tuple && !one_array && !one_slice) {
         const Lowered ret = lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, false, 0, false);
         if (ret.struct_id < 0 || ret.struct_id >= static_cast<int>(structs_.size()) || ret.depth != 0 || ret.is_array ||
             ret.is_slice) {
@@ -1540,6 +1595,27 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
         if (image.root.kind != ComptimeSlot::Kind::Array) {
             return give_up();
         }
+    } else if (one_slice) {
+        auto *packed = llvm::dyn_cast<llvm::StructType>(measured);
+        if (packed == nullptr || !packed->isSized() || packed->getNumElements() < 2 || shape == nullptr) {
+            return give_up();
+        }
+        const llvm::StructLayout *placed = data_layout.getStructLayout(packed);
+        image.root.kind = ComptimeSlot::Kind::SliceU8;
+        image.root.type_name = shape->name;
+        image.root.len_offset = placed->getElementOffset(1);
+        image.root.size = data_layout.getTypeAllocSize(packed).getFixedValue();
+        image.root.bits = shape->bits;
+        image.root.is_unsigned = shape->is_unsigned;
+        image.root.stride = shape->is_bool ? 1 : (shape->is_float ? (shape->bits >= 64 ? 8 : 4) : shape->bits / 8);
+        auto *pool_ty = llvm::ArrayType::get(i8(), kPoolBytes);
+        if (module_.getNamedGlobal(kPoolName) == nullptr) {
+            new llvm::GlobalVariable(module_, pool_ty, false, llvm::GlobalValue::ExternalLinkage,
+                                     llvm::ConstantAggregateZero::get(pool_ty), kPoolName);
+        }
+        if (module_.getNamedGlobal(kUsedName) == nullptr) {
+            new llvm::GlobalVariable(module_, i32(), false, llvm::GlobalValue::ExternalLinkage, const_i32(0), kUsedName);
+        }
     } else {
         auto *packed = llvm::dyn_cast<llvm::StructType>(measured);
         if (packed == nullptr || !packed->isSized()) {
@@ -1627,7 +1703,7 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
     }
     std::vector<llvm::Function *> drop;
     for (llvm::Function &item : module_) {
-        if (!item.isDeclaration() || &item == body) {
+        if (!item.isDeclaration() || &item == body || item.isIntrinsic()) {
             continue;
         }
         if (!item.use_empty()) {
@@ -1649,10 +1725,16 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
         }
     }
     auto *pool_ty = llvm::ArrayType::get(i8(), kPoolBytes);
-    auto *pool = new llvm::GlobalVariable(module_, pool_ty, false, llvm::GlobalValue::ExternalLinkage,
-                                          llvm::ConstantAggregateZero::get(pool_ty), kPoolName);
-    auto *used = new llvm::GlobalVariable(module_, i32(), false, llvm::GlobalValue::ExternalLinkage, const_i32(0),
-                                          kUsedName);
+    auto *pool = module_.getNamedGlobal(kPoolName);
+    if (pool == nullptr) {
+        pool = new llvm::GlobalVariable(module_, pool_ty, false, llvm::GlobalValue::ExternalLinkage,
+                                        llvm::ConstantAggregateZero::get(pool_ty), kPoolName);
+    }
+    auto *used = module_.getNamedGlobal(kUsedName);
+    if (used == nullptr) {
+        used = new llvm::GlobalVariable(module_, i32(), false, llvm::GlobalValue::ExternalLinkage, const_i32(0),
+                                        kUsedName);
+    }
     auto *fail = new llvm::GlobalVariable(module_, i32(), false, llvm::GlobalValue::ExternalLinkage, const_i32(0),
                                           kFailName);
     auto *wrapper_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context_), {ptr_type()}, false);
@@ -1702,13 +1784,14 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
         builder_.CreateCondBr(builder_.CreateICmpSLT(len, const_i32(0)), fail_bb, room_bb);
         builder_.SetInsertPoint(room_bb);
         llvm::Value *used_now = builder_.CreateLoad(i32(), used);
-        llvm::Value *next = builder_.CreateAdd(used_now, len);
+        llvm::Value *span = slot.stride > 1 ? builder_.CreateMul(len, const_i32(static_cast<int>(slot.stride))) : len;
+        llvm::Value *next = builder_.CreateAdd(used_now, span);
         llvm::Value *overflow = builder_.CreateOr(builder_.CreateICmpULT(next, used_now),
                                                    builder_.CreateICmpUGT(next, const_i32(static_cast<int>(kPoolBytes))));
         builder_.CreateCondBr(overflow, fail_bb, do_bb);
         builder_.SetInsertPoint(do_bb);
         llvm::Value *dest = builder_.CreateInBoundsGEP(i8(), pool, builder_.CreateZExt(used_now, i64()));
-        builder_.CreateMemCpy(dest, llvm::Align(1), data, llvm::Align(1), builder_.CreateZExt(len, i64()));
+        builder_.CreateMemCpy(dest, llvm::Align(1), data, llvm::Align(1), builder_.CreateZExt(span, i64()));
         builder_.CreateStore(dest, ptr_addr);
         builder_.CreateStore(next, used);
         builder_.CreateBr(done_bb);
@@ -1828,6 +1911,44 @@ ComptimeStructValue eval_comptime_struct(
     out.status = decoded.status;
     out.value = std::move(decoded.expr);
     return out;
+}
+
+llvm::Value *CodeGen::retain_eval_slice(llvm::Value *packed, uint64_t elem_size) {
+    if (!eval_ || packed == nullptr || elem_size == 0 || elem_size > 16 || packed->getType() != slice_type()) {
+        return packed;
+    }
+    auto *pool = module_.getNamedGlobal(kPoolName);
+    auto *used = module_.getNamedGlobal(kUsedName);
+    llvm::BasicBlock *here = builder_.GetInsertBlock();
+    if (pool == nullptr || used == nullptr || here == nullptr) {
+        return packed;
+    }
+    auto *function = here->getParent();
+    auto *copy_bb = llvm::BasicBlock::Create(context_, "slice.keep", function);
+    auto *skip_bb = llvm::BasicBlock::Create(context_, "slice.skip", function);
+    auto *done_bb = llvm::BasicBlock::Create(context_, "slice.done", function);
+    llvm::Value *data = builder_.CreateExtractValue(packed, 0);
+    llvm::Value *len = builder_.CreateExtractValue(packed, 1);
+    llvm::Value *span = builder_.CreateMul(len, const_i32(static_cast<int>(elem_size)));
+    llvm::Value *used_now = builder_.CreateLoad(i32(), used);
+    llvm::Value *next = builder_.CreateAdd(used_now, span);
+    llvm::Value *overflow = builder_.CreateOr(builder_.CreateICmpULT(next, used_now),
+                                               builder_.CreateICmpUGT(next, const_i32(static_cast<int>(kPoolBytes))));
+    llvm::Value *bad = builder_.CreateOr(overflow, builder_.CreateICmpSLT(len, const_i32(0)));
+    builder_.CreateCondBr(bad, skip_bb, copy_bb);
+    builder_.SetInsertPoint(copy_bb);
+    llvm::Value *dest = builder_.CreateInBoundsGEP(i8(), pool, builder_.CreateZExt(used_now, i64()));
+    builder_.CreateMemCpy(dest, llvm::Align(1), data, llvm::Align(1), builder_.CreateZExt(span, i64()));
+    builder_.CreateStore(next, used);
+    llvm::Value *kept = builder_.CreateInsertValue(packed, dest, 0);
+    builder_.CreateBr(done_bb);
+    builder_.SetInsertPoint(skip_bb);
+    builder_.CreateBr(done_bb);
+    builder_.SetInsertPoint(done_bb);
+    auto *phi = builder_.CreatePHI(slice_type(), 2);
+    phi->addIncoming(kept, copy_bb);
+    phi->addIncoming(packed, skip_bb);
+    return phi;
 }
 
 } // namespace tlc
