@@ -1,0 +1,13 @@
+// An alias of a pointer type keeps every shell: `*[2]i32`, `?*[2]f64`, `[][2]*u8`.
+type Ref *[2]i32;
+type Maybe ?*[2]f64;
+
+func main() i32 {
+    var a [2]i32 = [_]i32{1, 40};
+    var r Ref = Ref(&a);
+    if ((*r)[1] != 40) { return 1; }
+    var f [2]f64 = [_]f64{0.5, 2.0};
+    var m Maybe = Maybe(&f);
+    if ((*m!)[1] != 2.0) { return 2; }
+    return 42;
+}

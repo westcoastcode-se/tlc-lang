@@ -1,0 +1,27 @@
+// A result that is a pointer type keeps every shell. A narrow or float leaf is not a scalar result.
+func id(p *[]u8) *[]u8 {
+    return p;
+}
+
+func first(p *[2]f64) *[2]f64 {
+    return p;
+}
+
+func twice(p **f64) **f64 {
+    return p;
+}
+
+func main() i32 {
+    var a [3]u8 = [_]u8{1, 2, 40};
+    var s []u8 = a[:];
+    if ((*id(&s))[2] != 40u8) { return 1; }
+    var f [2]f64 = [_]f64{0.5, 1.5};
+    if ((*first(&f))[1] != 1.5) { return 2; }
+    var x f64 = 4.25;
+    var px *f64 = &x;
+    if (*(*twice(&px)) != 4.25) { return 3; }
+    var c = true;
+    var pick = c ? first(&f) : first(&f);
+    if ((*pick)[0] != 0.5) { return 4; }
+    return 42;
+}

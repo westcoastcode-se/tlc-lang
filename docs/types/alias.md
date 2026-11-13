@@ -54,6 +54,8 @@ retq                             # return
 
 `if (n)` is reported as `type mismatch: expected bool, found Integer`. The comparison is `if (n != Integer(0))`.
 
+`type Ref *[2]i32` and `type Rows []*[]i32` name those types, at any depth. `Ref(&row)` is that pointer, and `(*r)[1]` reads one element.
+
 Two aliases of `i32`, such as `Integer` and `Count`, are different types. `Ptr` is different from `*Point`, and `Pair` is different from `[2]i32`. `pair[0]` still has the element type.
 
 A parameter, a result, and a field can use the name. `sizeof(Integer)` is `sizeof(i32)`. `typeof(Integer).name()` is `Integer`.

@@ -12,6 +12,8 @@ This page describes `sizeof` and `alignof`, and which type forms each one accept
 
 A pointer is 8, and `sizeof([]i32)` is 16.
 
+`sizeof(*Point)`, `sizeof(?*[2]i32)`, and `sizeof(**[]u8)` are each 8. The type inside `sizeof` is spelled as a declaration spells it, with every `*`, `?*`, `[N]`, and `[]` in any order.
+
 Both `sizeof(i32)` and `sizeof n` are accepted.
 
 `sizeof(Point)` and `sizeof(enum Color)` name a declared type, and `sizeof(Shape)` names a union.

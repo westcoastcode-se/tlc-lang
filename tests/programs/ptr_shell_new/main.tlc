@@ -1,0 +1,15 @@
+// `new ?*[2]i32` reserves one pointer of that type and yields `*?*[2]i32`.
+func main() i32 {
+    var a [2]i32 = [_]i32{1, 41};
+    var slot = new ?*[2]i32;
+    *slot = &a;
+    var got = (*(*slot)!)[1];
+    delete slot;
+    var b [2]f64 = [_]f64{0.5, 1.0};
+    var bs []f64 = b[:];
+    var held = new ?*[]f64;
+    *held = &bs;
+    var more = (*(*held)!)[1];
+    delete held;
+    return got + i32(more);
+}

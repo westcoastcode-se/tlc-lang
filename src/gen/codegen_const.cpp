@@ -612,8 +612,9 @@ llvm::Constant *CodeGen::bare_initializer(const Lowered &low, llvm::Type *ty) {
     if (ty == nullptr) {
         return nullptr;
     }
+    // `?*[2]Point` has leaf depth 0 and is a pointer. Its shells say so.
     const bool object = low.struct_id >= 0 && low.depth == 0 && !low.is_slice && !low.elem_slice &&
-                        low.struct_id < static_cast<int>(structs_.size());
+                        !pointer_shell(low.shells) && low.struct_id < static_cast<int>(structs_.size());
     const bool untagged = object && structs_[static_cast<std::size_t>(low.struct_id)].is_union &&
                           structs_[static_cast<std::size_t>(low.struct_id)].tag_enum < 0;
     const bool plain = object && (!structs_[static_cast<std::size_t>(low.struct_id)].is_union || untagged);

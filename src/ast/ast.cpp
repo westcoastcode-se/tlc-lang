@@ -1172,6 +1172,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.count_inferred = node.count_inferred;
                 copy.repeat_init = node.repeat_init;
                 copy.init = node.init ? clone_expr(*node.init) : nullptr;
+                copy.shells = node.shells;
                 copy.builtin_alloc = node.builtin_alloc;
                 copy.alloc_file = node.alloc_file;
                 copy.alloc_name = node.alloc_name;

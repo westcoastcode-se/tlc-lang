@@ -583,7 +583,8 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     item.loc = name_loc;
     item.name = std::move(name);
     PlacedType type = parse_go_type(true);
-    if (type.struct_definition || type.enum_definition || type.ptr_to_array) {
+    // `type Ref *[2]i32` keeps its shells like `type Ref ?*[2]i32`. Only an inline definition is rejected here.
+    if (type.struct_definition || type.enum_definition) {
         diags_.error(type.loc.valid() ? type.loc : item.loc, "not supported yet");
     }
     item.type_name = type.type_name;

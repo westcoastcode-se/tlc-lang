@@ -1092,8 +1092,17 @@ class CodeGen {
         }
         return value;
     }
+    static bool pointer_shell(const std::vector<TypeShell> &shells) {
+        return !shells.empty() && shells.front().kind == TypeShell::Kind::Pointer;
+    }
+    // A pointer at run time: a leaf pointer, or a `Pointer` shell such as `*[2]T` whose leaf depth is 0.
+    template <class V>
+    static bool holds_pointer(const V &value) {
+        return value.depth > 0 || pointer_shell(value.shells);
+    }
     llvm::Type *slot_int_type(const TypedValue &slot) const {
-        if (slot.depth != 0 || slot.struct_id >= 0 || slot.elem_void) {
+        // `*[2]i32` has leaf depth 0 and is still a pointer. A slice or an array is not one integer either.
+        if (slot.depth != 0 || slot.struct_id >= 0 || slot.elem_void || !slot.shells.empty()) {
             return nullptr;
         }
         if (slot.elem_float) {
@@ -1123,16 +1132,40 @@ class CodeGen {
         if (slot.fn_ty != nullptr) {
             return rhs.value;
         }
-        if (slot.elem_float && slot.depth == 0) {
+        if (pointer_shell(slot.shells)) {
+            return holds_pointer(rhs) || rhs.value->getType()->isPointerTy() ? rhs.value : null_ptr();
+        }
+        if (slot.elem_float && slot.depth == 0 && slot.shells.empty()) {
             return as_stored(rhs.value, rhs.depth, slot.elem_bits >= 64 ? f64_ty() : f32_ty(), rhs.elem_unsigned);
         }
-        if (slot.depth > 0 && rhs.depth == 0) {
+        if (slot.depth > 0 && !holds_pointer(rhs) && !rhs.value->getType()->isPointerTy()) {
             return null_ptr();
         }
         if (llvm::Type *slot_type = slot_int_type(slot); slot_type != nullptr && rhs.value->getType()->isIntegerTy()) {
             return resize_int(rhs.value, slot_type, rhs.elem_unsigned);
         }
         return rhs.value;
+    }
+    // Load a pointer whose type is `shells`: `*[2]T`, `**[]T`, `?*[N][M]T`, at any depth.
+    // `depth` is the leaf's own pointers. The shells are the pointer and everything it points to.
+    template <class From>
+    TypedValue load_pointer(llvm::Value *addr, const From &from) {
+        return pointer_value(builder_.CreateLoad(ptr_type(), addr), from);
+    }
+    // `pointer` already loaded, described by `from`'s shells. The same value `load_pointer` gives.
+    template <class From>
+    TypedValue pointer_value(llvm::Value *pointer, const From &from) {
+        TypedValue out;
+        copy_element(out, from);
+        out.value = pointer;
+        out.depth = from.depth;
+        out.ptr_to_array = from.ptr_to_array;
+        out.ptr_array_len = from.ptr_array_len;
+        if (out.shells.size() >= 2 && out.shells[1].kind == TypeShell::Kind::Array) {
+            out.ptr_to_array = true;
+            out.ptr_array_len = out.shells[1].length;
+        }
+        return out;
     }
     TypedValue load_object(llvm::Value *addr, int depth, bool elem_char, int struct_id = -1, bool elem_void = false,
                            bool elem_bool = false, int elem_bits = 0, bool elem_unsigned = false, bool elem_float = false) {
@@ -1260,25 +1293,8 @@ class CodeGen {
             loaded.tuple_parts = binding.tuple_parts;
             return loaded;
         }
-        if (!binding.shells.empty() && binding.shells.front().kind == TypeShell::Kind::Pointer && binding.value != nullptr) {
-            TypedValue loaded;
-            loaded.value = builder_.CreateLoad(ptr_type(), binding.value);
-            loaded.shells = binding.shells;
-            loaded.depth = binding.depth;
-            loaded.elem_char = binding.elem_char;
-            loaded.struct_id = binding.struct_id;
-            loaded.elem_void = binding.elem_void;
-            loaded.elem_bool = binding.elem_bool;
-            loaded.elem_bits = binding.elem_bits;
-            loaded.elem_unsigned = binding.elem_unsigned;
-            loaded.elem_float = binding.elem_float;
-            loaded.enum_id = binding.enum_id;
-            loaded.ptr_to_array = binding.ptr_to_array;
-            loaded.ptr_array_len = binding.ptr_array_len;
-            loaded.elem_slice = binding.elem_slice;
-            loaded.inner_array_len = binding.inner_array_len;
-            // `*[2]Duo`. Indexing `p[0]` needs the tuple that one element stores.
-            loaded.tuple_parts = binding.tuple_parts;
+        if (pointer_shell(binding.shells) && binding.value != nullptr) {
+            TypedValue loaded = load_pointer(binding.value, binding);
             // A parameter `[N][M]T` or `[N][]T` keeps `N` after the outer array decays.
             loaded.array_len = binding.array_len;
             loaded.empty_decay = binding.empty_decay;

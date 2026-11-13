@@ -91,8 +91,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     // `*arr` on `*[N]T` is that array, decayed to a pointer to its element.
                     // `array_len` keeps N so `(*p)[i:j]` can build the slice. Depth is one above the element.
                     if (inner.ptr_to_array ||
-                        (pointer_shell && inner.shells.size() >= 2 && inner.shells[1].kind == TypeShell::Kind::Array &&
-                         inner.shells.size() == 2)) {
+                        (pointer_shell && inner.shells.size() >= 2 && inner.shells[1].kind == TypeShell::Kind::Array)) {
                         int length = inner.ptr_array_len;
                         if (length <= 0 && inner.shells.size() >= 2 &&
                             inner.shells[1].kind == TypeShell::Kind::Array) {
@@ -106,6 +105,15 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         decayed.shells.clear();
                         decayed.array_len = length;
                         decayed.depth = inner.depth + 1;
+                        // `*p` on `*[N]E` when `E` is `*[2]T`, `[]T`, or deeper: the decayed array keeps `E`'s shells.
+                        if (pointer_shell && inner.shells.size() > 2 && inner.shells[1].kind == TypeShell::Kind::Array) {
+                            decayed.shells.assign(inner.shells.begin() + 2, inner.shells.end());
+                            const std::vector<TypeShell> array(inner.shells.begin() + 1, inner.shells.end());
+                            decayed.array_type = shell_type(array, inner.depth, inner.elem_char, inner.struct_id,
+                                                            inner.elem_bool, inner.elem_bits, inner.elem_float);
+                            decayed.elem_slice = decayed.shells.front().kind == TypeShell::Kind::Slice;
+                            return decayed;
+                        }
                         if (length >= 0) {
                             const int elem_depth = inner.depth > 0 ? inner.depth - 1 : 0;
                             llvm::Type *elem = leaf_type(elem_depth, inner.elem_char, inner.struct_id, inner.elem_bool,
@@ -285,11 +293,51 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     if (addr.value == nullptr) {
                         return {zero(), 0};
                     }
-                    if (addr.is_slice || (!addr.shells.empty() && addr.shells.front().kind == TypeShell::Kind::Slice)) {
+                    // A decayed row `[M][]T` is an array, not a slice, even when its element is one.
+                    if (!addr.row_decay &&
+                        (addr.is_slice || (!addr.shells.empty() && addr.shells.front().kind == TypeShell::Kind::Slice))) {
                         TypedValue pointer = addr;
                         pointer.is_slice = false;
                         pointer.array_len = 0;
                         pointer.elem_slice = false;
+                        // `*[]*[2]T` points at a header. A flag the element's own `*[2]` set does not apply here.
+                        pointer.ptr_to_array = false;
+                        pointer.ptr_array_len = 0;
+                        // A slice whose shells are only its element, as `rows[i]` on `[2][]*T` gives, gets its own `[]`.
+                        if (pointer.shells.empty() || pointer.shells.front().kind != TypeShell::Kind::Slice) {
+                            TypeShell header;
+                            header.kind = TypeShell::Kind::Slice;
+                            pointer.shells.insert(pointer.shells.begin(), header);
+                        }
+                        TypeShell shell;
+                        shell.kind = TypeShell::Kind::Pointer;
+                        pointer.shells.insert(pointer.shells.begin(), shell);
+                        return pointer;
+                    }
+                    // `&grid[i]` is `*[M]...T`: a decayed row, one level above its element. The shells are that element.
+                    if (addr.row_decay && addr.array_len > 0 && !addr.is_tuple) {
+                        TypedValue pointer;
+                        copy_element(pointer, addr);
+                        pointer.elem_slice = false;
+                        pointer.value = addr.value;
+                        pointer.depth = addr.depth > 0 ? addr.depth - 1 : 0;
+                        TypeShell shell;
+                        shell.kind = TypeShell::Kind::Pointer;
+                        TypeShell row;
+                        row.kind = TypeShell::Kind::Array;
+                        row.length = addr.array_len;
+                        pointer.shells.insert(pointer.shells.begin(), row);
+                        pointer.shells.insert(pointer.shells.begin(), shell);
+                        pointer.ptr_to_array = true;
+                        pointer.ptr_array_len = addr.array_len;
+                        return pointer;
+                    }
+                    // `&rows[i]` when the element is `*[2]T` or `**[]T` is one more pointer in front of those shells.
+                    if (pointer_shell(addr.shells)) {
+                        TypedValue pointer;
+                        copy_element(pointer, addr);
+                        pointer.value = addr.value;
+                        pointer.depth = addr.depth;
                         TypeShell shell;
                         shell.kind = TypeShell::Kind::Pointer;
                         pointer.shells.insert(pointer.shells.begin(), shell);
@@ -469,17 +517,16 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     if (else_bit != nullptr) {
                         phi->addIncoming(else_bit, else_end);
                     }
-                    return {phi,
-                            meta.depth,
-                            meta.elem_char,
-                            meta.struct_id,
-                            false,
-                            false,
-                            meta.elem_bool,
-                            have_common ? report_bits(common_bits, common_uns) : meta.elem_bits,
-                            have_common ? common_uns : meta.elem_unsigned,
-                            meta.trait_id,
-                            meta.elem_float};
+                    // Both arms have one type. The result keeps all of it: `*[2]T`, `[]*T`, a tuple, a row.
+                    TypedValue out = meta;
+                    out.value = phi;
+                    out.elem_void = false;
+                    out.tuple_forward = nullptr;
+                    if (have_common) {
+                        out.elem_bits = report_bits(common_bits, common_uns);
+                        out.elem_unsigned = common_uns;
+                    }
+                    return out;
                 }
                 if ((node.op == TokenKind::EqEq || node.op == TokenKind::BangEq) && node.lhs != nullptr &&
                     node.rhs != nullptr && std::holds_alternative<Expr::Typeof>(node.lhs->data) &&
@@ -1540,20 +1587,16 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         }
                         if (part.is_slice) {
                             TypedValue loaded;
+                            copy_element(loaded, part);
                             loaded.value = extracted;
                             loaded.is_slice = true;
-                            loaded.elem_slice = part.elem_slice;
                             loaded.array_len = -1;
                             loaded.depth = part.depth;
-                            loaded.elem_char = part.elem_char;
-                            loaded.struct_id = part.struct_id;
-                            loaded.elem_void = part.elem_void;
-                            loaded.elem_bool = part.elem_bool;
-                            loaded.elem_bits = part.elem_bits;
-                            loaded.elem_unsigned = part.elem_unsigned;
-                            loaded.elem_float = part.elem_float;
-                            loaded.enum_id = part.enum_id;
                             return loaded;
+                        }
+                        // `t[0]` when the element is `*[2]T` or `**[]T`.
+                        if (pointer_shell(part.shells)) {
+                            return pointer_value(extracted, part);
                         }
                         if (part.depth == 0 && part.elem_bool) {
                             return {builder_.CreateZExt(extracted, i32()), 0, false, -1, false, part.elem_void, true};
@@ -1612,6 +1655,10 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 if (addr.is_slice || addr.is_tuple) {
                     return load_field(addr);
                 }
+                // `rows[i]` when the element is `*[2]T` or `**T`. The pointer keeps its shells.
+                if (pointer_shell(addr.shells)) {
+                    return load_pointer(addr.value, addr);
+                }
                 TypedValue loaded = load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void,
                                                 addr.elem_bool, addr.elem_bits, addr.elem_unsigned, addr.elem_float);
                 loaded.fn_ty = addr.fn_ty;
@@ -1639,6 +1686,23 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     }
                     measured = low.type;
                 } else if (node.expr) {
+                    // `sizeof(*Point)` parses as `*` of a name. When that name is a type, not a value,
+                    // the operand is a pointer, and every pointer has one size.
+                    const Expr *cursor = node.expr.get();
+                    bool starred = false;
+                    while (const auto *unary = std::get_if<Expr::Unary>(&cursor->data)) {
+                        if (unary->op != TokenKind::Star || unary->postfix || unary->expr == nullptr) {
+                            break;
+                        }
+                        starred = true;
+                        cursor = unary->expr.get();
+                    }
+                    const auto *named = std::get_if<Expr::Name>(&cursor->data);
+                    if (starred && named != nullptr && lookup(named->text) == nullptr) {
+                        measured = ptr_type();
+                    }
+                }
+                if (measured == nullptr && !node.on_type && node.expr) {
                     const Shape shape = raw_shape(*node.expr);
                     if (shape.is_function || (shape.depth == 0 && shape.elem_void)) {
                         error(node.loc, "not supported yet");
@@ -1734,6 +1798,24 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 if (target.fn_ty != nullptr &&
                     (source.depth > 0 || source.value->getType()->isPointerTy())) {
                     return stamp_fn(source.value);
+                }
+                // `*[2]i32(p)`, `Ref(&row)` when `type Ref *[2]i32`: a pointer whose shells are the target's.
+                // The bits are the source pointer. An integer source becomes that address.
+                if (pointer_shell(target.shells)) {
+                    llvm::Value *bits = source.value;
+                    if (source.is_slice || bits->getType() == slice_type()) {
+                        bits = builder_.CreateExtractValue(as_slice_value(source, node.loc), 0);
+                    } else if (bits->getType()->isIntegerTy()) {
+                        llvm::IntegerType *intptr = module_.getDataLayout().getIntPtrType(context_, 0);
+                        if (bits->getType() != intptr) {
+                            bits = source.elem_unsigned ? builder_.CreateZExt(bits, intptr) : builder_.CreateSExt(bits, intptr);
+                        }
+                        bits = builder_.CreateIntToPtr(bits, ptr_type());
+                    } else if (!bits->getType()->isPointerTy()) {
+                        error(node.loc, "type mismatch");
+                        return {zero(), 0};
+                    }
+                    return pointer_value(bits, target);
                 }
                 if (source.depth == 0 && source.struct_id >= 0 && source.struct_id < static_cast<int>(structs_.size()) &&
                     source.value->getType()->isStructTy()) {
@@ -2009,8 +2091,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             value.array_type->isArrayTy() && value.value != nullptr &&
                             value.value->getType()->isPointerTy()) {
                             if (llvm::Value *loaded = array_bits(value.value, value.array_type, node.loc)) {
+                                // The decayed address was one above the element. `[2]*i32` keeps the element's `*`.
                                 value.value = loaded;
-                                value.depth = 0;
+                                value.depth = value.depth > 0 ? value.depth - 1 : 0;
                             }
                         }
                         fields.push_back(value.value);
@@ -2054,11 +2137,37 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             }
                             return "i32";
                         };
-                        if (element.depth == 0 && element.array_type != nullptr && element.array_type->isArrayTy() &&
+                        // `*[2]T`, `**[]T`: the pointer is in the shells and `depth` is the leaf's own.
+                        // A loaded `[2]*[2]T` also starts its shells with `*`, but the value is the array below.
+                        if (!element.shells.empty() && element.shells.front().kind == TypeShell::Kind::Pointer &&
+                            !(element.value != nullptr && element.value->getType()->isArrayTy())) {
+                            slot.shells = element.shells;
+                            slot.indirections = element.depth;
+                            if (element.struct_id >= 0 && element.struct_id < static_cast<int>(structs_.size())) {
+                                slot.is_struct = true;
+                                slot.type_name = structs_[static_cast<std::size_t>(element.struct_id)].name;
+                            } else if (element.elem_void) {
+                                slot.type_name = "void";
+                            } else {
+                                slot.type_name = scalar();
+                            }
+                            return slot;
+                        }
+                        if (element.array_type != nullptr && element.array_type->isArrayTy() &&
                             element.value != nullptr && element.value->getType()->isArrayTy()) {
+                            // The element of `[2]*i32` is `*i32`. Its pointers are the leaf's.
+                            slot.indirections = element.depth;
                             // The loaded value is the array. `pair[0][0] = 1` stores into that copy.
-                            llvm::Type *cursor = element.array_type;
-                            while (auto *array = llvm::dyn_cast<llvm::ArrayType>(cursor)) {
+                            // A decayed value's shells are its element, so `[2]*[2]T` keeps `*[2]` after the outer `[2]`.
+                            if (!element.shells.empty()) {
+                                TypeShell outer;
+                                outer.kind = TypeShell::Kind::Array;
+                                outer.length = static_cast<int>(element.array_type->getArrayNumElements());
+                                slot.shells.push_back(outer);
+                                slot.shells.insert(slot.shells.end(), element.shells.begin(), element.shells.end());
+                            }
+                            llvm::Type *cursor = slot.shells.empty() ? element.array_type : nullptr;
+                            while (auto *array = llvm::dyn_cast_or_null<llvm::ArrayType>(cursor)) {
                                 TypeShell shell;
                                 shell.kind = TypeShell::Kind::Array;
                                 shell.length = static_cast<int>(array->getNumElements());
@@ -2082,6 +2191,10 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             slot.is_array = true;
                             slot.array_len = -1;
                             slot.indirections = element.depth;
+                            // `[][2]*T` and `[]*[2]T` keep every constructor after the slice.
+                            if (!element.shells.empty()) {
+                                slot.shells = element.shells;
+                            }
                             if (element.struct_id >= 0 && element.struct_id < static_cast<int>(structs_.size())) {
                                 slot.is_struct = true;
                                 slot.type_name = structs_[static_cast<std::size_t>(element.struct_id)].name;

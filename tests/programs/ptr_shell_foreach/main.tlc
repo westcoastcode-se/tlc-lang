@@ -1,0 +1,20 @@
+// `for` over pointers binds each pointer with its type.
+func main() i32 {
+    var a [2]i32 = [_]i32{1, 2};
+    var p *[2]i32 = &a;
+    var rows [2]*[2]i32 = [_]*[2]i32{p, p};
+    var sum = 0;
+    for (var r : rows) {
+        sum = sum + (*r)[1];
+    }
+    var x f64 = 1.5;
+    var px *f64 = &x;
+    var many [3]*f64 = [_]*f64{px, px, px};
+    var s []*f64 = many[:];
+    var total = 0.0;
+    for (var q : s) {
+        total = total + *q;
+    }
+    if (sum != 4 || total != 4.5) { return 1; }
+    return 42;
+}

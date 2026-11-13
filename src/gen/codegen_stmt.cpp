@@ -607,7 +607,8 @@ std::optional<Binding> CodeGen::bind_array_copy(const std::string &name, const T
     Binding binding;
     copy_element(binding, got);
     binding.value = slot;
-    binding.depth = 0;
+    // A decayed array is one level above its element. `[2]*i32` keeps the element's own pointer.
+    binding.depth = got.depth > 0 ? got.depth - 1 : 0;
     binding.is_array = true;
     binding.array_len = static_cast<int>(array_ty->getNumElements());
     // The value's shells are the element. The binding names the whole array, so the outer `[N]` comes first.
@@ -1302,8 +1303,12 @@ void CodeGen::emit_for_each(const Stmt::For &node) {
     bool slot_unsigned = false;
     bool slot_float = false;
     if (!want_ref && !struct_value) {
-        const int elem_depth = base.depth > 0 ? base.depth - 1 : 0;
+        // A packed slice stores the element's depth. A decayed array is one level above its element.
+        const bool packed = base.is_slice && base.value->getType() == slice_type();
+        const int elem_depth = packed ? base.depth : base.depth > 0 ? base.depth - 1 : 0;
         slot_type = leaf_type(elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float);
+        // `[2]*i32` binds `*i32`. The element keeps its own pointers.
+        slot_depth = elem_depth;
         slot_struct = base.struct_id;
         slot_char = base.elem_char;
         slot_bool = base.elem_bool;
@@ -1382,6 +1387,18 @@ void CodeGen::emit_for_each(const Stmt::For &node) {
                 if (const std::optional<Binding> row = bind_array_copy(node.each_name, address, node.loc)) {
                     scopes_.back()[node.each_name] = *row;
                 }
+            } else if (pointer_shell(address.shells)) {
+                // An element `*[2]T` or `**[]T`. The pointer keeps its shells, at any depth.
+                llvm::AllocaInst *held = alloca_typed(ptr_type(), node.each_name);
+                const TypedValue loaded = load_pointer(address.value, address);
+                builder_.CreateStore(loaded.value, held);
+                Binding item_ptr;
+                copy_element(item_ptr, loaded);
+                item_ptr.value = held;
+                item_ptr.depth = loaded.depth;
+                item_ptr.ptr_to_array = loaded.ptr_to_array;
+                item_ptr.ptr_array_len = loaded.ptr_array_len;
+                scopes_.back()[node.each_name] = item_ptr;
             } else if (address.is_slice && address.value->getType()->isPointerTy()) {
                 // An element `[]...T` is one header in memory.
                 TypedValue header = address;

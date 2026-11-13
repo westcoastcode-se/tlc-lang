@@ -1,0 +1,19 @@
+// An element that is a pointer keeps its type: `[2]*[2]T`, `[]*[]T`, `[2]?*T`.
+func main() i32 {
+    var a [2]u8 = [_]u8{1, 40};
+    var p *[2]u8 = &a;
+    var rows [2]*[2]u8 = [_]*[2]u8{p, p};
+    if ((*rows[1])[1] != 40u8) { return 1; }
+    var s []*[2]u8 = rows[:];
+    if ((*s[0])[1] != 40u8) { return 2; }
+    var f [2]f64 = [_]f64{0.5, 2.0};
+    var fs []f64 = f[:];
+    var heads [2]*[]f64 = [_]*[]f64{&fs, &fs};
+    if ((*heads[1])[1] != 2.0) { return 3; }
+    var n i32 = 7;
+    var maybe [2]?*i32 = [_]?*i32{&n, null};
+    if (*maybe[0]! != 7 || maybe[1] != null) { return 4; }
+    var copy = rows;
+    if ((*copy[0])[0] != 1u8) { return 5; }
+    return 42;
+}

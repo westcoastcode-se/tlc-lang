@@ -8,6 +8,8 @@ This page describes `new` and `delete`, which reserve storage and later release 
 
 `new T` reserves space for one `T` and yields `*T`.
 
+`T` may be any pointer type, such as `?*[2]i32` or `?**[]Point`. `new ?*[2]i32` yields `*?*[2]i32`.
+
 The result is that pointer.
 
 > **Warning:** When allocation returns `null`, `new` calls `builtin.panic("out of memory")`.

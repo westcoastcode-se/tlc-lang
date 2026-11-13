@@ -3132,6 +3132,15 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     } else {
                         object = spelled_type(node.type_name, node.type_package, node.is_struct, false, node.indirections,
                                               node.loc, node.optional, node.const_pointee);
+                        // `new ?*[2]i32`. The shells wrap that leaf, the same way a written type does.
+                        if (object.kind != TypeKind::Invalid && !node.shells.empty()) {
+                            bool rejected = false;
+                            object = apply_shells(std::move(object), node.shells, false, rejected);
+                            if (rejected) {
+                                error(node.loc, "not supported yet");
+                                return type_invalid();
+                            }
+                        }
                     }
                     if (object.kind == TypeKind::Invalid) {
                         return type_invalid();

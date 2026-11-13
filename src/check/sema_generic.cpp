@@ -1667,8 +1667,15 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
                     return false;
                 }
                 // Pointers after the last array stay in `indirections`, as they always have.
+                // A pointer with a further array or slice inside it is a shell: `[2]*[2]T`, `[]*[]T`.
                 if (saw_array) {
-                    break;
+                    const Type *below = layer;
+                    while (below != nullptr && below->kind == TypeKind::Pointer) {
+                        below = below->pointee.get();
+                    }
+                    if (below == nullptr || below->kind != TypeKind::Array) {
+                        break;
+                    }
                 }
                 TypeShell shell;
                 shell.kind = TypeShell::Kind::Pointer;

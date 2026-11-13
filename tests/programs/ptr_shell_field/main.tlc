@@ -1,0 +1,19 @@
+// A struct field that is a pointer type stores the pointer, whatever its leaf is.
+type Holder struct {
+    floats *[2]f64;
+    rows [2]*[2]u8;
+    n i32;
+};
+
+func read(h *Holder) f64 {
+    return (*h.floats)[1];
+}
+
+func main() i32 {
+    var f [2]f64 = [_]f64{0.5, 2.5};
+    var b [2]u8 = [_]u8{3, 40};
+    var pb *[2]u8 = &b;
+    var h Holder = Holder{.floats = &f, .rows = [_]*[2]u8{pb, pb}, .n = 2};
+    if (read(&h) != 2.5 || (*h.rows[1])[1] != 40u8 || h.n != 2) { return 1; }
+    return 42;
+}

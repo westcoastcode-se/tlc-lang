@@ -1,0 +1,16 @@
+// `*p` on `*[N]E` keeps `E`. `p` from `&grid` is the same type a written `*[N]E` is.
+func main() i32 {
+    var a [2]i32 = [_]i32{3, 4};
+    var p *[2]i32 = &a;
+    var rows [2]*[2]i32 = [_]*[2]i32{p, p};
+    var q = &rows;
+    if ((*(*q)[1])[1] != 4) { return 1; }
+    var b [2]f64 = [_]f64{1.0, 2.5};
+    var bs []f64 = b[:];
+    var mid [2][]f64 = [_][]f64{bs, bs};
+    var pm *[2][]f64 = &mid;
+    if ((*pm)[1][1] != 2.5) { return 2; }
+    var ip = &a;
+    if ((*ip)[0] != 3 || ip[1] != 4) { return 3; }
+    return 42;
+}

@@ -1,0 +1,13 @@
+// A tuple element that is a pointer, or an array of pointers, keeps that type.
+func main() i32 {
+    var a [2]i32 = [_]i32{1, 40};
+    var p *[2]i32 = &a;
+    var t = (p, 2);
+    var y = t[0];
+    if ((*y)[1] != 40 || (*t[0])[0] != 1) { return 1; }
+    var rows [2]*[2]i32 = [_]*[2]i32{p, p};
+    var u = (rows, 2);
+    var r = u[0];
+    if ((*r[1])[1] != 40) { return 2; }
+    return 42;
+}

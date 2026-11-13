@@ -1146,8 +1146,8 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         }
         return result;
     }
-    // `[N]f64` is an array result. Only a scalar float returns here.
-    if (call.elem_float && !inst->getType()->isArrayTy()) {
+    // `[N]f64` and `*[2]f64` are not floats. Only a scalar float returns here.
+    if (call.elem_float && inst->getType()->isFloatingPointTy()) {
         return {inst, 0, false, -1, false, false, false, call.elem_bits >= 64 ? 64 : 32, false, -1, true};
     }
     if (inst->getType()->isVoidTy()) {
@@ -1196,16 +1196,18 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         result.array_type = array_ty;
         return result;
     }
-    if (call.depth == 0 && call.elem_bool) {
+    // A leaf depth of 0 is still a pointer when the shells start with one. Only an integer widens.
+    const bool scalar_int = call.depth == 0 && inst->getType()->isIntegerTy();
+    if (scalar_int && call.elem_bool) {
         return tagged({builder_.CreateZExt(inst, i32()), 0});
     }
-    if (call.depth == 0 && (call.elem_char || call.elem_bits == 8 || call.elem_bits == 16)) {
+    if (scalar_int && (call.elem_char || call.elem_bits == 8 || call.elem_bits == 16)) {
         const bool zero_extend = call.elem_unsigned || call.elem_char;
         llvm::Value *wide = zero_extend ? builder_.CreateZExt(inst, i32()) : builder_.CreateSExt(inst, i32());
         return tagged({wide, 0});
     }
     TypedValue result = tagged({inst, call.depth, call.elem_char, call.struct_id, false, call.elem_void, call.elem_bool,
-                                call.elem_bits, call.elem_unsigned});
+                                call.elem_bits, call.elem_unsigned, -1, call.elem_float});
     // `give()` that returns `*[N]T` is still that pointer. The length stays so a slice use can pack it.
     auto stamp_array_ptr = [&](const std::string &name, const std::string &package, bool is_struct, int indirections,
                                bool is_array, int array_len, bool elem_slice, const std::vector<TypeShell> &shells) {
@@ -1214,6 +1216,14 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         }
         const Lowered low = lower(current_file_, name, package, is_struct, indirections, is_array, array_len, false,
                                   elem_slice, shells);
+        // `*[N]T`, `**[]T`, `?*[N][M]T`: a pointer whose shells say what it points to, at any depth.
+        if (!low.shells.empty() && low.shells.front().kind == TypeShell::Kind::Pointer) {
+            copy_element(result, low);
+            result.depth = low.depth;
+            result.ptr_to_array = low.ptr_to_array;
+            result.ptr_array_len = low.ptr_array_len;
+            return;
+        }
         if (!low.ptr_to_array || low.ptr_array_len <= 0) {
             return;
         }

@@ -515,11 +515,13 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
         // `view[i]` on `[][M]...T` is that row, a decayed `[M]` whose element is the shells after it.
         // A further index reads the next level the same way, at any depth.
         if (!rest.empty() && rest.front().kind == TypeShell::Kind::Array) {
+            // `mark` describes the row's element. The row itself is set after, so a slice element does not
+            // overwrite the row's length.
+            mark(out, std::vector<TypeShell>(rest.begin() + 1, rest.end()));
             out.row_decay = true;
             out.array_len = rest.front().length;
             out.depth = base.depth + 1;
             out.array_type = element_of(rest);
-            mark(out, std::vector<TypeShell>(rest.begin() + 1, rest.end()));
             out.is_slice = false;
             note_tuple(out);
             return out;
@@ -552,15 +554,32 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
             out.depth = base.depth;
             out.array_type = step;
         } else {
-            // A decayed `[N][]T` steps by one header. That slot is the slice.
-            // No shell is left, so the element is the leaf. Array decay added one to that depth.
-            // A further slice shell, as in `[N][][]T`, keeps the depth the next index already uses.
+            // A decayed `[N][]E` steps by one header. That slot is the slice, and like every slice value
+            // its shells start with its own `[]`. Array decay added one to the depth; the slice stores
+            // the element's depth. `[N][][2]T` and `[N][]*[]T` index the same way at any depth.
             out.is_slice = true;
             out.array_len = -1;
-            if (out.shells.empty() && out.depth > 0) {
+            if (!out.shells.empty()) {
+                out.shells.insert(out.shells.begin(), outer);
+                out.elem_slice = out.shells.size() >= 2 && out.shells[1].kind == TypeShell::Kind::Slice;
+            }
+            if (out.depth > 0) {
                 out.depth -= 1;
             }
         }
+        note_tuple(out);
+        return out;
+    }
+    if (outer.kind == TypeShell::Kind::Pointer && !outer.decay && !base.is_slice && base.depth >= 1 &&
+        (base.array_len > 0 || base.empty_decay)) {
+        // A decayed local `[N]*...T`: the value addresses element 0, and the shells are that element, a pointer.
+        // Indexing steps by one pointer. The element is that whole pointer type, at any depth.
+        llvm::Value *slot = builder_.CreateInBoundsGEP(ptr_type(), base.value, llvm::ArrayRef<llvm::Value *>{subscript});
+        TypedValue out;
+        out.value = slot;
+        carry(out);
+        out.depth = base.depth - 1;
+        mark(out, base.shells);
         note_tuple(out);
         return out;
     }
@@ -573,11 +592,11 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
         TypedValue out;
         out.value = slot;
         carry(out);
+        mark(out, std::vector<TypeShell>(rest.begin() + 1, rest.end()));
         out.row_decay = true;
         out.array_len = rest.front().length;
         out.depth = base.depth + 1;
         out.array_type = element_of(rest);
-        mark(out, std::vector<TypeShell>(rest.begin() + 1, rest.end()));
         out.is_slice = false;
         note_tuple(out);
         return out;

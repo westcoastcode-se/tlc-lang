@@ -1745,9 +1745,64 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
             }
             continue;
         }
+        // Walk the written type from the outside in: every shell in order, then the leaf's own pointers.
+        // `*[2]T`, `[2]*T`, `[]*[N]T`, and `?**[]T` bind `T` the same way at any depth.
+        std::vector<TypeShell> shells = param.shells;
+        if (shells.empty() && param.is_array) {
+            TypeShell one;
+            one.kind = param.array_len < 0 ? TypeShell::Kind::Slice : TypeShell::Kind::Array;
+            one.length = param.array_len;
+            one.length_name = param.array_len_name;
+            shells.push_back(std::move(one));
+        }
         const Type *cursor = &got;
         bool peel_ok = true;
-        for (int star = 0; star < param.indirections; ++star) {
+        bool length_failed = false;
+        for (std::size_t layer = 0; layer < shells.size() && peel_ok; ++layer) {
+            const TypeShell &shell = shells[layer];
+            if (shell.kind == TypeShell::Kind::Pointer) {
+                if (cursor->kind != TypeKind::Pointer || cursor->pointee == nullptr || is_decayed_array(*cursor) ||
+                    (!shell.optional && cursor->optional)) {
+                    peel_ok = false;
+                    break;
+                }
+                cursor = cursor->pointee.get();
+                continue;
+            }
+            // An array or a slice. A decayed `[N]T` parameter is still that array.
+            const Type *element = nullptr;
+            int length = -1;
+            if (cursor->kind == TypeKind::Array && cursor->element != nullptr) {
+                element = cursor->element.get();
+                length = cursor->length;
+            } else if (is_decayed_array(*cursor) && !cursor->optional && cursor->pointee != nullptr) {
+                element = cursor->pointee.get();
+                length = cursor->decayed_len;
+            }
+            if (element == nullptr) {
+                peel_ok = false;
+                break;
+            }
+            if (shell.kind == TypeShell::Kind::Array && !shell.length_name.empty() && length >= 0) {
+                const int len_index = param_index(templ.type_params, shell.length_name);
+                if (len_index >= 0 && templ.type_params[static_cast<std::size_t>(len_index)].is_value) {
+                    if (set[static_cast<std::size_t>(len_index)] &&
+                        bounds[static_cast<std::size_t>(len_index)].value != length) {
+                        length_failed = true;
+                        break;
+                    }
+                    bounds[static_cast<std::size_t>(len_index)].is_value = true;
+                    bounds[static_cast<std::size_t>(len_index)].value = length;
+                    set[static_cast<std::size_t>(len_index)] = 1;
+                }
+            }
+            cursor = element;
+        }
+        if (length_failed) {
+            error(call.loc, "type mismatch");
+            return std::nullopt;
+        }
+        for (int star = 0; star < param.indirections && peel_ok; ++star) {
             if (cursor->kind != TypeKind::Pointer || cursor->pointee == nullptr) {
                 peel_ok = false;
                 break;
@@ -1760,52 +1815,6 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
             cursor = cursor->pointee.get();
         }
         if (!peel_ok) {
-            continue;
-        }
-        if (param.is_array) {
-            // `[2]T` peels one array. `[2][2]T` peels every array shell, then binds the leaf.
-            const Type *leaf = cursor;
-            int layers = 0;
-            for (const TypeShell &shell : param.shells) {
-                if (shell.kind == TypeShell::Kind::Array) {
-                    ++layers;
-                }
-            }
-            if (layers == 0) {
-                layers = 1;
-            }
-            for (int layer = 0; layer < layers; ++layer) {
-                if (leaf->kind == TypeKind::Array && leaf->element != nullptr) {
-                    if (layer == 0 && !param.array_len_name.empty()) {
-                        const int len_index = param_index(templ.type_params, param.array_len_name);
-                        if (len_index >= 0 && templ.type_params[static_cast<std::size_t>(len_index)].is_value) {
-                            if (set[static_cast<std::size_t>(len_index)] &&
-                                bounds[static_cast<std::size_t>(len_index)].value != leaf->length) {
-                                error(call.loc, "type mismatch");
-                                return std::nullopt;
-                            }
-                            bounds[static_cast<std::size_t>(len_index)].is_value = true;
-                            bounds[static_cast<std::size_t>(len_index)].value = leaf->length;
-                            set[static_cast<std::size_t>(len_index)] = 1;
-                        }
-                    }
-                    leaf = leaf->element.get();
-                    continue;
-                }
-                if (is_decayed_array(*leaf) && !leaf->optional && leaf->pointee != nullptr) {
-                    leaf = leaf->pointee.get();
-                    continue;
-                }
-                leaf = nullptr;
-                break;
-            }
-            if (leaf == nullptr) {
-                continue;
-            }
-            if (!constrain(index, *leaf)) {
-                error(call.loc, "type mismatch");
-                return std::nullopt;
-            }
             continue;
         }
         if (!constrain(index, *cursor)) {

@@ -28,6 +28,9 @@ struct TypeShell {
     std::string length_name;
     // `[sizeof(Point)]`. Folded into `length` once that type has a size.
     std::shared_ptr<Expr> length_expr;
+    // Code generation only: a parameter `[N]T` decayed to this pointer. The value is not a `*T` of the type.
+    // A local `[N]*T` decays too, but its leading `Pointer` is the element and leaves this clear.
+    bool decay = false;
 };
 
 // One slot of `func id[T type, N int]`. `T type` is a type. `T Shape` is a trait.
@@ -425,6 +428,9 @@ struct Expr {
         bool repeat_init = false;
         // `{.field = expr}`. Null when the block is only zeroed.
         std::unique_ptr<Expr> init;
+        // `new ?*[2]i32` and `new **[]T`: the constructors outside the leaf, outermost first.
+        // Empty for a plain `new T` and for a buffer `new [n]T`.
+        std::vector<TypeShell> shells;
         // Filled while checking. `builtin_alloc` calls libc. Otherwise `alloc_struct` is the allocator.
         mutable bool builtin_alloc = false;
         // File and struct name of a custom allocator. Empty when `builtin_alloc` is set.

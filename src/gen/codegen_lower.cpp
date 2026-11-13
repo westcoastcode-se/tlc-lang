@@ -1,6 +1,8 @@
 // Symbol tables and lowering a type to LLVM.
 #include "gen/gen.hpp"
 
+#include <algorithm>
+
 #include "gen/detail.hpp"
 
 namespace tlc {
@@ -160,17 +162,9 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
                               fn.results.front().array_len > 0 && !fn.results.front().is_fn_ptr;
     const bool result_slice = !many && fn.results.size() == 1 && fn.results.front().is_array &&
                              fn.results.front().array_len < 0 && !fn.results.front().is_fn_ptr;
-    // `[2][2]i32` keeps the row in `shells`. The outer length alone would be `[2]i32`.
-    bool nested_array = false;
-    if (!many && fn.results.size() == 1 && !fn.results.front().is_fn_ptr) {
-        const std::vector<TypeShell> &shells = fn.results.front().shells;
-        for (std::size_t index = 1; index < shells.size(); ++index) {
-            if (shells[index].kind == TypeShell::Kind::Array) {
-                nested_array = true;
-                break;
-            }
-        }
-    }
+    // Every constructor is in `shells`: `[2][2]i32`, `*[]i32`, `**[N]T`. The flat fields below name only the leaf.
+    const bool shaped = !many && fn.results.size() == 1 && !fn.results.front().is_fn_ptr &&
+                        !fn.results.front().shells.empty();
     auto lowered = [&]() {
         if (fn.results.size() == 1 && fn.results.front().is_tuple && fn.results.front().is_array &&
             fn.results.front().array_len > 0 && fn.results.front().indirections == 0) {
@@ -193,7 +187,7 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
                                fn.results.front().fn_params, fn.results.front().fn_variadic,
                                fn.results.front().fn_results);
         }
-        if (nested_array) {
+        if (shaped) {
             return lower_result(file, fn.results.front());
         }
         return lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections,
@@ -634,6 +628,7 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
             }
             TypeShell pointer;
             pointer.kind = TypeShell::Kind::Pointer;
+            pointer.decay = true;
             shells.insert(shells.begin(), pointer);
         }
         llvm::Type *type = element;
@@ -686,6 +681,7 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
         }
         TypeShell pointer;
         pointer.kind = TypeShell::Kind::Pointer;
+        pointer.decay = true;
         shells.insert(shells.begin(), pointer);
     }
     leaf.shells = shells;
@@ -843,6 +839,41 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         out.depth = indirections;
         out.type = ptr_type();
         return out;
+    }
+    // `type Ref *[2]i32` and `type Rows []*[]T`: the alias holds a pointer shell, which the flat
+    // forms below cannot spell. The use's own `[N]` and `*` go outside the alias's shells.
+    // `type Grid [][2]*T` is the same: an array inside the outer shell has no flat spelling either.
+    const bool shaped_alias = have && !base.is_tuple && base.fn_ty == nullptr &&
+                              std::any_of(base.shells.begin(), base.shells.end(), [&](const TypeShell &shell) {
+                                  return shell.kind == TypeShell::Kind::Pointer ||
+                                         (shell.kind == TypeShell::Kind::Array && &shell != &base.shells.front());
+                              });
+    if (shaped_alias) {
+        std::vector<TypeShell> outer;
+        if (is_array) {
+            TypeShell array;
+            array.kind = array_len < 0 ? TypeShell::Kind::Slice : TypeShell::Kind::Array;
+            array.length = array_len < 0 ? 0 : array_len;
+            outer.push_back(array);
+        }
+        for (int star = 0; star < indirections; ++star) {
+            TypeShell pointer;
+            pointer.kind = TypeShell::Kind::Pointer;
+            outer.push_back(pointer);
+        }
+        outer.insert(outer.end(), base.shells.begin(), base.shells.end());
+        Lowered leaf;
+        leaf.depth = base_depth;
+        leaf.elem_char = elem_char;
+        leaf.elem_void = elem_void;
+        leaf.elem_bool = elem_bool;
+        leaf.elem_bits = elem_bits;
+        leaf.elem_unsigned = elem_unsigned;
+        leaf.elem_float = elem_float;
+        leaf.struct_id = sid;
+        leaf.enum_id = base.enum_id;
+        leaf.type = leaf_type(base_depth, elem_char, sid, elem_bool, elem_bits, elem_float);
+        return compose_shells(std::move(leaf), std::move(outer), parameter);
     }
     // `[]Row` when `Row` is `[]i32`. The written flag is the second empty `[]`.
     const bool nest_slice = elem_slice || (base_slice && is_array && !base_headers);

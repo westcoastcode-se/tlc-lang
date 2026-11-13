@@ -1,0 +1,18 @@
+// `&rows[i]` is one more pointer in front of the element's type: a pointer, a row, or a slice.
+func main() i32 {
+    var a [2]i32 = [_]i32{1, 40};
+    var p *[2]i32 = &a;
+    var rows [2]*[2]i32 = [_]*[2]i32{p, p};
+    var q = &rows[1];
+    if ((*(*q))[1] != 40) { return 1; }
+    var grid [2][2]i32 = [_][2]i32{{1, 2}, {3, 4}};
+    var row = &grid[1];
+    if ((*row)[1] != 4 || row[0] != 3) { return 2; }
+    var n i32 = 9;
+    var pn *i32 = &n;
+    var cells [2]*i32 = [_]*i32{pn, pn};
+    var lists [2][]*i32 = [_][]*i32{cells[:], cells[:]};
+    var pl = &lists[1];
+    if (*(*pl)[1] != 9) { return 3; }
+    return 42;
+}

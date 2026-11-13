@@ -475,6 +475,29 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
             expect(TokenKind::RBracket, "expected ']'");
         }
     }
+    // `new *[2]i32`, `new ?**[]T`: a pointer whose pointee is an array or a slice. The whole element is one type.
+    if (!count && !inferred) {
+        std::size_t ahead = 0;
+        while (peek(ahead).kind == TokenKind::Star ||
+               (peek(ahead).kind == TokenKind::Question && peek(ahead + 1).kind == TokenKind::Star) ||
+               (ahead > 0 && peek(ahead).kind == TokenKind::KwConst)) {
+            ++ahead;
+        }
+        if (ahead > 0 && peek(ahead).kind == TokenKind::LBracket) {
+            const PlacedType element = parse_go_type();
+            node.type_name = element.type_name;
+            node.type_package = element.type_package;
+            node.is_struct = element.is_struct;
+            node.indirections = element.indirections;
+            node.optional = element.optional;
+            node.const_pointee = element.const_pointee;
+            node.shells = element.shells;
+            if (check(TokenKind::LBrace)) {
+                node.init = parse_init();
+            }
+            return make_expr(std::move(node));
+        }
+    }
     const PointerPrefix prefix = parse_pointer_prefix();
     node.indirections = prefix.count;
     node.optional = prefix.optional;
@@ -594,11 +617,14 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         ParenType spelled;
         std::unique_ptr<Expr> expr;
         std::size_t look = 0;
+        // `?*` only spells a type. `*?*Point` is one even when `Point` could also name a value.
+        bool optional_star = false;
         if (peek(look).kind == TokenKind::LParen) {
             ++look;
             while (peek(look).kind == TokenKind::Star ||
                    (peek(look).kind == TokenKind::Question && peek(look + 1).kind == TokenKind::Star)) {
                 if (peek(look).kind == TokenKind::Question) {
+                    optional_star = true;
                     ++look;
                 }
                 ++look;
@@ -620,8 +646,10 @@ std::unique_ptr<Expr> Parser::parse_unary() {
                 }
                 ++pos_;
             } while (depth > 0 && !eof());
-        } else if (peek().kind == TokenKind::LParen && peek(1).kind == TokenKind::LBracket) {
-            // `sizeof([]i32)` and `typeof([4]i32)`. A cast does not take this form.
+        } else if (peek().kind == TokenKind::LParen &&
+                   (peek(1).kind == TokenKind::LBracket || peek(look).kind == TokenKind::LBracket || optional_star)) {
+            // `sizeof([]i32)`, `typeof([4]i32)`, `sizeof(*[2]i32)`, `sizeof(**[]T)`, and `sizeof(?*Point)`.
+            // Only a type starts with `[` after its stars, or with `?*`. `sizeof(*p)` stays an expression.
             ++pos_;
             const PlacedType array = parse_go_type();
             expect(TokenKind::RParen, "expected ')'");

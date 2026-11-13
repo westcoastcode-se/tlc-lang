@@ -1,0 +1,15 @@
+// Every pointer type is 8 bytes, however it is spelled.
+type Point struct {
+    x i32;
+    y f64;
+};
+
+const N = sizeof(*Point);
+assert(sizeof(?*[2]i32) == 8, "optional pointer to array");
+assert(sizeof(**[]u8) == 8, "pointer to pointer to slice");
+assert(sizeof(*?*Point) == 8, "pointer to optional pointer");
+
+func main() i32 {
+    var row [N]u8;
+    return N + sizeof(*[4]Point) + sizeof(?*[2][]Point) + i32(row.len) + 10;
+}

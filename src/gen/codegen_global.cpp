@@ -416,10 +416,8 @@ void CodeGen::declare_globals(const PackageNode &node) {
         binding.alias_owner = low.alias_owner;
         binding.alias_file = low.alias_file;
         binding.is_static = var->is_static;
-        // `[N][M]T` keeps every shell so an index steps by the row, then by the element.
-        if (low.is_array) {
-            binding.shells = low.shells;
-        }
+        // Every shell stays: `[N][M]T` steps by the row, and `?*[2]T` or `**[]T` keeps what it points to.
+        binding.shells = low.shells;
         file.globals.emplace(key, binding);
     }
 }

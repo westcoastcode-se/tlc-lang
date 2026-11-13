@@ -1,0 +1,27 @@
+// `T` and `N` are inferred through every pointer, slice, and array in the parameter's type.
+func len_of[N i32, T type](v *[N]T) i32 {
+    return N;
+}
+
+func last[T type](v [2]*T) T {
+    return *v[1];
+}
+
+func id[Q type](v Q) Q {
+    return v;
+}
+
+func main() i32 {
+    var a [3]f64 = [_]f64{1.0, 2.0, 3.0};
+    if (len_of(&a) != 3) { return 1; }
+    var x i32 = 30;
+    var px *i32 = &x;
+    var ptrs [2]*i32 = [_]*i32{px, px};
+    if (last(ptrs) != 30) { return 2; }
+    var b [2]i32 = [_]i32{5, 9};
+    var pb *[2]i32 = &b;
+    var rows [2]*[2]i32 = [_]*[2]i32{pb, pb};
+    var same = id(rows);
+    if ((*same[1])[1] != 9) { return 3; }
+    return last(ptrs) + 3 + (*same[0])[1];
+}

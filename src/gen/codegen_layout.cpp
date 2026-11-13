@@ -1868,9 +1868,10 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         low.type = leaf_type(0, false, -1, false, bits, true);
         return low;
     };
+    // `*[2]u8` has leaf depth 0 and is a pointer. Any shell makes the value something other than one number.
     const auto scalar = [](const Lowered &low) {
         return !low.is_slice && low.depth == 0 && !low.is_array && low.struct_id < 0 && low.trait_id < 0 &&
-               low.enum_id < 0 && low.fn_ty == nullptr && !low.elem_void;
+               low.enum_id < 0 && low.fn_ty == nullptr && !low.elem_void && low.shells.empty();
     };
     const auto promote = [&](Lowered low) {
         if (low.is_tuple) {

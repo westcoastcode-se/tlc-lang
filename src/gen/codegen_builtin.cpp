@@ -641,8 +641,8 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
         }
     }
     const Lowered low = lower(current_file_, node.type_name, node.type_package, node.is_struct, node.indirections, false,
-                              0, false);
-    if (low.type == nullptr || low.elem_void || low.type->isFunctionTy()) {
+                              0, false, false, node.shells);
+    if (low.type == nullptr || (low.elem_void && node.shells.empty()) || low.type->isFunctionTy()) {
         error(node.loc, "type mismatch");
         return {zero(), 0};
     }
@@ -844,6 +844,17 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     }
     result.value = raw;
     result.depth = low.depth + 1;
+    // `new ?*[2]i32` is `*?*[2]i32`. One more pointer goes in front of the element's shells.
+    if (!node.shells.empty() && !node.count_inferred) {
+        copy_element(result, low);
+        result.depth = low.depth;
+        TypeShell shell;
+        shell.kind = TypeShell::Kind::Pointer;
+        result.shells.insert(result.shells.begin(), shell);
+        result.ptr_to_array = result.shells.size() >= 2 && result.shells[1].kind == TypeShell::Kind::Array;
+        result.ptr_array_len = result.ptr_to_array ? result.shells[1].length : 0;
+        return result;
+    }
     if (node.count_inferred) {
         result.ptr_to_array = true;
         result.ptr_array_len = list_len;
