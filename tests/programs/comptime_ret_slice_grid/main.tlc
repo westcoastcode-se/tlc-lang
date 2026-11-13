@@ -1,0 +1,8 @@
+comptime func rows() [][2][2]i32 {
+    return [_][2][2]i32{{{40, 2}, {1, 0}}};
+}
+
+func main() i32 {
+    var s = rows();
+    return s[0][0][0];
+}

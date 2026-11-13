@@ -1,4 +1,4 @@
-var n i32 = 1;
+var n i32 = 42;
 
 comptime func give() *i32 {
     return &n;
@@ -6,5 +6,5 @@ comptime func give() *i32 {
 
 func main() i32 {
     var p = give();
-    return 0;
+    return *p;
 }

@@ -92,6 +92,8 @@ struct ComptimeSlot {
     uint64_t len_offset = 0;
     bool is_unsigned = false;
     int bits = 0;
+    // The root result is `&` of a file-scope name. A pointer field stays a constant failure.
+    bool name_address = false;
     std::string type_name;
     // Source order. The first member with the stored value is the one the literal names.
     std::vector<std::pair<std::string, int64_t>> enumerators;
@@ -106,6 +108,8 @@ struct ComptimeStructImage {
     ComptimeSlot root;
     // LLVM symbol, then the source name. The address is filled in after the call.
     std::vector<std::pair<std::string, std::string>> functions;
+    // Same pair for a file-scope variable. A pointer result is `&` of that source name.
+    std::vector<std::pair<std::string, std::string>> globals;
 };
 
 // What running a struct-returning comptime func produced.

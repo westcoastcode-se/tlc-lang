@@ -1,10 +1,19 @@
 type Point struct { x i32; y i32; }
 
-comptime func pts() []Point {
+comptime func still() []Point {
     return [_]Point{Point{.x = 40, .y = 2}};
 }
 
+comptime func pts(n i32) []Point {
+    var x = n;
+    return [_]Point{Point{.x = x, .y = 2}};
+}
+
 func main() i32 {
-    var s = pts();
-    return s[0].x;
+    var s = pts(40);
+    var t = still();
+    if (s[0].x + s[0].y == 42 && t[0].x == 40) {
+        return 42;
+    }
+    return 0;
 }

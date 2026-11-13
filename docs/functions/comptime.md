@@ -592,7 +592,7 @@ retq
 
 The program returns 42.
 
-`[2]f32` is that result. `row()` is `{0.5f, 1.0f}`. `[2]u64` is that result. `row(0)[0]` is `4u64`. `[2]i16`, `[2]u16`, `[2]i8`, and `[2]u8` are that call. `[2][2]i64`, `[2][2]u32`, `[2][2]u64`, `[2][2]f64`, `[2][2]f32`, and `[2][2]bool` are that call. `[2][2]i8`, `[2][2]u8`, `[2][2]i16`, and `[2][2]u16` are that call. `[2][2][2]i32` is that call, and so are `i64`, `u32`, `u64`, `f64`, `f32`, and `bool`. `[2][2][2]i8`, `[2][2][2]u8`, `[2][2][2]i16`, and `[2][2][2]u16` are that call. `[]i32` and `[]u8` are that call. `i16`, `u16`, `i8`, and `u8` are results too. A pointer, `[2][2][2][2]i8`, and `[2][2][2][2]i32` stay out. `200i8` and `40000i16` are `value does not fit`. `200u8` keeps its bits.
+`[2]f32` is that result. `row()` is `{0.5f, 1.0f}`. `[2]u64` is that result. `row(0)[0]` is `4u64`. `[2]i16`, `[2]u16`, `[2]i8`, and `[2]u8` are that call. `[2][2]i64`, `[2][2]u32`, `[2][2]u64`, `[2][2]f64`, `[2][2]f32`, and `[2][2]bool` are that call. `[2][2]i8`, `[2][2]u8`, `[2][2]i16`, and `[2][2]u16` are that call. `[2][2][2]i32` is that call, and so are `i64`, `u32`, `u64`, `f64`, `f32`, and `bool`. `[2][2][2]i8`, `[2][2][2]u8`, `[2][2][2]i16`, and `[2][2][2]u16` are that call. `[]i32` and `[]u8` are that call. `i16`, `u16`, `i8`, and `u8` are results too. `[2][2][2][2]i8`, `[2][2][2][2]i32`, `[]Point`, and `[][2]i32` are that call. A pointer to a file-scope name is that call. `[2][2][2][2]u8` and `[][2][2]i32` stay out. `200i8` and `40000i16` are `value does not fit`. `200u8` keeps its bits.
 
 `[2]bool` is that result. `flags(1)` stores `true` in `r[0]`. The call is not emitted. `r[1]` is not read, so that store is removed.
 
@@ -842,7 +842,7 @@ retq
 
 The program returns 42.
 
-`[2][2][2]i32` is that result. `cube(40)` stores 40 and 2. `c[0][0][0] + c[0][1][0]` is 42. `i64`, `u32`, `u64`, `f64`, `f32`, and `bool` are the same call. The call is not emitted. `[2][2][2][2]i32` is `not supported yet`.
+`[2][2][2]i32` is that result. `cube(40)` stores 40 and 2. `c[0][0][0] + c[0][1][0]` is 42. `i64`, `u32`, `u64`, `f64`, `f32`, and `bool` are the same call. The call is not emitted.
 
 ```c
 comptime func cube(n i32) [2][2][2]i32 {
@@ -878,7 +878,43 @@ retq
 
 The program returns 42.
 
-`[2][2][2]i8` is that result. `grid(40)` stores 40 and 2. `c[0][0][0] + c[0][0][1]` is 42. `[2][2][2]u8`, `[2][2][2]i16`, and `[2][2][2]u16` are the same call. `200u8` keeps its bits. The call is not emitted. `[2][2][2][2]i8` is `not supported yet`.
+`[2][2][2][2]i32` is that result. `deep(40)` stores 40 and 2. `c[0][0][0][0] + c[0][0][1][0]` is 42. The call is not emitted. `[2][2][2][2]u8` is `not supported yet`.
+
+```c
+comptime func deep(n i32) [2][2][2][2]i32 {
+    var a = n;
+    return [_][2][2][2]i32{{{{a, 1}, {2, 0}}, {{3, 4}, {5, 6}}}, {{{7, 8}, {9, 10}}, {{11, 12}, {13, 14}}}};
+}
+
+func main() i32 {
+    var c = deep(40);
+    return c[0][0][0][0] + c[0][0][1][0];
+}
+```
+
+```asm
+main:
+subq $104, %rsp                  # allocate
+movl $40, 40(%rsp)               # c[0][0][0][0]
+movl $2, 48(%rsp)                # c[0][0][1][0]
+leaq 40(%rsp), %rax              # c[0][0][0]
+movq %rax, 32(%rsp)
+movq 32(%rsp), %rax
+movl (%rax), %eax                # c[0][0][0][0]
+movl %eax, 12(%rsp)
+leaq 40(%rsp), %rax              # c[0][0][1]
+addq $8, %rax
+movq %rax, 16(%rsp)
+movq 16(%rsp), %rcx
+movl 12(%rsp), %eax
+addl (%rcx), %eax                # c[0][0][0][0] + c[0][0][1][0]
+addq $104, %rsp                  # release
+retq
+```
+
+The program returns 42.
+
+`[2][2][2]i8` is that result. `grid(40)` stores 40 and 2. `c[0][0][0] + c[0][0][1]` is 42. `[2][2][2]u8`, `[2][2][2]i16`, and `[2][2][2]u16` are the same call. `200u8` keeps its bits. The call is not emitted.
 
 ```c
 comptime func grid(n i32) [2][2][2]i8 {
@@ -914,7 +950,43 @@ retq
 
 The program returns 42.
 
-`[]i32` is that result. `cut(40)` stores 40 and 2. `s[0] + s[1]` is 42. `[]u8` is the same call, and so is a slice of the other scalars. `[]const u8` stays the string. The call is not emitted. A pointer, `[]Point`, and `[][2]i32` are `not supported yet`.
+`[2][2][2][2]i8` is that result. `grid(40)` stores 40 and 2. `c[0][0][0][0] + c[0][0][0][1]` is 42. The call is not emitted. `[2][2][2][2]u8` is `not supported yet`.
+
+```c
+comptime func grid(n i32) [2][2][2][2]i8 {
+    var a = n;
+    return [_][2][2][2]i8{{{{i8(a), 2i8}, {1i8, 0i8}}, {{3i8, 4i8}, {5i8, 6i8}}}, {{{7i8, 8i8}, {9i8, 10i8}}, {{11i8, 12i8}, {13i8, 14i8}}}};
+}
+
+func main() i32 {
+    var c = grid(40);
+    return c[0][0][0][0] + c[0][0][0][1];
+}
+```
+
+```asm
+main:
+subq $56, %rsp                   # allocate
+movb $40, 40(%rsp)               # c[0][0][0][0]
+movb $2, 41(%rsp)                # c[0][0][0][1]
+leaq 40(%rsp), %rax              # c[0][0][0]
+movq %rax, 32(%rsp)
+movq 32(%rsp), %rax
+movsbl (%rax), %eax              # c[0][0][0][0]
+movl %eax, 12(%rsp)
+leaq 40(%rsp), %rax              # c[0][0][0]
+movq %rax, 16(%rsp)
+movl 12(%rsp), %eax
+movq 16(%rsp), %rcx
+movsbl 1(%rcx), %ecx             # c[0][0][0][1]
+addl %ecx, %eax                  # c[0][0][0][0] + c[0][0][0][1]
+addq $56, %rsp                   # release
+retq
+```
+
+The program returns 42.
+
+`[]i32` is that result. `cut(40)` stores 40 and 2. `s[0] + s[1]` is 42. `[]u8` is the same call, and so is a slice of the other scalars. `[]const u8` stays the string. The call is not emitted. `[]Point` and `[][2]i32` are that call. A pointer to a file-scope name is that call. `[][2][2]i32`, `**i32`, and `?*i32` stay `not supported yet`.
 
 `sum([_]i32{40, 2})` when `sum` takes `[]i32` and returns `s[0] + s[1]` is `movl $42, %eax` and `retq`. `[]u8` of `[_]u8{40u8, 2u8}` is that call. A `var` is `not supported yet`. `const row = [_]i32{40, 2}` then `sum(row)` is `type mismatch: expected []i32, found [2]i32`.
 
@@ -940,6 +1012,100 @@ movl %eax, 8(%rsp)
 movl 8(%rsp), %eax
 addl 20(%rsp), %eax              # s[0] + s[1]
 addq $24, %rsp                   # release
+retq
+```
+
+The program returns 42.
+
+`[]Point` is that result. `pts(40)` stores 40 and 2. `s[0].x + s[0].y` is 42. The call is not emitted. `[][2][2]i32` is `not supported yet`.
+
+```c
+type Point struct { x i32; y i32; }
+
+comptime func pts(n i32) []Point {
+    var x = n;
+    return [_]Point{Point{.x = x, .y = 2}};
+}
+
+func main() i32 {
+    var s = pts(40);
+    return s[0].x + s[0].y;
+}
+```
+
+```asm
+main:
+subq $40, %rsp                   # allocate
+movl $40, 32(%rsp)               # s[0].x
+movl $2, 36(%rsp)                # s[0].y
+movl 32(%rsp), %eax              # s[0].x
+movl 36(%rsp), %ecx              # s[0].y
+movl %ecx, 28(%rsp)
+movl %eax, 24(%rsp)
+movl 24(%rsp), %eax
+addl 28(%rsp), %eax              # s[0].x + s[0].y
+addq $40, %rsp                   # release
+retq
+```
+
+The program returns 42.
+
+`[][2]i32` is that result. `rows(40)` stores 40 and 2. `s[0][0] + s[0][1]` is 42. The call is not emitted.
+
+```c
+comptime func rows(n i32) [][2]i32 {
+    var a = n;
+    return [_][2]i32{{a, 2}, {1, 0}};
+}
+
+func main() i32 {
+    var s = rows(40);
+    return s[0][0] + s[0][1];
+}
+```
+
+```asm
+main:
+subq $56, %rsp                   # allocate
+movl $40, 40(%rsp)               # s[0][0]
+movl $2, 44(%rsp)                # s[0][1]
+leaq 40(%rsp), %rax              # s[0]
+movq %rax, 32(%rsp)
+movq 32(%rsp), %rax
+movl (%rax), %eax                # s[0][0]
+movl %eax, 12(%rsp)
+leaq 40(%rsp), %rax              # s[0]
+movq %rax, 16(%rsp)
+movq 16(%rsp), %rcx
+movl 12(%rsp), %eax
+addl 4(%rcx), %eax               # s[0][0] + s[0][1]
+addq $56, %rsp                   # release
+retq
+```
+
+The program returns 42.
+
+A pointer to a file-scope name is that result. `give()` is `&n`. `*p` is 42. The call is not emitted. A local `var` stays `not supported yet`. `**i32` and `?*i32` stay `not supported yet`.
+
+```c
+var n i32 = 42;
+
+comptime func give() *i32 {
+    return &n;
+}
+
+func main() i32 {
+    var p = give();
+    return *p;
+}
+```
+
+```asm
+main:
+leaq main.n(%rip), %rax          # &n
+movq %rax, -8(%rsp)              # p
+movq -8(%rsp), %rax
+movl (%rax), %eax                # *p
 retq
 ```
 
@@ -1211,7 +1377,7 @@ retq
 
 The program returns 42.
 
-A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an `i64`, not a `u32`, not a `u64`, not an `i16`, not a `u16`, not an `i8`, not a `u8`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, not an `[N]i64`, not an `[N]u32`, not an `[N]u64`, not an `[N]f32`, not an `[N]f64`, not an `[N]i16`, not an `[N]u16`, not an `[N]i8`, not an `[N]u8`, not an `[N]bool`, not a `[2][2]i32`, not a `[2][2]i64`, not a `[2][2]u32`, not a `[2][2]u64`, not a `[2][2]f64`, not a `[2][2]f32`, not a `[2][2]bool`, not a `[2][2]i8`, not a `[2][2]u8`, not a `[2][2]i16`, not a `[2][2]u16`, not a `[2][2][2]i32`, not a `[2][2][2]i64`, not a `[2][2][2]u32`, not a `[2][2][2]u64`, not a `[2][2][2]f64`, not a `[2][2][2]f32`, not a `[2][2][2]bool`, not a `[]i32`, not a `[]u8`, not a `[2][2][2]i8`, not a `[2][2][2]u8`, not a `[2][2][2]i16`, not a `[2][2][2]u16`, and not a constant `[]const u8` is `not supported yet`. An enumerator whose underlying type is `i8`, `u8`, `i16`, `u16`, `u32`, `bool`, `i64`, or `u64` is that call. `[2][2][2][2]i8`, `[2][2][2][2]i32`, `[]Point`, `[][2]i32`, and a pointer stay `not supported yet`.
+A result that is not `i32`, not a `bool`, not an `f32`, not an `f64`, not an `i64`, not a `u32`, not a `u64`, not an `i16`, not a `u16`, not an `i8`, not a `u8`, not an enumerator, not a struct, not a tuple, not an `[N]i32`, not an `[N]i64`, not an `[N]u32`, not an `[N]u64`, not an `[N]f32`, not an `[N]f64`, not an `[N]i16`, not an `[N]u16`, not an `[N]i8`, not an `[N]u8`, not an `[N]bool`, not a `[2][2]i32`, not a `[2][2]i64`, not a `[2][2]u32`, not a `[2][2]u64`, not a `[2][2]f64`, not a `[2][2]f32`, not a `[2][2]bool`, not a `[2][2]i8`, not a `[2][2]u8`, not a `[2][2]i16`, not a `[2][2]u16`, not a `[2][2][2]i32`, not a `[2][2][2]i64`, not a `[2][2][2]u32`, not a `[2][2][2]u64`, not a `[2][2][2]f64`, not a `[2][2][2]f32`, not a `[2][2][2]bool`, not a `[]i32`, not a `[]u8`, not a `[2][2][2]i8`, not a `[2][2][2]u8`, not a `[2][2][2]i16`, not a `[2][2][2]u16`, not a `[2][2][2][2]i32`, not a `[2][2][2][2]i8`, not a `[]Point`, not a `[][2]i32`, not a pointer to a file-scope name, and not a constant `[]const u8` is `not supported yet`. An enumerator whose underlying type is `i8`, `u8`, `i16`, `u16`, `u32`, `bool`, `i64`, or `u64` is that call. `[2][2][2][2]u8`, `[][2][2]i32`, `**i32`, and `?*i32` stay `not supported yet`.
 
 `emit` is not valid in a `comptime func`.
 

@@ -1,0 +1,17 @@
+comptime func still() [][2]i32 {
+    return [_][2]i32{{40, 2}, {1, 0}};
+}
+
+comptime func rows(n i32) [][2]i32 {
+    var a = n;
+    return [_][2]i32{{a, 2}, {1, 0}};
+}
+
+func main() i32 {
+    var s = rows(40);
+    var t = still();
+    if (s[0][0] + s[0][1] == 42 && t[0][0] == 40) {
+        return 42;
+    }
+    return 0;
+}
