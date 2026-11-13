@@ -147,11 +147,12 @@ llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) 
             const std::string number = literal->text.empty() ? "0" : literal->text;
             return llvm::ConstantFP::get(slot.type, std::strtod(number.c_str(), nullptr));
         }
-        const std::optional<int32_t> number = fold(expr);
+        std::unordered_set<std::string> seen;
+        const std::optional<FoldedNumber> number = fold_number(expr, seen);
         if (!number) {
             return nullptr;
         }
-        return llvm::ConstantFP::get(slot.type, static_cast<double>(*number));
+        return llvm::ConstantFP::get(slot.type, number->value);
     }
     if (const auto *selector = std::get_if<Expr::Selector>(&expr.data);
         selector != nullptr && selector->base != nullptr) {
@@ -169,6 +170,10 @@ llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) 
     }
     const std::optional<int32_t> number = fold(expr);
     if (!number) {
+        // `P{.b = 5000000000}` keeps the whole value. The i32 fold does not hold it.
+        if (const std::optional<WideInt> wide = fold_wide(expr)) {
+            return wide_constant(*wide, slot.type);
+        }
         return nullptr;
     }
     return llvm::ConstantInt::get(slot.type, static_cast<uint64_t>(static_cast<int64_t>(*number)), true);
@@ -1570,6 +1575,22 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
         }
         cursor = cast->expr.get();
     }
+    // A cast to a number changes the value: `f64(i32(2.7))` is 2.0 and `i8(300)` is 44.
+    // Fold the whole cast before the stripped operand is read.
+    if (cursor != &expr && dest.depth == 0 && dest.struct_id < 0 && dest.fn_ty == nullptr && !dest.is_array &&
+        !dest.is_tuple) {
+        if (dest.elem_float) {
+            std::unordered_set<std::string> seen;
+            if (const std::optional<FoldedNumber> number = fold_number(expr, seen)) {
+                return llvm::ConstantFP::get(dest.elem_bits >= 64 ? f64_ty() : f32_ty(), number->value);
+            }
+        } else if (const std::optional<int32_t> number = fold(expr)) {
+            if (dest.elem_bool) {
+                return llvm::ConstantInt::get(i1(), *number == 0 ? 0 : 1, false);
+            }
+            return sized_int(dest, *number);
+        }
+    }
     if (const auto *call = std::get_if<Expr::Call>(&cursor->data)) {
         if (call->comptime_struct != nullptr) {
             return const_initializer(*call->comptime_struct, dest);
@@ -1849,37 +1870,29 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
             }
         }
     }
+    // A number folds through its casts. `f64(i32(2.7))` is 2.0 and `i8(300)` is 44, not the stripped operand.
     if (dest.elem_float) {
         std::unordered_set<std::string> seen;
-        if (const std::optional<FoldedNumber> number = fold_number(*cursor, seen); number && number->is_float) {
+        if (const std::optional<FoldedNumber> number = fold_number(expr, seen)) {
             llvm::Type *ty = dest.elem_bits >= 64 ? f64_ty() : f32_ty();
             return llvm::ConstantFP::get(ty, number->value);
         }
-        const std::optional<int32_t> number = fold(*cursor);
-        if (!number) {
-            return nullptr;
-        }
-        llvm::Type *ty = dest.elem_bits >= 64 ? f64_ty() : f32_ty();
-        return llvm::ConstantFP::get(ty, static_cast<double>(*number));
+        return nullptr;
     }
-    // `3000000000u32` and `9223372036854775807i64` do not fit in the i32 fold.
-    if (const auto *number = std::get_if<Expr::Int>(&cursor->data);
-        number != nullptr && number->value > 2147483647ULL && dest.depth == 0 && dest.struct_id < 0 &&
-        dest.fn_ty == nullptr && !dest.elem_float && !dest.elem_bool) {
-        const int slot = dest.elem_bits == 0 ? 32 : dest.elem_bits;
-        if (slot >= 64) {
-            return llvm::ConstantInt::get(i64(), number->value, false);
-        }
-        if (slot == 16) {
-            return llvm::ConstantInt::get(i16(), number->value & 0xFFFFULL, false);
-        }
-        if (slot == 8 || dest.elem_char) {
-            return llvm::ConstantInt::get(i8(), number->value & 0xFFULL, false);
-        }
-        return llvm::ConstantInt::get(i32(), static_cast<uint64_t>(static_cast<uint32_t>(number->value)), false);
-    }
-    const std::optional<int32_t> number = fold(*cursor);
+    const std::optional<int32_t> number = fold(expr);
     if (!number) {
+        // `3000000000u32`, `5000000000 >> 1`, and `-3000000000` do not fit in the i32 fold.
+        if (dest.depth == 0 && dest.struct_id < 0 && dest.fn_ty == nullptr && !dest.elem_bool) {
+            if (const std::optional<WideInt> wide = fold_wide(*cursor)) {
+                // A global names its own width. An empty binding, as a tuple element, takes the value's width.
+                if (const auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(dest.value);
+                    global != nullptr && global->getValueType()->isIntegerTy()) {
+                    return wide_constant(*wide, global->getValueType());
+                }
+                const int slot = dest.elem_char ? 8 : dest.elem_bits == 0 ? wide->bits : dest.elem_bits;
+                return wide_constant(*wide, llvm::IntegerType::get(context_, static_cast<unsigned>(slot)));
+            }
+        }
         return nullptr;
     }
     if (dest.depth > 0) {
@@ -2257,6 +2270,19 @@ void CodeGen::apply_initializer(const VarDecl &var) {
     }
     const auto value = fold(*var.init);
     const auto found = file.globals.find(key);
+    if (!value && found != file.globals.end() && !var.is_array && var.indirections == 0 && !var.is_struct &&
+        var.type_package.empty() && found->second.depth == 0 && found->second.struct_id < 0 &&
+        found->second.trait_id < 0 && !found->second.elem_float && !found->second.elem_bool) {
+        // `var X i64 = 5000000000` and `const M = -3000000000`. The i32 fold would wrap them.
+        auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found->second.value);
+        if (const std::optional<WideInt> wide = fold_wide(*var.init); wide && global != nullptr) {
+            if (llvm::Constant *constant = wide_constant(*wide, global->getValueType())) {
+                global->setInitializer(constant);
+                file.folded.insert(key);
+                return;
+            }
+        }
+    }
     if (!value || found == file.globals.end()) {
         error(var.loc, "global initializer is not a constant");
         return;

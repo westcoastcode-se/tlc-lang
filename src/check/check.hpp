@@ -929,7 +929,9 @@ class Checker {
     // File-scope `const k = 3000000000u32`, `3000000000`, or `4u64`. A local `const` is not.
     std::optional<WideInt> file_scope_const_wide(const Expr &expr);
     // Replace that sum with the wrapped literal. False when `fold_int` already holds it.
-    bool rewrite_wide_int(std::unique_ptr<Expr> &expr);
+    // `signed_form` spells a negative signed value as `-magnitude`. A file-scope initializer is checked again,
+    // and the two's-complement literal past the signed maximum would not fit.
+    bool rewrite_wide_int(std::unique_ptr<Expr> &expr, bool signed_form = false);
     // A condition whose values are comptime, including an enumerator compare.
     // A local `const` whose initializer folds to `i32` does too. A `var` does not.
     std::optional<int> fold_condition(const Expr &expr);

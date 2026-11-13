@@ -1002,7 +1002,9 @@ class CodeGen {
     }
     llvm::Constant *null_ptr() const { return llvm::ConstantPointerNull::get(ptr_type()); }
     llvm::Value *zero() { return const_i32(0); }
-    llvm::Value *as_stored(llvm::Value *value, int from_depth, llvm::Type *slot_type, bool source_unsigned = false) {
+    // `dest_unsigned` picks the unsigned conversion from a float. `u32(3e9)` is not `i32(3e9)`.
+    llvm::Value *as_stored(llvm::Value *value, int from_depth, llvm::Type *slot_type, bool source_unsigned = false,
+                           bool dest_unsigned = false) {
         if (value == nullptr) {
             return zero();
         }
@@ -1062,7 +1064,7 @@ class CodeGen {
             return llvm::ConstantFP::get(slot_type, 0.0);
         }
         if (slot_type != nullptr && slot_type->isIntegerTy() && from_depth == 0 && value->getType()->isFloatingPointTy()) {
-            return builder_.CreateFPToSI(value, slot_type);
+            return dest_unsigned ? builder_.CreateFPToUI(value, slot_type) : builder_.CreateFPToSI(value, slot_type);
         }
         if (slot_type != nullptr && slot_type->isIntegerTy() && from_depth == 0 && value->getType()->isIntegerTy() &&
             value->getType() != slot_type) {
@@ -1579,6 +1581,17 @@ class CodeGen {
     // A field default `{1}` or `{1, 0...}` on `[2]i32`. Missing elements are zero in this constant.
     llvm::Constant *const_default_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags);
     std::optional<int32_t> fold(const Expr &expr) const;
+    // Mirrors `Checker::WideInt`: a value past the i32 fold, with the width and signedness of its suffix.
+    struct WideInt {
+        uint64_t value = 0;
+        int bits = 32;
+        bool is_unsigned = false;
+    };
+    // Mirrors `Checker::fold_wide_int`. An i32 that `fold` holds is a signed 32-bit WideInt.
+    std::optional<WideInt> fold_wide(const Expr &expr) const;
+    std::optional<WideInt> fold_global_wide(uint32_t file, const std::string &name, bool allow_local_static) const;
+    // That value converted to the integer type `ty`: sign-extended from a signed width, then truncated.
+    llvm::Constant *wide_constant(const WideInt &wide, llvm::Type *ty) const;
     // What a comptime pointer expression points at. Null when it is not one.
     const Expr *comptime_pointee(const Expr &pointer, std::unordered_set<std::string> &seen) const;
     // A bare local `const` recorded while this function is emitted. `fold` does not see it.

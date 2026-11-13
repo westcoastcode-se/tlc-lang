@@ -910,6 +910,8 @@ std::unique_ptr<Expr> Parser::parse_primary() {
         Expr::Float literal;
         literal.loc = peek().loc;
         literal.text = peek().text;
+        // `1'000.5` is 1000.5. `strtod` stops at a digit separator, so the text drops them.
+        std::erase(literal.text, '\'');
         if (!literal.text.empty() && (literal.text.back() == 'l' || literal.text.back() == 'L')) {
             error_here("not supported yet");
         }

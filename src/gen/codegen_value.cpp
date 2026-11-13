@@ -1841,7 +1841,18 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                                               source.value->getType()->isFloatingPointTy())) {
                     llvm::Type *dest = target.elem_float ? (target.elem_bits >= 64 ? f64_ty() : f32_ty())
                                                          : bits_type(target.elem_bits == 0 ? 32 : target.elem_bits);
-                    llvm::Value *converted = as_stored(source.value, 0, dest, source.elem_unsigned);
+                    llvm::Value *converted = nullptr;
+                    if (target.elem_bool && !target.elem_float && source.value->getType()->isFloatingPointTy()) {
+                        // `bool(0.5)` is true. A float-to-i1 conversion of a fraction is poison.
+                        converted = builder_.CreateFCmpUNE(source.value,
+                                                           llvm::ConstantFP::get(source.value->getType(), 0.0));
+                        if (dest != converted->getType()) {
+                            converted = builder_.CreateZExt(converted, dest);
+                        }
+                    } else {
+                        converted = as_stored(source.value, 0, dest, source.elem_unsigned,
+                                              target.elem_unsigned);
+                    }
                     if (target.elem_float) {
                         return {converted, 0, false, -1, false, false, false, target.elem_bits, false, -1, true};
                     }

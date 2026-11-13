@@ -5,12 +5,35 @@
 #include "ast/format.hpp"
 #include "gen/codegen.hpp"
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 
 namespace tlc {
 
 namespace {
+
+// A float converted to an integer of `bits` drops the fraction. Out of range is not a constant:
+// LLVM makes that conversion poison.
+std::optional<double> truncated_float(double value, int bits, bool is_unsigned) {
+    if (std::isnan(value)) {
+        return std::nullopt;
+    }
+    const double whole = std::trunc(value);
+    const double low = is_unsigned ? 0.0 : -std::ldexp(1.0, bits - 1);
+    const double high = is_unsigned ? std::ldexp(1.0, bits) : std::ldexp(1.0, bits - 1);
+    if (whole < low || whole >= high) {
+        return std::nullopt;
+    }
+    return whole;
+}
+
+uint64_t wide_mask(int bits) {
+    if (bits >= 64) {
+        return ~uint64_t{0};
+    }
+    return (uint64_t{1} << static_cast<unsigned>(bits)) - 1u;
+}
 
 double round_float(double value, bool wide) {
     if (wide) {
@@ -395,6 +418,18 @@ std::optional<Checker::FoldedNumber> Checker::fold_number(const Expr &expr, std:
                           std::is_same_v<T, Expr::Sizeof>) {
                 const std::optional<int> value = fold_int(expr);
                 if (!value) {
+                    // `f64(5000000000)` reads the whole literal. Same rule as `CodeGen::fold_number`.
+                    if constexpr (std::is_same_v<T, Expr::Int>) {
+                        if (const std::optional<WideInt> wide = fold_wide_int(expr)) {
+                            uint64_t bits = wide->value & wide_mask(wide->bits);
+                            if (!wide->is_unsigned && wide->bits < 64 && (bits >> (wide->bits - 1)) != 0) {
+                                bits |= ~wide_mask(wide->bits);
+                            }
+                            return FoldedNumber{wide->is_unsigned ? static_cast<double>(bits)
+                                                                  : static_cast<double>(static_cast<int64_t>(bits)),
+                                                false, false};
+                        }
+                    }
                     return std::nullopt;
                 }
                 return from_int(*value);
@@ -470,6 +505,20 @@ std::optional<Checker::FoldedNumber> Checker::fold_number(const Expr &expr, std:
                 }
                 if (const std::optional<int> narrowed = fold_int(expr)) {
                     return from_int(*narrowed);
+                }
+                // `u32(3e9)` and `i64(2.5)` are integers past the i32 fold. The fraction is still dropped.
+                if (inner->is_float && node.indirections == 0 && !node.is_struct && !node.is_enum &&
+                    node.type_package.empty()) {
+                    Type named;
+                    if ((fill_builtin(node.type_name, named) || package_typedef(file_id_, node.type_name, named)) &&
+                        is_integer(named)) {
+                        const std::optional<double> whole =
+                            truncated_float(inner->value, width_of(named), named.is_unsigned || named.plain_char);
+                        if (!whole) {
+                            return std::nullopt;
+                        }
+                        return FoldedNumber{*whole, false, false};
+                    }
                 }
                 return inner;
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
@@ -1090,16 +1139,6 @@ std::optional<int> Checker::constant_index(const Expr &expr) {
     return walk(walk, expr, 0);
 }
 
-namespace {
-
-uint64_t wide_mask(int bits) {
-    if (bits >= 64) {
-        return ~uint64_t{0};
-    }
-    return (uint64_t{1} << static_cast<unsigned>(bits)) - 1u;
-}
-
-} // namespace
 
 std::optional<Checker::WideInt> Checker::fold_wide_int(const Expr &expr) {
     // `fold_int` owns a value that fits in signed `i32`. This walk keeps a wider suffix.
@@ -1367,7 +1406,7 @@ bool Checker::folded_wide_negative(const Expr &expr) {
     return static_cast<int64_t>(wide->value) < 0;
 }
 
-bool Checker::rewrite_wide_int(std::unique_ptr<Expr> &expr) {
+bool Checker::rewrite_wide_int(std::unique_ptr<Expr> &expr, bool signed_form) {
     if (expr == nullptr || fold_int(*expr)) {
         return false;
     }
@@ -1375,14 +1414,46 @@ bool Checker::rewrite_wide_int(std::unique_ptr<Expr> &expr) {
     if (!wide) {
         return false;
     }
-    auto replaced = std::make_unique<Expr>();
-    Expr::Int number;
-    number.loc = expr_loc(*expr);
-    number.value = wide->value;
-    number.suffix.bits = wide->bits;
-    number.suffix.is_unsigned = wide->is_unsigned;
-    replaced->data = std::move(number);
-    expr = std::move(replaced);
+    const SourceLoc loc = expr_loc(*expr);
+    const auto literal = [&](uint64_t value) {
+        auto made = std::make_unique<Expr>();
+        Expr::Int number;
+        number.loc = loc;
+        number.value = value;
+        number.suffix.bits = wide->bits;
+        number.suffix.is_unsigned = wide->is_unsigned;
+        made->data = std::move(number);
+        return made;
+    };
+    const auto negate = [&](std::unique_ptr<Expr> inner) {
+        auto made = std::make_unique<Expr>();
+        Expr::Unary unary;
+        unary.loc = loc;
+        unary.op = TokenKind::Minus;
+        unary.expr = std::move(inner);
+        made->data = std::move(unary);
+        return made;
+    };
+    // A negative signed value is `-magnitude`. A suffixed literal past the signed maximum does not fit.
+    const uint64_t sign = uint64_t{1} << static_cast<unsigned>(wide->bits - 1);
+    if (signed_form && !wide->is_unsigned && (wide->value & sign) != 0) {
+        const uint64_t magnitude = (0u - wide->value) & wide_mask(wide->bits);
+        if (magnitude == sign) {
+            // The minimum is `-(max) - 1`. Its magnitude is not a literal of that width.
+            auto made = std::make_unique<Expr>();
+            Expr::Binary binary;
+            binary.loc = loc;
+            binary.op = TokenKind::Minus;
+            binary.lhs = negate(literal(sign - 1));
+            binary.rhs = literal(1);
+            made->data = std::move(binary);
+            expr = std::move(made);
+            return true;
+        }
+        expr = negate(literal(magnitude));
+        return true;
+    }
+    expr = literal(wide->value);
     return true;
 }
 
@@ -1550,6 +1621,21 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 // `Integer(k)` when `k` is a file-scope integer `const`. `a + b` is not this cast.
                 if (!inner) {
                     inner = file_scope_const_int(*node.expr);
+                }
+                // `i32(2.7)` is 2. The fraction is dropped before the integer narrowing.
+                if (!inner && !is_c_enum(named)) {
+                    if (const std::optional<FoldedNumber> number = fold_number(*node.expr);
+                        number && number->is_float) {
+                        if (named.kind == TypeKind::Bool) {
+                            return number->value != 0.0 ? 1 : 0;
+                        }
+                        const std::optional<double> whole =
+                            truncated_float(number->value, width_of(named), named.is_unsigned || named.plain_char);
+                        if (!whole || *whole < -2147483648.0 || *whole > 2147483647.0) {
+                            return std::nullopt;
+                        }
+                        inner = static_cast<int>(*whole);
+                    }
                 }
                 if (!inner || is_c_enum(named)) {
                     return inner;
