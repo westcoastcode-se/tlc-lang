@@ -276,7 +276,8 @@ bool same_type(const Type &lhs, const Type &rhs) {
     if (lhs.kind != TypeKind::Function) {
         return true;
     }
-    if (lhs.params.size() != rhs.params.size()) {
+    // A C and a tlc function type are one type when both conventions pass the signature the same way.
+    if ((lhs.c_abi != rhs.c_abi && !c_same_convention(lhs)) || lhs.params.size() != rhs.params.size()) {
         return false;
     }
     if (!lhs.result || !rhs.result || !same_type(*lhs.result, *rhs.result)) {
@@ -291,6 +292,59 @@ bool same_type(const Type &lhs, const Type &rhs) {
         }
     }
     return true;
+}
+
+bool c_same_convention(const Type &signature) {
+    // tlc passes a struct as one aggregate and does not extend an integer narrower than 32 bits.
+    // C splits the struct into registers or memory and extends the integer. Anything else is passed alike.
+    const auto alike = [](const Type &type) {
+        if (type.kind == TypeKind::Struct || type.kind == TypeKind::Tuple ||
+            (type.kind == TypeKind::Array && type.length >= 0)) {
+            return false;
+        }
+        if (type.kind == TypeKind::Bool) {
+            return false;
+        }
+        if (type.kind == TypeKind::Int || type.kind == TypeKind::Char) {
+            return width_of(type) >= 32;
+        }
+        return true;
+    };
+    if (signature.result && !alike(*signature.result)) {
+        return false;
+    }
+    for (const Type &param : signature.params) {
+        if (!alike(param)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void mark_c_abi(Type &type) {
+    // A C signature calls its callbacks with the C convention too, so the nested types are C types.
+    if (type.pointee) {
+        Type inner = *type.pointee;
+        mark_c_abi(inner);
+        type.pointee = std::make_shared<Type>(std::move(inner));
+    }
+    if (type.element) {
+        Type inner = *type.element;
+        mark_c_abi(inner);
+        type.element = std::make_shared<Type>(std::move(inner));
+    }
+    if (type.kind != TypeKind::Function) {
+        return;
+    }
+    type.c_abi = true;
+    if (type.result) {
+        Type inner = *type.result;
+        mark_c_abi(inner);
+        type.result = std::make_shared<Type>(std::move(inner));
+    }
+    for (Type &param : type.params) {
+        mark_c_abi(param);
+    }
 }
 
 bool same_comptime_list(const FunctionDecl *lhs, bool skip_lhs, const FunctionDecl *rhs, bool skip_rhs) {

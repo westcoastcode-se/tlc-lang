@@ -41,6 +41,9 @@ struct Type {
     // `decayed_array` is clear on an ordinary pointer, whose `decayed_len` is also 0.
     bool decayed_array = false;
     int decayed_len = 0;
+    // A function type from an `extern(abi="c")` signature or field. Calls through it use the C convention.
+    // A tlc function type is a different type.
+    bool c_abi = false;
 };
 
 inline bool is_decayed_array(const Type &type) {
@@ -66,6 +69,10 @@ Type type_float(int bits);
 bool uses_many_results(const Type &type);
 bool mentions_trait(const Type &type);
 bool same_type(const Type &lhs, const Type &rhs);
+// Marks every function type in `type`, through pointers, arrays, and signatures, as a C function type.
+void mark_c_abi(Type &type);
+// True when the C and the tlc convention pass this function type the same way.
+bool c_same_convention(const Type &signature);
 // `got` may add `const` and still match `want`. `[]i32` matches `[]const i32`.
 bool allows_added_const(const Type &got, const Type &want);
 // Parameter lists used to tell two functions of one name apart. A method skips its receiver.

@@ -1,0 +1,8 @@
+// A C function pointer that passes a struct is not a tlc function pointer. The conventions differ.
+extern(abi="c") type FI struct { a i32; b f32; };
+extern(abi="c") func get_take_fi() func (FI) i32;
+
+func main() i32 {
+    var f func (FI) i32 = get_take_fi();
+    return 0;
+}

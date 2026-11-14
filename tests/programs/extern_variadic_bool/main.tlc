@@ -1,0 +1,15 @@
+// A `bool` passed to a C variadic function is promoted to an `int` 0 or 1, as C promotes it.
+// A comparison is an `i1`, and a sign extension would pass -1.
+extern(abi="c") func pick(n i32, ...) i32;
+
+func main() i32 {
+    var a = 3;
+    var yes = a > 2;
+    if (pick(1, true) != 1) {
+        return 1;
+    }
+    if (pick(2, a > 2, a > 5) != 1) {
+        return 2;
+    }
+    return pick(2, yes, a == 3) * 20 + 2;
+}

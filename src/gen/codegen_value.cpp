@@ -9,6 +9,29 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
     if (terminated()) {
         return {zero(), 0};
     }
+    // A tlc function stored where C expects a callback. The value is its C wrapper.
+    {
+        const auto *named = std::get_if<Expr::Name>(&expr.data);
+        const auto *selector = std::get_if<Expr::Selector>(&expr.data);
+        const auto *literal = std::get_if<Expr::Func>(&expr.data);
+        bool *flag = named != nullptr && named->c_thunk           ? &named->c_thunk
+                     : selector != nullptr && selector->c_thunk   ? &selector->c_thunk
+                     : literal != nullptr && literal->c_thunk     ? &literal->c_thunk
+                                                                  : nullptr;
+        if (flag != nullptr) {
+            const std::string &ext = named != nullptr      ? named->c_ext
+                                     : selector != nullptr ? selector->c_ext
+                                                           : literal->c_ext;
+            *flag = false;
+            TypedValue value = emit_rvalue(expr);
+            *flag = true;
+            if (auto *function = llvm::dyn_cast_or_null<llvm::Function>(value.value)) {
+                value.value = c_thunk_for(function, ext);
+                value.fn_ty = value.value == nullptr ? nullptr : llvm::cast<llvm::Function>(value.value)->getFunctionType();
+            }
+            return value;
+        }
+    }
     set_loc(std::visit([](const auto &node) -> SourceLoc { return node.loc; }, expr.data));
     return std::visit(
         [&](const auto &node) -> TypedValue {

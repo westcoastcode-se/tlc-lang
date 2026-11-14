@@ -438,6 +438,10 @@ class Checker {
     void pop();
     bool captured(const Symbol &symbol) const;
     bool fn_pointer(const Type &type) const;
+    // A tlc function named where a C function pointer is expected. Marks the name for a C wrapper.
+    bool c_thunk(const Expr &expr, const Type &want);
+    // The C integer extension of a signature: the result, then each parameter. See `Expr::Name::c_ext`.
+    std::string c_ext_of(const Type &signature) const;
     // A tuple element that is a function pointer. A nested tuple counts.
     bool tuple_holds_fn(const Type &type) const;
     void note_capture(FunctionDecl &fn, const std::string &name, int function_id);

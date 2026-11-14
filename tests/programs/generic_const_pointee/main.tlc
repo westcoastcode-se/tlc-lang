@@ -1,0 +1,36 @@
+// `T` bound to `*const i32` keeps the `const`, as an argument, a field, and a result.
+// A `*T` or `[]T` parameter does not bind a const pointee. `*const T` and `[]const T` do.
+type Box[T type] struct {
+    item T;
+};
+
+func id[T type](p T) T {
+    return p;
+}
+
+func pair[T type](p T) (T, i32) {
+    return (p, 1);
+}
+
+func put[T type](b *Box[T], p T) void {
+    b.item = p;
+}
+
+func deref[T type](p *const T) T {
+    return *p;
+}
+
+func first[T type](s []const T) T {
+    return s[0];
+}
+
+func main() i32 {
+    var k = 5;
+    var c *const i32 = &k;
+    var b Box[*const i32] = {.item = c};
+    put(&b, c);
+    var t = pair(c);
+    var row [2]i32 = {7, 8};
+    var s []const i32 = row[0:2];
+    return *id(c) + *id[*const i32](c) + *b.item + *t[0] + deref(c) + first(s) - 3;
+}

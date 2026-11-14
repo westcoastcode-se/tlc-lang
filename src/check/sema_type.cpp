@@ -2085,6 +2085,8 @@ void Checker::define_struct_fields() {
                 return;
             }
             if (info.extern_c) {
+                // A function pointer field of a C struct is called by C, or was stored by C.
+                mark_c_abi(field_type);
                 // A tagged union is not a C layout, and it cannot be marked `extern(abi="c")`.
                 if (mentions_tagged_union(field_type)) {
                     error(field.loc, "extern(abi=\"c\") on a tagged union");
@@ -3443,7 +3445,8 @@ std::string Checker::type_desc(const Type &type) const {
         return text;
     }
     case TypeKind::Function: {
-        std::string text = "func(";
+        // The C spelling is shown only where it is a different type from the tlc one.
+        std::string text = type.c_abi && !c_same_convention(type) ? "extern(abi=\"c\") func(" : "func(";
         for (std::size_t i = 0; i < type.params.size(); ++i) {
             if (i != 0) {
                 text += ", ";

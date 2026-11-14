@@ -1,0 +1,1 @@
+compile-error: type mismatch: expected *extern(abi="c") func(FI) i32, found *func(FI) i32

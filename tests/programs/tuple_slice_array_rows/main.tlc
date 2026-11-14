@@ -1,0 +1,12 @@
+// A tuple element `[][2]i32` is a place. `t[0][1][1]` reads and stores the row element.
+func pick(t ([][2]i32, i32)) i32 { return t[0][1][1]; }
+func main() i32 {
+    var a [2][2]i32 = {{1,2}, {3,4}};
+    var s [][2]i32 = a[0:2];
+    var t = (s, 1);
+    t[0][1][1] = 9;
+    var r = &t[0][1];
+    const u = (s, 2);
+    var x = u[0][1][1];
+    return t[0][1][1] + a[1][1] + pick(t) + r[0] + x + (s, 3)[0][0][1];
+}

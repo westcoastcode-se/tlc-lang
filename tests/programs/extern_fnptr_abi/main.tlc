@@ -1,0 +1,72 @@
+// A function pointer from an `extern(abi="c")` signature or field uses the C convention.
+// A call through it splits a struct into registers or memory as C does. A tlc function, or a
+// function literal, stored there is passed as a C wrapper. Narrow integers are extended.
+extern(abi="c") type FI struct { a i32; b f32; };
+extern(abi="c") type Big struct { a i64; b i64; c i64; };
+extern(abi="c") type U union { i i32; f f32; };
+extern(abi="c") type Ops struct { run func (FI) i32; make func (i32) Big; };
+
+extern(abi="c") func get_take_fi() func (FI) i32;
+extern(abi="c") func get_take_big() func (Big) i32;
+extern(abi="c") func get_make_fi() func (i32) FI;
+extern(abi="c") func get_make_big() func (i32) Big;
+extern(abi="c") func get_make_u() func (i32) U;
+extern(abi="c") func get_take_narrow() func (i8, u16, bool) i32;
+extern(abi="c") func call_fi(f func (FI) i32) i32;
+extern(abi="c") func call_big(f func (Big) i32) i32;
+extern(abi="c") func call_make_big(f func (i32) Big) i64;
+extern(abi="c") func call_make_fi(f func (i32) FI) f32;
+extern(abi="c") func call_narrow(f func (i8, u16, bool) i32) i32;
+extern(abi="c") func call_narrow_ret(f func (i32) i8) i32;
+extern(abi="c") func fill_ops(ops *Ops) void;
+extern(abi="c") func use_ops(ops *Ops) i32;
+
+func take_fi(v FI) i32 {
+    return v.a + i32(v.b);
+}
+
+func take_big(v Big) i32 {
+    return i32(v.a + v.b + v.c);
+}
+
+func make_big(n i32) Big {
+    return {.a = i64(n), .b = 0, .c = 3};
+}
+
+func make_fi(n i32) FI {
+    return {.a = n, .b = 3.5};
+}
+
+func take_narrow(c i8, s u16, b bool) i32 {
+    return i32(c) + i32(s) + i32(b);
+}
+
+func narrow(n i32) i8 {
+    return i8(n);
+}
+
+func main() i32 {
+    var fi FI = {.a = 40, .b = 2.0};
+    var big Big = {.a = 40, .b = 1, .c = 1};
+    var take = get_take_fi();
+    if (take(fi) != 42) { return 1; }
+    if (get_take_big()(big) != 42) { return 2; }
+    if (get_make_fi()(40).b != 2.5) { return 3; }
+    if (get_make_big()(40).a != 40) { return 4; }
+    if (get_make_u()(7).i != 7) { return 5; }
+    if (get_take_narrow()(-2, 40u16, true) != 39) { return 6; }
+    if (call_fi(take_fi) != 42) { return 7; }
+    if (call_big(take_big) != 42) { return 8; }
+    if (call_make_big(make_big) != 10) { return 9; }
+    if (call_make_fi(make_fi) != 3.5) { return 10; }
+    if (call_narrow(take_narrow) != 39) { return 11; }
+    if (call_narrow_ret(narrow) != -5) { return 12; }
+    if (call_fi((v) { return v.a + 2; }) != 42) { return 13; }
+    if (call_fi(func (v FI) i32 { return v.a + i32(v.b); }) != 42) { return 14; }
+    var ops Ops = {.run = take_fi, .make = make_big};
+    if (use_ops(&ops) != 27) { return 15; }
+    fill_ops(&ops);
+    var half FI = {.a = 20, .b = 2.0};
+    if (ops.run(half) != 42) { return 16; }
+    return 42;
+}

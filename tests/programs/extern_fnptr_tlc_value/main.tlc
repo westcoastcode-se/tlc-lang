@@ -1,0 +1,12 @@
+// A tlc function pointer value has no C wrapper. Only a named function or a literal gets one.
+extern(abi="c") type FI struct { a i32; b f32; };
+extern(abi="c") func call_fi(f func (FI) i32) i32;
+
+func take(v FI) i32 {
+    return v.a;
+}
+
+func main() i32 {
+    var f func (FI) i32 = take;
+    return call_fi(f);
+}

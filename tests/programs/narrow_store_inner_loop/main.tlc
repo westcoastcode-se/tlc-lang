@@ -1,0 +1,20 @@
+// In an inner loop the read above the store runs again after it, so the store must stay a `*Node`.
+type Node struct {
+    next ?*Node;
+    v i32;
+};
+
+func main() i32 {
+    var a Node = {.next = null, .v = 1};
+    var p ?*Node = &a;
+    var sum = 0;
+    while (p != null) {
+        var i = 0;
+        while (i < 2) {
+            sum += p.v;
+            p = p.next;
+            i++;
+        }
+    }
+    return sum;
+}

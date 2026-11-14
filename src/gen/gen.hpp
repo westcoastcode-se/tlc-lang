@@ -579,6 +579,7 @@ class CodeGen {
     // Set while computing the address of an assignment, so writing a variant stores its tag.
     bool arm_union_tag_ = false;
     std::unordered_map<const llvm::Function *, ExternLayout> extern_abis_;
+    std::unordered_map<const llvm::Function *, llvm::Function *> c_thunks_;
     int local_seq_ = 0;
     struct DeclKey {
         uint32_t file_id = 0;
@@ -678,6 +679,9 @@ class CodeGen {
         int abi_struct_id = -1;
         CAbi abi_ret{};
         std::vector<AbiMark> abi_attrs;
+        // A call through a C function pointer extends an integer narrower than 32 bits.
+        std::vector<std::pair<unsigned, llvm::Attribute::AttrKind>> int_attrs;
+        llvm::Attribute::AttrKind ret_attr = llvm::Attribute::None;
         SourceLoc loc{};
         // Push a call-stack frame around this call. `builtin.va` leaves it off.
         // `StackTrace.get` is omitted where the call is emitted. `builtin.panic` keeps the frame.
@@ -1694,8 +1698,20 @@ class CodeGen {
     void alias_capture(const std::string &name, const Binding &binding);
     void append_captures(const FunctionDecl *decl, std::vector<llvm::Value *> &args, SourceLoc loc);
     // Logical arguments, receiver first, packed into the C struct ABI already stored for `function`.
-    std::vector<llvm::Value *> pack_extern_args(llvm::Function *function, const ExternLayout &layout,
+    std::vector<llvm::Value *> pack_extern_args(llvm::FunctionType *fty, const ExternLayout &layout,
                                                 const std::vector<TypedValue> &sources, PreparedCall &prepared);
+    // The C layout of a function pointer type. Each struct parameter and a struct result is lowered as
+    // `extern_layout` lowers a declaration. Inactive when nothing differs from the tlc convention.
+    ExternLayout c_layout_of(llvm::FunctionType *tlc) const;
+    // Arguments for a call through `fnptr`. A C function pointer, `Expr::Call::c_abi`, is packed the C way.
+    void push_indirect_args(const Expr::Call &node, llvm::Value *fnptr, llvm::FunctionType *fn_ty,
+                            PreparedCall &prepared);
+    int struct_id_of(const llvm::Type *type) const;
+    // The C wrapper of a tlc function, for a C function pointer. `ext` is `Expr::Name::c_ext`.
+    llvm::Function *c_thunk_for(llvm::Function *target, const std::string &ext);
+    // Integer extension attributes for a C call. `ext` lists the result, then each parameter.
+    void c_int_attrs(PreparedCall &prepared, const ExternLayout &layout, const std::string &ext,
+                     llvm::FunctionType *fty) const;
     PreparedCall prepare_call(const Expr::Call &node);
     // Replaces `builtin.atomic_*` and `builtin.fence` with an atomic instruction.
     void yield_atomic(const Expr::Call &node, PreparedCall &prepared);

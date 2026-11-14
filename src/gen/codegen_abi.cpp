@@ -464,4 +464,212 @@ void CodeGen::unpack_return(llvm::Value *returned, llvm::Value *slot, const CAbi
     }
 }
 
+int CodeGen::struct_id_of(const llvm::Type *type) const {
+    if (type == nullptr || !type->isStructTy()) {
+        return -1;
+    }
+    for (std::size_t id = 0; id < structs_.size(); ++id) {
+        if (structs_[id].type == type) {
+            return static_cast<int>(id);
+        }
+    }
+    return -1;
+}
+
+ExternLayout CodeGen::c_layout_of(llvm::FunctionType *tlc) const {
+    // Built from the LLVM type, so a call through the pointer and the wrapper behind it agree.
+    // A slice or a tuple part is not a named struct and passes as tlc passes it. C has neither.
+    ExternLayout layout;
+    if (tlc == nullptr) {
+        return layout;
+    }
+    const auto abi_of = [&](int id, llvm::Type *type) {
+        const StructLayout &info = structs_[static_cast<std::size_t>(id)];
+        return info.is_union && info.tag_enum < 0 ? c_abi_union(id) : c_abi(llvm::cast<llvm::StructType>(type));
+    };
+    llvm::Type *ret = tlc->getReturnType();
+    const int ret_id = struct_id_of(ret);
+    bool any = ret_id >= 0;
+    layout.args.resize(tlc->getNumParams());
+    for (unsigned index = 0; index < tlc->getNumParams(); ++index) {
+        llvm::Type *param = tlc->getParamType(index);
+        const int id = struct_id_of(param);
+        if (id < 0) {
+            continue;
+        }
+        any = true;
+        layout.args[index].is_struct = true;
+        layout.args[index].struct_id = id;
+        layout.args[index].struct_type = param;
+        layout.args[index].abi = abi_of(id, param);
+    }
+    if (!any) {
+        return layout;
+    }
+    layout.active = true;
+    llvm::Type *result = ret;
+    std::vector<llvm::Type *> params;
+    if (ret_id >= 0) {
+        layout.ret_struct = ret;
+        layout.ret_struct_id = ret_id;
+        layout.ret = abi_of(ret_id, ret);
+        layout.sret = layout.ret.memory;
+        if (layout.sret) {
+            params.push_back(ptr_type());
+            result = llvm::Type::getVoidTy(context_);
+        } else {
+            result = layout.ret.direct;
+        }
+    }
+    for (unsigned index = 0; index < tlc->getNumParams(); ++index) {
+        const ExternLayout::Arg &arg = layout.args[index];
+        if (arg.is_struct && arg.abi.memory) {
+            params.push_back(ptr_type());
+        } else if (arg.is_struct) {
+            params.insert(params.end(), arg.abi.parts.begin(), arg.abi.parts.end());
+        } else {
+            params.push_back(tlc->getParamType(index));
+        }
+    }
+    layout.type = llvm::FunctionType::get(result, params, tlc->isVarArg());
+    return layout;
+}
+
+namespace {
+
+llvm::Attribute::AttrKind ext_kind(char code) {
+    if (code == 's') {
+        return llvm::Attribute::SExt;
+    }
+    if (code == 'z') {
+        return llvm::Attribute::ZExt;
+    }
+    return llvm::Attribute::None;
+}
+
+} // namespace
+
+void CodeGen::c_int_attrs(PreparedCall &prepared, const ExternLayout &layout, const std::string &ext,
+                          llvm::FunctionType *fty) const {
+    // `ext` has one code per tlc parameter. A struct parameter may be several C arguments.
+    unsigned index = layout.active && layout.sret ? 1U : 0U;
+    const std::size_t count = layout.active ? layout.args.size() : (fty == nullptr ? 0 : fty->getNumParams());
+    for (std::size_t param = 0; param < count; ++param) {
+        if (layout.active && layout.args[param].is_struct) {
+            const ExternLayout::Arg &arg = layout.args[param];
+            index += arg.abi.memory ? 1U : static_cast<unsigned>(arg.abi.parts.size());
+            continue;
+        }
+        const llvm::Attribute::AttrKind kind = param + 1 < ext.size() ? ext_kind(ext[param + 1]) : llvm::Attribute::None;
+        if (kind != llvm::Attribute::None && fty != nullptr && index < fty->getNumParams() &&
+            fty->getParamType(index)->isIntegerTy()) {
+            prepared.int_attrs.emplace_back(index, kind);
+        }
+        ++index;
+    }
+    if (!ext.empty() && fty != nullptr && fty->getReturnType()->isIntegerTy() &&
+        !(layout.active && layout.ret_struct != nullptr)) {
+        prepared.ret_attr = ext_kind(ext[0]);
+    }
+}
+
+llvm::Function *CodeGen::c_thunk_for(llvm::Function *target, const std::string &ext) {
+    // C calls this wrapper. It rebuilds each struct from the C pieces, calls the tlc function,
+    // and returns the result the C way. The wrapper is internal and made once per function.
+    if (target == nullptr) {
+        return nullptr;
+    }
+    if (const auto found = c_thunks_.find(target); found != c_thunks_.end()) {
+        return found->second;
+    }
+    llvm::FunctionType *tlc = target->getFunctionType();
+    const ExternLayout layout = c_layout_of(tlc);
+    llvm::FunctionType *c_type = layout.active ? layout.type : tlc;
+    llvm::Function *thunk = llvm::Function::Create(c_type, llvm::GlobalValue::InternalLinkage,
+                                                   target->getName() + ".c", module_);
+    thunk->setCallingConv(llvm::CallingConv::C);
+    if (layout.active) {
+        apply_extern_attrs(thunk, layout);
+    }
+    {
+        unsigned index = layout.active && layout.sret ? 1U : 0U;
+        for (std::size_t param = 0; param < layout.args.size() || (!layout.active && param < tlc->getNumParams());
+             ++param) {
+            if (layout.active && layout.args[param].is_struct) {
+                const ExternLayout::Arg &arg = layout.args[param];
+                index += arg.abi.memory ? 1U : static_cast<unsigned>(arg.abi.parts.size());
+                continue;
+            }
+            const llvm::Attribute::AttrKind kind =
+                param + 1 < ext.size() ? ext_kind(ext[param + 1]) : llvm::Attribute::None;
+            if (kind != llvm::Attribute::None && index < thunk->arg_size() &&
+                thunk->getArg(index)->getType()->isIntegerTy()) {
+                thunk->addParamAttr(index, kind);
+            }
+            ++index;
+        }
+        if (!ext.empty() && thunk->getReturnType()->isIntegerTy() && !(layout.active && layout.ret_struct != nullptr)) {
+            const llvm::Attribute::AttrKind kind = ext_kind(ext[0]);
+            if (kind != llvm::Attribute::None) {
+                thunk->addRetAttr(kind);
+            }
+        }
+    }
+    c_thunks_.emplace(target, thunk);
+
+    // The wrapper is built with its own insertion point. The function being emitted is not disturbed.
+    const llvm::IRBuilderBase::InsertPoint saved = builder_.saveIP();
+    const llvm::DebugLoc saved_loc = builder_.getCurrentDebugLocation();
+    llvm::BasicBlock *entry = llvm::BasicBlock::Create(context_, "entry", thunk);
+    builder_.SetInsertPoint(entry);
+    builder_.SetCurrentDebugLocation(llvm::DebugLoc());
+    const auto slot_of = [&](llvm::Type *type, unsigned align) {
+        llvm::AllocaInst *slot = builder_.CreateAlloca(type);
+        slot->setAlignment(llvm::Align(std::max(align, 8u)));
+        return slot;
+    };
+    std::vector<llvm::Value *> args;
+    unsigned abi = 0;
+    llvm::Value *sret = nullptr;
+    if (layout.active && layout.sret) {
+        sret = thunk->getArg(abi++);
+    }
+    for (unsigned param = 0; param < tlc->getNumParams(); ++param) {
+        if (layout.active && layout.args[param].is_struct) {
+            const ExternLayout::Arg &arg = layout.args[param];
+            if (arg.abi.memory) {
+                args.push_back(builder_.CreateLoad(arg.struct_type, thunk->getArg(abi++)));
+                continue;
+            }
+            llvm::AllocaInst *slot = slot_of(arg.struct_type, arg.abi.natural_align);
+            for (std::size_t part = 0; part < arg.abi.parts.size(); ++part) {
+                const uint64_t offset = part < arg.abi.offsets.size() ? arg.abi.offsets[part] : 0;
+                store_at(slot, thunk->getArg(abi++), offset);
+            }
+            args.push_back(builder_.CreateLoad(arg.struct_type, slot));
+            continue;
+        }
+        args.push_back(thunk->getArg(abi++));
+    }
+    llvm::CallInst *call = builder_.CreateCall(target, args);
+    call->setCallingConv(target->getCallingConv());
+    if (layout.active && layout.ret_struct != nullptr) {
+        if (sret != nullptr) {
+            builder_.CreateStore(call, sret);
+            builder_.CreateRetVoid();
+        } else {
+            llvm::AllocaInst *slot = slot_of(layout.ret_struct, layout.ret.natural_align);
+            builder_.CreateStore(call, slot);
+            builder_.CreateRet(pack_return(slot, layout.ret));
+        }
+    } else if (c_type->getReturnType()->isVoidTy()) {
+        builder_.CreateRetVoid();
+    } else {
+        builder_.CreateRet(call);
+    }
+    builder_.restoreIP(saved);
+    builder_.SetCurrentDebugLocation(saved_loc);
+    return thunk;
+}
+
 } // namespace tlc

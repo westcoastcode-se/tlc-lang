@@ -16,12 +16,12 @@ These were found by review and have a repro. They are not fixed yet.
 - A `*this` method is called through `*const Shape`. `func use(s *const Shape) void { s.grow(41); }` is accepted when `Rect::grow` takes `self *this`. A trait method has no receiver in the trait, and the body is checked once, not per struct. The spelling of a const trait method is not decided.
 - A `?*T` store into a narrowed name inside a nested loop, or after a `defer` in the narrowed region, is still `type mismatch`. Accepting it needs a flow analysis that knows a use above the store runs again after it.
 - A file-scope `comptime const k = f(2)` used as a file-scope array length, `var g [k]i32`, is `not supported yet` twice. The length is resolved before the constant is bound.
+- A C function pointer type that differs from the tlc one has no spelling of its own. A local or a tlc struct field holds it only by inference, `var f = get_cb()`. A generic parameter `func (T) i32` is a tlc type, so a C pointer that passes a struct is `type mismatch` there.
 
 ### Codegen
 
 - `const c = 250u8`, a file-scope `var g = 250u8`, and `var a, b = f()` with `u8` results still bind `i32`. A local `var` and `:=` keep the narrow type. Local constants fold only as `i32` in both folders.
 - A runtime shift amount at or past the width, `a << b` with `b` 32, is poison. The result differs between `-O0` and `-O2`.
-- A function pointer from `extern(abi="c")`, `func getFI() func (FI) i32`, is called with the tlc convention for a struct argument. A tlc function passed where C expects a callback is accepted.
 
 ### Front end
 

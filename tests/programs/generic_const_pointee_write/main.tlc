@@ -1,0 +1,11 @@
+// The specialization of `write` for `*const i32` does not store through it.
+func write[T type](p T) void {
+    *p = 1;
+}
+
+func main() i32 {
+    var k = 5;
+    var c *const i32 = &k;
+    write(c);
+    return k;
+}

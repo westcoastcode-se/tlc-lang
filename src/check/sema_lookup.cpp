@@ -586,7 +586,12 @@ Type Checker::function_signature(const FunctionDecl &fn) {
     for (const Param &param : fn.params) {
         params.push_back(type_of_param(param));
     }
-    return type_function(function_result(fn), std::move(params), fn.variadic);
+    Type signature = type_function(function_result(fn), std::move(params), fn.variadic);
+    // `extern(abi="c")` is called with the C convention, and so is a function pointer in its signature.
+    if (fn.extern_c) {
+        mark_c_abi(signature);
+    }
+    return signature;
 }
 
 void Checker::check_local_function(const FunctionDecl &fn) {

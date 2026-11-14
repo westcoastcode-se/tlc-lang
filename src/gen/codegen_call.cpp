@@ -485,7 +485,7 @@ void CodeGen::push_call_values(std::vector<llvm::Value *> &args, const std::vect
     }
 }
 
-std::vector<llvm::Value *> CodeGen::pack_extern_args(llvm::Function *function, const ExternLayout &layout,
+std::vector<llvm::Value *> CodeGen::pack_extern_args(llvm::FunctionType *fty, const ExternLayout &layout,
                                                        const std::vector<TypedValue> &sources, PreparedCall &prepared) {
     std::vector<llvm::Value *> args;
     unsigned attr_index = 0;
@@ -536,12 +536,12 @@ std::vector<llvm::Value *> CodeGen::pack_extern_args(llvm::Function *function, c
                     ++attr_index;
                 }
             }
-        } else if (attr_index >= function->getFunctionType()->getNumParams() && value.struct_id >= 0 &&
+        } else if (attr_index >= fty->getNumParams() && value.struct_id >= 0 &&
                    value.value != nullptr && value.value->getType()->isStructTy()) {
             attr_index += static_cast<unsigned>(append_variadic_struct(args, value));
         } else {
-            llvm::Type *param = attr_index < function->getFunctionType()->getNumParams()
-                                    ? function->getFunctionType()->getParamType(attr_index)
+            llvm::Type *param = attr_index < fty->getNumParams()
+                                    ? fty->getParamType(attr_index)
                                     : nullptr;
             args.push_back(adapt(value, param, prepared.loc));
             ++attr_index;
@@ -594,7 +594,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         for (const auto &arg : node.args) {
             sources.push_back(emit_rvalue(*arg));
         }
-        remember(function, pack_extern_args(function, abi->second, sources, prepared), method.depth, method.elem_char,
+        remember(function, pack_extern_args(function->getFunctionType(), abi->second, sources, prepared), method.depth, method.elem_char,
                  method.struct_id, method.elem_void, method.elem_bool, method.elem_bits, method.elem_unsigned);
         prepared.decl = method.decl;
         prepared.elem_float = method.elem_float;
@@ -960,13 +960,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
                 if (method == nullptr) {
                     const TypedValue field = emit_rvalue(*node.callee);
                     if (field.fn_ty != nullptr && field.value != nullptr && !llvm::isa<llvm::Function>(field.value)) {
-                        std::vector<llvm::Value *> args;
-                        args.reserve(node.args.size());
-                        unsigned index = 0;
-                        push_call_args(args, node.args, nullptr, field.fn_ty, index, node.loc, false);
-                        prepared.indirect = field.value;
-                        prepared.fn_ty = field.fn_ty;
-                        prepared.args = std::move(args);
+                        push_indirect_args(node, field.value, field.fn_ty, prepared);
                         prepared.depth = field.fn_ret_depth;
                         prepared.elem_float = field.fn_ret_float;
                         prepared.elem_bits = field.fn_ret_bits;
@@ -1030,14 +1024,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
     }
     prepared.enum_id = callee.enum_id;
     if (callee.fn_ty != nullptr && callee.value != nullptr && !llvm::isa<llvm::Function>(callee.value)) {
-        std::vector<llvm::Value *> args;
-        args.reserve(node.args.size());
-        unsigned index = 0;
-        // The value is the pointer, not the function. Its TLC parameters are not on `decl`.
-        push_call_args(args, node.args, nullptr, callee.fn_ty, index, node.loc, false);
-        prepared.indirect = callee.value;
-        prepared.fn_ty = callee.fn_ty;
-        prepared.args = std::move(args);
+        push_indirect_args(node, callee.value, callee.fn_ty, prepared);
         prepared.depth = callee.fn_ret_depth;
         prepared.elem_float = callee.fn_ret_float;
         prepared.elem_bits = callee.fn_ret_bits;
@@ -1060,7 +1047,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         for (const auto &arg : node.args) {
             sources.push_back(emit_rvalue(*arg));
         }
-        remember(function, pack_extern_args(function, abi->second, sources, prepared), callee.depth, callee.elem_char,
+        remember(function, pack_extern_args(function->getFunctionType(), abi->second, sources, prepared), callee.depth, callee.elem_char,
                  callee.struct_id, callee.elem_void, callee.elem_bool, callee.elem_bits, callee.elem_unsigned);
         prepared.elem_float = callee.elem_float;
         return prepared;
@@ -1101,6 +1088,14 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
     inst->setCallingConv(llvm::CallingConv::C);
     if (!call.abi_attrs.empty()) {
         annotate_call(inst, call.abi_attrs);
+    }
+    for (const auto &[index, kind] : call.int_attrs) {
+        if (index < inst->arg_size()) {
+            inst->addParamAttr(index, kind);
+        }
+    }
+    if (call.ret_attr != llvm::Attribute::None) {
+        inst->addRetAttr(call.ret_attr);
     }
     if (call.abi_return && call.abi_slot != nullptr && call.abi_struct != nullptr) {
         if (!call.abi_sret) {
@@ -1716,18 +1711,38 @@ void CodeGen::generic_method_call(const Binding &method, const TypedValue *recei
     prepared.enum_id = method.enum_id;
 }
 
-void CodeGen::call_trait_fn(llvm::Value *fnptr, const TypedValue &meta, const Expr::Call &node, PreparedCall &prepared) {
-    if (fnptr == nullptr || meta.fn_ty == nullptr) {
-        error(node.loc, "type mismatch");
+void CodeGen::push_indirect_args(const Expr::Call &node, llvm::Value *fnptr, llvm::FunctionType *fn_ty,
+                                 PreparedCall &prepared) {
+    prepared.indirect = fnptr;
+    if (node.c_abi) {
+        // A C function pointer. The arguments and the result are packed as for an `extern(abi="c")` call.
+        const ExternLayout layout = c_layout_of(fn_ty);
+        llvm::FunctionType *c_type = layout.active ? layout.type : fn_ty;
+        std::vector<TypedValue> sources;
+        sources.reserve(node.args.size());
+        for (const auto &arg : node.args) {
+            sources.push_back(emit_rvalue(*arg));
+        }
+        prepared.args = pack_extern_args(c_type, layout, sources, prepared);
+        prepared.fn_ty = c_type;
+        c_int_attrs(prepared, layout, node.c_ext, c_type);
         return;
     }
     std::vector<llvm::Value *> args;
     args.reserve(node.args.size());
     unsigned index = 0;
-    push_call_args(args, node.args, nullptr, meta.fn_ty, index, node.loc, false);
-    prepared.indirect = fnptr;
-    prepared.fn_ty = meta.fn_ty;
+    // The value is the pointer, not the function. Its TLC parameters are not on `decl`.
+    push_call_args(args, node.args, nullptr, fn_ty, index, node.loc, false);
+    prepared.fn_ty = fn_ty;
     prepared.args = std::move(args);
+}
+
+void CodeGen::call_trait_fn(llvm::Value *fnptr, const TypedValue &meta, const Expr::Call &node, PreparedCall &prepared) {
+    if (fnptr == nullptr || meta.fn_ty == nullptr) {
+        error(node.loc, "type mismatch");
+        return;
+    }
+    push_indirect_args(node, fnptr, meta.fn_ty, prepared);
     prepared.depth = meta.fn_ret_depth;
     prepared.elem_char = meta.fn_ret_char;
     prepared.elem_bool = meta.fn_ret_bool;

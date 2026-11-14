@@ -114,6 +114,31 @@ A parameter, a result, or a field of `extern(abi="c")` cannot be a slice. The di
 
 A parameter or result of an `extern(abi="c")` function cannot be a function pointer that returns several results.
 
+## C function pointers
+
+A function pointer type written in an `extern(abi="c")` signature, or as a field of an `extern(abi="c") struct`, is a C function pointer. So is a function pointer inside that type's own signature. `var f = get_cb()` keeps that type. A call through it uses the C convention.
+
+C and tlc pass a struct, a union, and an integer narrower than 32 bits differently. Where a signature has one of those, a C function pointer type and the tlc type with the same spelling are different types. `var f func (FI) i32 = get_cb()` is `type mismatch: expected *func(FI) i32, found *extern(abi="c") func(FI) i32`. A signature of pointers, `i32`, `i64`, and floats is passed alike, and the two types are one type.
+
+A tlc function named where C expects such a pointer, `set_cb(mine)`, is passed as a C wrapper. A function literal, `set_cb((v) { return v.a; })`, is too. A tlc function pointer value has no wrapper, and storing it there is `type mismatch`. An `extern(abi="c")` function, with or without a body, is already a C function and is passed as it is.
+
+```tlc
+extern(abi="c") type FI struct { a i32; b f32; };
+extern(abi="c") func get_cb() func (FI) i32;
+extern(abi="c") func set_cb(f func (FI) i32) void;
+
+func mine(v FI) i32 {
+    return v.a + i32(v.b);
+}
+
+func main() i32 {
+    var v FI = {.a = 40, .b = 2.0};
+    var f = get_cb();
+    set_cb(mine);
+    return f(v);
+}
+```
+
 A struct used by such a function, by value or through a pointer, must itself be `extern(abi="c")`.
 
 That includes a struct nested inside it.

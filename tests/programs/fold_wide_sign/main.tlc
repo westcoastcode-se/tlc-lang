@@ -1,0 +1,28 @@
+// A `u32` or 64-bit operand folds at its own width and signedness, the same as at run time.
+// `1u32 < -1` is true because `-1` converts to `u32`. `(0u32 - 1u32) >> 28u32` shifts in zeros.
+const less = 1u32 < -1;
+const shifted = (0u32 - 1u32) >> 28u32;
+const halved = (0u32 - 1u32) / 2u32 > 5u32;
+const wide = 3u64 + -1;
+const top = 18446744073709551615u64 == -1;
+const N = i32((0u32 - 1u32) >> 28u32);
+var arr [N]i32;
+
+func main() i32 {
+    var one = 1u32;
+    var minus = -1;
+    if (less != (one < minus)) { return 1; }
+    if (!less) { return 2; }
+    if (shifted != 15u32) { return 3; }
+    if (!halved) { return 4; }
+    if (wide != 2u64) { return 5; }
+    if (!top) { return 6; }
+    if (arr.len != 15) { return 7; }
+    const local = (0u32 - 1u32) % 7u32;
+    var all = 0u32 - 1u32;
+    if (local != all % 7u32) { return 8; }
+    comptime if (1u32 < -1) {
+        return 42;
+    }
+    return 9;
+}

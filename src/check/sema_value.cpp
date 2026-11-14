@@ -2220,6 +2220,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "type mismatch");
                     return type_invalid();
                 }
+                // A C function pointer is called with the C convention. A direct call of an `extern(abi="c")`
+                // function already is. The flag only matters where the two conventions differ.
+                node.c_abi = signature->c_abi && !c_same_convention(*signature);
+                node.c_ext = node.c_abi ? c_ext_of(*signature) : std::string();
                 if (deferring) {
                     bool generic = signature->variadic;
                     for (const Type &param : signature->params) {

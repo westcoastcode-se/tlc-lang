@@ -1,0 +1,16 @@
+// After `p = p.next` the name is a `?*Node` again. Reading a field needs another check.
+type Node struct {
+    next ?*Node;
+    v i32;
+};
+
+func main() i32 {
+    var a Node = {.next = null, .v = 1};
+    var p ?*Node = &a;
+    var sum = 0;
+    while (p != null) {
+        p = p.next;
+        sum += p.v;
+    }
+    return sum;
+}

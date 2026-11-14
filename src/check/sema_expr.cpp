@@ -1291,6 +1291,95 @@ bool Checker::adopt_one_tuple(Expr &expr, const Type &want) {
     return true;
 }
 
+std::string Checker::c_ext_of(const Type &signature) const {
+    // C extends an integer narrower than `int` in the register. `i8` and `i16` sign-extend.
+    // `u8`, `u16`, `bool`, and a plain `char` zero-extend.
+    const auto one = [](const Type &type) -> char {
+        if (type.kind != TypeKind::Int && type.kind != TypeKind::Char && type.kind != TypeKind::Bool) {
+            return 'n';
+        }
+        if (type.kind == TypeKind::Bool) {
+            return 'z';
+        }
+        const int bits = width_of(type);
+        if (bits >= 32) {
+            return 'n';
+        }
+        return type.is_unsigned || type.plain_char ? 'z' : 's';
+    };
+    std::string out;
+    out.push_back(signature.result ? one(*signature.result) : 'n');
+    for (const Type &param : signature.params) {
+        out.push_back(one(param));
+    }
+    return out;
+}
+
+bool Checker::c_thunk(const Expr &expr, const Type &want) {
+    // Only a function named here has a body to wrap. A tlc function pointer value has no C wrapper,
+    // and storing it where C expects a callback stays `type mismatch`.
+    if (!fn_pointer(want) || !want.pointee->c_abi || want.pointee->variadic || c_same_convention(*want.pointee)) {
+        return false;
+    }
+    Type tlc_signature = *want.pointee;
+    tlc_signature.c_abi = false;
+    // `call_fi((v) { return v.a; })` and `call_fi(func (v FI) i32 { ... })`. The body is checked once.
+    if (const auto *literal = std::get_if<Expr::Func>(&expr.data); literal != nullptr && literal->decl != nullptr) {
+        if (FunctionDecl *fn = inferred_function(expr)) {
+            if (fn->params.size() != tlc_signature.params.size()) {
+                return false;
+            }
+            const Type got = elaborate_inferred(*fn, type_pointer(tlc_signature));
+            if (got.kind != TypeKind::Invalid) {
+                expect_value(got, type_pointer(tlc_signature), expr, expr_loc(expr));
+            }
+        } else {
+            if (literal->decl->inferred || !literal->decl->captures.empty() ||
+                !same_type(function_signature(*literal->decl), tlc_signature)) {
+                return false;
+            }
+            check_expr(expr, true);
+        }
+        literal->c_thunk = true;
+        literal->c_ext = c_ext_of(*want.pointee);
+        return true;
+    }
+    const Symbol *symbol = nullptr;
+    bool *flag = nullptr;
+    std::string *ext = nullptr;
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        symbol = lookup(named->text);
+        flag = &named->c_thunk;
+        ext = &named->c_ext;
+    } else if (const auto *selector = std::get_if<Expr::Selector>(&expr.data);
+               selector != nullptr && selector->base != nullptr) {
+        const auto *base = std::get_if<Expr::Name>(&selector->base->data);
+        const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+        if (package != nullptr && package->is_package) {
+            symbol = find_export(package->package_file, selector->field);
+            flag = &selector->c_thunk;
+            ext = &selector->c_ext;
+        }
+    }
+    if (symbol == nullptr || !symbol->is_function || flag == nullptr) {
+        return false;
+    }
+    if (symbol->lists.size() > 1) {
+        if (!pick_overload(const_cast<Expr &>(expr), tlc_signature)) {
+            return false;
+        }
+    } else {
+        // An `extern(abi="c")` function is already a C function. It matches without a wrapper.
+        if (symbol->type.kind != TypeKind::Function || symbol->type.c_abi || !same_type(symbol->type, tlc_signature)) {
+            return false;
+        }
+        check_expr(expr, true);
+    }
+    *flag = true;
+    *ext = c_ext_of(*want.pointee);
+    return true;
+}
+
 bool Checker::pick_overload(Expr &expr, const Type &signature) {
     const auto choose = [&](const Symbol &symbol, SourceLoc loc) -> const FunctionDecl * {
         if (!symbol.is_function || symbol.lists.size() <= 1) {
@@ -1386,6 +1475,9 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
         }
         return got;
     }
+    if (c_thunk(expr, want)) {
+        return want;
+    }
     if (FunctionDecl *fn = inferred_function(expr)) {
         const Type got = elaborate_inferred(*fn, want);
         if (got.kind != TypeKind::Invalid) {
@@ -1426,6 +1518,10 @@ Type Checker::check_against(const Expr &expr, const Type &want) {
         }
         mismatch(expr_loc(expr), want, got);
         return got;
+    }
+    // `set_cb(mine)` where C expects a callback. The tlc function is passed through a C wrapper.
+    if (c_thunk(expr, want)) {
+        return want;
     }
     // A parameter `[N]T` is a pointer that records N. A sized array of that length
     // passes its address and does not read the elements.

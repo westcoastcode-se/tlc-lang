@@ -126,6 +126,11 @@ struct Expr {
         mutable bool runtime_body = false;
         // The list chosen when this overloaded name is stored in a written function type.
         mutable const FunctionDecl *overload = nullptr;
+        // A tlc function stored where a C function pointer is expected. Codegen passes a C wrapper.
+        // `c_ext` is that signature's integer extension: the result, then each parameter.
+        // 's' sign-extends, 'z' zero-extends, and 'n' is neither.
+        mutable bool c_thunk = false;
+        mutable std::string c_ext;
     };
     struct Int {
         SourceLoc loc{};
@@ -201,6 +206,10 @@ struct Expr {
         // A constant `[]const u8` result. Empty text is a real result, so `comptime_text` says it was kept.
         mutable bool comptime_text = false;
         mutable std::string comptime_bytes;
+        // The callee is a C function pointer, from an `extern(abi="c")` signature or field.
+        // Codegen passes the arguments and reads the result with the C convention. See `Name::c_ext`.
+        mutable bool c_abi = false;
+        mutable std::string c_ext;
     };
     struct Selector {
         SourceLoc loc{};
@@ -218,6 +227,9 @@ struct Expr {
         mutable int len_value = -1;
         // The list chosen when this overloaded name is stored in a written function type.
         mutable const FunctionDecl *overload = nullptr;
+        // `pkg.fn` stored where a C function pointer is expected. See `Name::c_thunk`.
+        mutable bool c_thunk = false;
+        mutable std::string c_ext;
     };
     struct String {
         SourceLoc loc{};
@@ -343,6 +355,9 @@ struct Expr {
     struct Func {
         SourceLoc loc{};
         std::unique_ptr<FunctionDecl> decl;
+        // A function literal stored where a C function pointer is expected. See `Name::c_thunk`.
+        mutable bool c_thunk = false;
+        mutable std::string c_ext;
     };
     // One designated field in `{.field = value}`.
     struct FieldInit {
