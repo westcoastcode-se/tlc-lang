@@ -16,6 +16,7 @@ These were found by review and have a repro. They are not fixed yet.
 - A `*this` method is called through `*const Shape`. `func use(s *const Shape) void { s.grow(41); }` is accepted when `Rect::grow` takes `self *this`. A trait method has no receiver in the trait, and the body is checked once, not per struct. The spelling of a const trait method is not decided.
 - A `?*T` store into a narrowed name inside a nested loop, or after a `defer` in the narrowed region, is still `type mismatch`. Accepting it needs a flow analysis that knows a use above the store runs again after it.
 - A file-scope `comptime const k = f(2)` used as a file-scope array length, `var g [k]i32`, is `not supported yet` twice. The length is resolved before the constant is bound.
+- Checking a function with many locals is quadratic where expressions fail. `check_expr` copies the whole initialization state, `AssignState`, for each expression. 20000 locals that each report `type mismatch` take about 27 seconds; the same locals without errors take 0.3 seconds.
 - A C function pointer type that differs from the tlc one has no spelling of its own. A local or a tlc struct field holds it only by inference, `var f = get_cb()`. A generic parameter `func (T) i32` is a tlc type, so a C pointer that passes a struct is `type mismatch` there.
 
 ### Codegen
@@ -25,9 +26,7 @@ These were found by review and have a repro. They are not fixed yet.
 
 ### Front end
 
-- A multibyte UTF-8 character in a character literal, `'å'`, is rejected. `'\x100'` wraps without an error.
-- After an unexpected character, the following whitespace, newline, or comment is lexed as code. A top-level error is reported once per token. Rendering many diagnostics is quadratic, and there is no limit on them.
-- A line or file that ends in `\` reports `unterminated` twice. CRLF is not handled the same way everywhere.
+- There is no limit on the number of diagnostics. A file with thousands of errors prints every one. A limit needs a closing message, such as `too many errors`, which is not decided.
 
 ### Driver and language server
 

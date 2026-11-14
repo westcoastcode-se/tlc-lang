@@ -190,6 +190,36 @@ void Parser::reject_unsupported_unsafe() {
     }
 }
 
+void Parser::skip_to_declaration() {
+    // Skips to the end of the bad text: past a `;` or a `}` outside brackets, or up to a keyword that
+    // starts a declaration. `expected a declaration` is then reported once, not once per token.
+    int depth = 0;
+    while (!eof()) {
+        const TokenKind kind = peek().kind;
+        if (depth == 0 && (kind == TokenKind::KwFunc || kind == TokenKind::KwType || kind == TokenKind::KwVar ||
+                           kind == TokenKind::KwImport || kind == TokenKind::KwExport || kind == TokenKind::KwExtern ||
+                           kind == TokenKind::KwComptime || kind == TokenKind::KwMacro || kind == TokenKind::KwTest ||
+                           kind == TokenKind::KwAssert || kind == TokenKind::KwPackage)) {
+            return;
+        }
+        if (kind == TokenKind::LBrace || kind == TokenKind::LParen || kind == TokenKind::LBracket) {
+            ++depth;
+        } else if (kind == TokenKind::RBrace || kind == TokenKind::RParen || kind == TokenKind::RBracket) {
+            if (depth > 0) {
+                --depth;
+            }
+            if (depth == 0 && kind == TokenKind::RBrace) {
+                ++pos_;
+                return;
+            }
+        } else if (depth == 0 && kind == TokenKind::Semicolon) {
+            ++pos_;
+            return;
+        }
+        ++pos_;
+    }
+}
+
 bool Parser::starts_declaration() const {
     if (starts_unsafe_func() || unsupported_unsafe_decl()) {
         return true;
@@ -295,12 +325,16 @@ TranslationUnit Parser::parse() {
             continue;
         }
         if (check(TokenKind::KwVar) ||
-            (check(TokenKind::Identifier) && peek(1).kind == TokenKind::ColonEq)) {
+            (check(TokenKind::Identifier) && peek(1).kind == TokenKind::ColonEq) || starts_declaration()) {
+            const std::size_t before = diags_.items().size();
+            const std::size_t start = pos_;
             parse_top_declaration(unit, true);
-            continue;
-        }
-        if (starts_declaration()) {
-            parse_top_declaration(unit, true);
+            // A declaration that failed before its `;` or `}` leaves the rest of it. One error is enough.
+            const bool ended = pos_ > start && (tokens_[pos_ - 1].kind == TokenKind::Semicolon ||
+                                                tokens_[pos_ - 1].kind == TokenKind::RBrace);
+            if (diags_.items().size() != before && !ended) {
+                skip_to_declaration();
+            }
             continue;
         }
         if (check(TokenKind::KwAssert)) {
@@ -319,6 +353,7 @@ TranslationUnit Parser::parse() {
         }
         error_here("expected a declaration");
         ++pos_;
+        skip_to_declaration();
     }
     for (StructDecl &item : anonymous_structs_) {
         TopDecl top;

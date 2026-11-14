@@ -12,6 +12,13 @@ int run_diag_tests() {
     EXPECT(check, file.line_col(4).column == 3);
     EXPECT(check, file.line_col(100).line == 2);
     EXPECT(check, file.line_col(100).column == 4);
+    // The newline belongs to the line it ends. An empty file and a trailing newline have a last line.
+    EXPECT(check, file.line_col(1).line == 1 && file.line_col(1).column == 2);
+    EXPECT(check, file.line_col(2).line == 2 && file.line_col(2).column == 1);
+    const tlc::SourceFile &empty = sources.add("empty", "");
+    EXPECT(check, empty.line_col(0).line == 1 && empty.line_col(0).column == 1);
+    const tlc::SourceFile &ends = sources.add("ends", "x\n\n");
+    EXPECT(check, ends.line_col(3).line == 3 && ends.line_col(3).column == 1);
 
     tlc::DiagnosticEngine diags(sources);
     diags.error(tlc::SourceLoc{file.id(), 0}, "first");

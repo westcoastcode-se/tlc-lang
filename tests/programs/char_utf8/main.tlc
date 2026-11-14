@@ -1,0 +1,10 @@
+// A character literal is one Unicode code point, written in the source as UTF-8.
+// `'å'b` is the byte 229, as `'\xE5'b` is. A code point above 255 is not a byte.
+func main() i32 {
+    if ('å' != 229) { return 1; }
+    if ('€' != 8364) { return 2; }
+    if ('😀' != 128512) { return 3; }
+    if ('å'b != 229u8) { return 4; }
+    if ('\x10FFFF' != 1114111) { return 5; }
+    return 42;
+}

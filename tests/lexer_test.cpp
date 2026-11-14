@@ -167,5 +167,46 @@ int run_lexer_tests() {
                   "var ident(a) := ident(b) : ident(c) :: ident(d) case int-lit(1) : eof");
     }
 
+    {
+        // A character literal is one code point, written as one or more UTF-8 bytes.
+        const LexResult result = lex("'A' '\xC3\xA5' '\xE2\x82\xAC' '\xF0\x9F\x98\x80'");
+        EXPECT_EQ(check, result.errors, std::string());
+        EXPECT_EQ(check, result.dump, std::string("char(65) char(229) char(8364) char(128512) eof"));
+    }
+    {
+        // A hex escape past U+10FFFF stops growing. Seventeen digits do not wrap around to `'A'`.
+        const LexResult result = lex("'\\x10000000000000041'");
+        EXPECT_EQ(check, result.dump, std::string("char(1114112) eof"));
+    }
+    {
+        // A lone continuation byte, a cut sequence, an overlong form, and a surrogate are not UTF-8.
+        for (const char *bad : {"'\x80'", "'\xC3'", "'\xC0\x80'", "'\xED\xA0\x80'", "'\xF4\x90\x80\x80'"}) {
+            EXPECT_HAS(check, lex(bad).errors, "unexpected character");
+        }
+    }
+    {
+        // After an unexpected character the comment, the whitespace, and the line break are not code.
+        const LexResult result = lex("a @ // note\n  b \xC3\xA9 /* x */ c");
+        EXPECT_EQ(check, result.errors,
+                  std::string("mem.tlc:1:3: error: unexpected character\nmem.tlc:2:5: error: unexpected character\n"));
+        EXPECT_EQ(check, result.dump, std::string("ident(a) ident(b) ident(c) eof"));
+    }
+    {
+        // A stray `\` is an unexpected character. `\u` is still a universal character name.
+        EXPECT_HAS(check, lex("a \\ b").errors, "unexpected character");
+        EXPECT_HAS(check, lex("\\u00e5").errors, "universal character names are not supported");
+    }
+    {
+        // `\` at the end of a line or of the file leaves the literal open. That is reported once.
+        // CRLF is the same line end as LF.
+        const std::string lf = lex("\"ab\\\nc").errors;
+        EXPECT_EQ(check, lf, std::string("mem.tlc:1:1: error: unterminated string\n"));
+        EXPECT_EQ(check, lex("\"ab\\\r\nc").errors, lf);
+        EXPECT_EQ(check, lex("\"ab\\").errors, lf);
+        const std::string ch = lex("'\\\nc").errors;
+        EXPECT_EQ(check, ch, std::string("mem.tlc:1:1: error: unterminated character constant\n"));
+        EXPECT_EQ(check, lex("'\\\r\nc").errors, ch);
+        EXPECT_EQ(check, lex("\"ab\r\nc\"").errors, lex("\"ab\nc\"").errors);
+    }
     return check.failed;
 }

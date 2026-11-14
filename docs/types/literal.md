@@ -69,6 +69,12 @@ A character literal is a Unicode code point stored as `i32`, so `'A'` is 65. `'A
 
 `'\x100'` and `'\400'` are the code point 256.
 
+The character may be written in the source as UTF-8. `'å'` is 229, `'€'` is 8364, and `'😀'` is 128512. Bytes that are not one UTF-8 sequence, such as a lone continuation byte, an overlong form, or a surrogate, are `unexpected character`.
+
+`'å'b` is the byte 229, the same as `'\xE5'b`. `'€'b` is above 255 and is `type mismatch`.
+
+A code point above U+10FFFF, such as `'\x110000'` or `'\x10000000000000041'`, is `type mismatch`.
+
 The compiler reports a byte character above 255 as `type mismatch`.
 
 The escapes are `\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\a`, `\b`, `\f`, `\v`, `\?`, octal digits, and `\x` followed by hex digits.

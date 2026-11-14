@@ -149,6 +149,8 @@ class Parser {
     };
 
     bool starts_declaration() const;
+    // After a top-level error, skips the rest of that text. See the definition.
+    void skip_to_declaration();
     // `unsafe`, `export`, and `extern` in any order, then `func`.
     bool starts_unsafe_func() const;
     // `unsafe var` and the other non-function forms. The diagnostic is `not supported yet`.

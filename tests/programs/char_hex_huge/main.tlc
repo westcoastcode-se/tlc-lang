@@ -1,0 +1,4 @@
+// A hex escape past U+10FFFF is not a code point. Seventeen digits do not wrap around to `'A'`.
+func main() i32 {
+    return '\x10000000000000041';
+}

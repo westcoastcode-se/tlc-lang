@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "source/source.hpp"
 
 #include <fstream>
@@ -7,21 +8,23 @@
 namespace tlc {
 
 SourceFile::SourceFile(uint32_t id, std::string path, std::string text)
-    : id_(id), path_(std::move(path)), text_(std::move(text)) {}
+    : id_(id), path_(std::move(path)), text_(std::move(text)) {
+    line_starts_.push_back(0);
+    for (uint32_t i = 0; i < text_.size(); ++i) {
+        if (text_[i] == '\n') {
+            line_starts_.push_back(i + 1);
+        }
+    }
+}
 
 LineCol SourceFile::line_col(uint32_t offset) const {
     if (offset > text_.size()) {
         offset = static_cast<uint32_t>(text_.size());
     }
-    int line = 1;
-    uint32_t line_start = 0;
-    for (uint32_t i = 0; i < offset; ++i) {
-        if (text_[i] == '\n') {
-            ++line;
-            line_start = i + 1;
-        }
-    }
-    return LineCol{line, static_cast<int>(offset - line_start) + 1};
+    // The last line start at or before `offset`. A newline itself belongs to the line it ends.
+    const auto after = std::upper_bound(line_starts_.begin(), line_starts_.end(), offset);
+    const std::size_t index = static_cast<std::size_t>(after - line_starts_.begin()) - 1;
+    return LineCol{static_cast<int>(index) + 1, static_cast<int>(offset - line_starts_[index]) + 1};
 }
 
 std::string_view SourceFile::slice(uint32_t offset, uint32_t length) const {

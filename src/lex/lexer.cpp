@@ -1,3 +1,4 @@
+#include <optional>
 #include "lex/lexer.hpp"
 
 #include <utility>
@@ -599,7 +600,8 @@ Token Lexer::lex_string(uint32_t start) {
     bool closed = false;
     while (!eof_at()) {
         const char c = peek();
-        if (c == '\n') {
+        // A string does not cross a line. CRLF ends the line as LF does.
+        if (c == '\n' || (c == '\r' && !eof_at(1) && peek(1) == '\n')) {
             break;
         }
         get();
@@ -608,8 +610,9 @@ Token Lexer::lex_string(uint32_t start) {
             break;
         }
         if (c == '\\') {
-            if (eof_at() || peek() == '\n') {
-                error_at(start, "unterminated string");
+            // `\` at the end of a line, LF or CRLF, or of the file leaves the string open.
+            // The missing quote is reported once, below.
+            if (eof_at() || peek() == '\n' || (peek() == '\r' && !eof_at(1) && peek(1) == '\n')) {
                 break;
             }
             const uint32_t esc = pos_ - 1;
@@ -710,12 +713,13 @@ Token Lexer::lex_char(uint32_t start) {
     uint64_t value = 0;
     bool closed = false;
     bool any = false;
-    if (!eof_at() && peek() != '\n' && peek() != '\'') {
+    const bool line_end = !eof_at() && (peek() == '\n' || (peek() == '\r' && !eof_at(1) && peek(1) == '\n'));
+    if (!eof_at() && !line_end && peek() != '\'') {
         any = true;
         char c = get();
         if (c == '\\') {
-            if (eof_at() || peek() == '\n') {
-                error_at(start, "unterminated character constant");
+            // The missing quote after `\` at the end of a line is reported once, below.
+            if (eof_at() || peek() == '\n' || (peek() == '\r' && !eof_at(1) && peek(1) == '\n')) {
             } else {
                 const char e = get();
                 switch (e) {
@@ -735,8 +739,13 @@ Token Lexer::lex_char(uint32_t start) {
                         error_at(start, "invalid hex escape");
                         break;
                     }
+                    // Past U+10FFFF the value stops growing. Shifting on would wrap, and
+                    // `'\x10000000000000041'` would become 65. The checker rejects the large value.
                     while (hex_value(peek()) >= 0) {
                         value = (value << 4) | static_cast<uint64_t>(hex_value(get()));
+                        if (value > 0x10FFFF) {
+                            value = 0x110000;
+                        }
                     }
                     break;
                 }
@@ -756,6 +765,8 @@ Token Lexer::lex_char(uint32_t start) {
                     break;
                 }
             }
+        } else if ((static_cast<unsigned char>(c) & 0x80) != 0) {
+            value = utf8_code_point(static_cast<unsigned char>(c));
         } else {
             value = static_cast<unsigned char>(c);
         }
@@ -773,6 +784,46 @@ Token Lexer::lex_char(uint32_t start) {
     token.int_value = value;
     token.byte_form = take_byte_suffix();
     return token;
+}
+
+uint64_t Lexer::utf8_code_point(unsigned char lead) {
+    // `'å'` is one code point written as several bytes. A lead byte gives the length, and each
+    // further byte is `10xxxxxx`. An overlong form, a surrogate, and a value past U+10FFFF are not
+    // UTF-8. Such a byte is `unexpected character`, and the literal keeps that byte's value.
+    const uint32_t at = pos_ - 1;
+    int extra = 0;
+    uint32_t value = 0;
+    uint32_t least = 0;
+    if (lead >= 0xC2 && lead <= 0xDF) {
+        extra = 1;
+        value = lead & 0x1Fu;
+        least = 0x80;
+    } else if (lead >= 0xE0 && lead <= 0xEF) {
+        extra = 2;
+        value = lead & 0x0Fu;
+        least = 0x800;
+    } else if (lead >= 0xF0 && lead <= 0xF4) {
+        extra = 3;
+        value = lead & 0x07u;
+        least = 0x10000;
+    } else {
+        error_at(at, "unexpected character");
+        return lead;
+    }
+    for (int n = 0; n < extra; ++n) {
+        const unsigned char next = eof_at() ? 0 : static_cast<unsigned char>(peek());
+        if ((next & 0xC0u) != 0x80u) {
+            error_at(at, "unexpected character");
+            return lead;
+        }
+        get();
+        value = (value << 6) | (next & 0x3Fu);
+    }
+    if (value < least || value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF)) {
+        error_at(at, "unexpected character");
+        return lead;
+    }
+    return value;
 }
 
 bool Lexer::take_byte_suffix() {
@@ -806,8 +857,12 @@ Token Lexer::lex_identifier(uint32_t start) {
     return token;
 }
 
-Token Lexer::lex_token() {
-    while (!eof_at()) {
+std::optional<Token> Lexer::lex_token() {
+    // A character that is not a token is reported and skipped. `tokenize` then skips the whitespace
+    // and comments after it, so they are not read as code.
+    if (eof_at()) {
+        return finish(TokenKind::End, pos_);
+    }
     const uint32_t start = pos_;
     const char c = peek();
     if (is_ident_start(c)) {
@@ -826,9 +881,11 @@ Token Lexer::lex_token() {
         return lex_char(start);
     }
     if (c == '\\') {
-        error_at(start, "universal character names are not supported");
+        const char next = eof_at(1) ? '\0' : peek(1);
+        error_at(start, next == 'u' || next == 'U' ? "universal character names are not supported"
+                                                   : "unexpected character");
         get();
-        continue;
+        return std::nullopt;
     }
 
     get();
@@ -975,10 +1032,14 @@ Token Lexer::lex_token() {
         return finish(TokenKind::Gt, start);
     default:
         error_at(start, "unexpected character");
-        break;
+        // `é` outside a literal is one character. Its continuation bytes are not reported again.
+        if ((static_cast<unsigned char>(c) & 0xC0u) == 0xC0u) {
+            while (!eof_at() && (static_cast<unsigned char>(peek()) & 0xC0u) == 0x80u) {
+                get();
+            }
+        }
+        return std::nullopt;
     }
-    }
-    return finish(TokenKind::End, pos_);
 }
 
 std::vector<Token> Lexer::tokenize() {
@@ -995,12 +1056,16 @@ std::vector<Token> Lexer::tokenize() {
             continue;
         }
         const uint32_t before = pos_;
-        tokens.push_back(lex_token());
+        std::optional<Token> token = lex_token();
         only_whitespace_since_newline_ = false;
         if (pos_ == before) {
             error_at(pos_, "lexer made no progress");
             get();
         }
+        if (!token) {
+            continue;
+        }
+        tokens.push_back(std::move(*token));
         if (tokens.back().kind == TokenKind::End) {
             break;
         }

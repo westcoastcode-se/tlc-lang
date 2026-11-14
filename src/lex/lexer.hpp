@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include "diag/diag.hpp"
 #include "lex/token.hpp"
 
@@ -29,7 +30,8 @@ class Lexer {
     void skip_line_comment();
     void skip_block_comment(uint32_t start);
     void skip_directive(uint32_t start);
-    Token lex_token();
+    // Empty when the character was reported and skipped.
+    std::optional<Token> lex_token();
     Token lex_identifier(uint32_t start);
     Token lex_number_or_float(uint32_t start);
     Token lex_float(uint32_t start);
@@ -38,6 +40,8 @@ class Lexer {
     Token lex_char(uint32_t start);
     // `"hi"b` and `'A'b`. A following identifier character keeps `b` as a name.
     bool take_byte_suffix();
+    // Reads the rest of a UTF-8 sequence after `lead` and returns its code point.
+    uint64_t utf8_code_point(unsigned char lead);
     bool looks_like_float(uint32_t start) const;
 };
 

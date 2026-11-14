@@ -1581,5 +1581,14 @@ int run_parser_tests() {
         EXPECT_HAS(check, parsed.dump, "(call (. (typeof (name n)) name))");
     }
 
+    {
+        // Text that is not a declaration is reported once. The next declaration is parsed.
+        const Parsed parsed = parse_source("1 2 3 + 4 ) ) ;\n}\n}\nfunc g() void {}\nretrun 0;\nfunc h() void {}\n");
+        EXPECT_EQ(check, parsed.errors,
+                  std::string("mem.tlc:1:1: error: expected a declaration\nmem.tlc:2:1: error: expected a declaration\n"
+                              "mem.tlc:5:1: error: expected a declaration\n"));
+        EXPECT_HAS(check, parsed.dump, "g");
+        EXPECT_HAS(check, parsed.dump, "h");
+    }
     return check.failed;
 }

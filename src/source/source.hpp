@@ -37,6 +37,9 @@ class SourceFile {
     uint32_t id_ = 0;
     std::string path_;
     std::string text_;
+    // Offset of each line's first byte. The text does not change after construction, so one table
+    // serves every `line_col`. Many diagnostics in a large file stay linear.
+    std::vector<uint32_t> line_starts_;
 };
 
 class SourceSet {
