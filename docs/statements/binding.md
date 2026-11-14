@@ -78,7 +78,7 @@ retq                             # return
 
 A local with no initializer is uninitialized.
 
-Reading it before a store is reported as `uninitialized`.
+Reading it before a store is reported as `uninitialized`. `a[1] += 1`, `s.f++`, and `u.f -= 2` read the place before they store it, so they are `uninitialized` on an element, a field, or an arm that was never set.
 
 A file-scope variable with no initializer is zero.
 

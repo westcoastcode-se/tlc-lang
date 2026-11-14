@@ -1,5 +1,6 @@
 #include "driver/stack.hpp"
 
+#include <cstdlib>
 #include <iostream>
 
 int run_cli_tests();
@@ -14,6 +15,8 @@ int run_lsp_tests();
 int run_battery_tests();
 
 static int run_all() {
+    // Every module the tests build, and every compiler the CLI tests start, checks its store widths.
+    setenv("TLC_CHECK_STORES", "1", 1);
     int failed = 0;
     failed += run_cli_tests();
     failed += run_diag_tests();

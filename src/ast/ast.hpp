@@ -908,6 +908,9 @@ struct FnCapture {
 };
 
 struct FunctionDecl {
+    // Set when the checker has checked this body. A file-scope `const k = f()` runs `f` before that, and its
+    // copy is checked first, so `t[0]` has its tuple slot.
+    mutable bool body_checked = false;
     SourceLoc loc{};
     std::string name;
     std::string return_type;

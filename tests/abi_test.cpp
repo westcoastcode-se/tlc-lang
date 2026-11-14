@@ -1,4 +1,8 @@
 #include "harness.hpp"
+#include "gen/store_check.hpp"
+
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/LLVMContext.h"
 
 #include <filesystem>
 #include <fstream>
@@ -202,5 +206,24 @@ int run_abi_tests() {
     EXPECT_HAS(check, ir.out, "@widen8(i8 signext)");
     EXPECT_HAS(check, ir.out, "@wideu8(i8 zeroext)");
     EXPECT_HAS(check, ir.out, "signext i8 @narrow8(i32)");
+    // The store check finds a `double` stored into an `i32` local, and passes a narrower store and a byte
+    // offset. That double store was the bug that overwrote the comptime evaluator's frame.
+    {
+        llvm::LLVMContext context;
+        llvm::Module module("stores", context);
+        llvm::IRBuilder<> builder(context);
+        auto *fn = llvm::Function::Create(llvm::FunctionType::get(builder.getVoidTy(), false),
+                                          llvm::Function::ExternalLinkage, "f", module);
+        builder.SetInsertPoint(llvm::BasicBlock::Create(context, "entry", fn));
+        llvm::AllocaInst *slot = builder.CreateAlloca(builder.getInt32Ty());
+        llvm::AllocaInst *wide = builder.CreateAlloca(builder.getInt64Ty());
+        builder.CreateStore(builder.getInt8(1), wide);
+        builder.CreateStore(builder.getInt32(1), builder.CreateConstGEP1_64(builder.getInt8Ty(), slot, 0));
+        builder.CreateRetVoid();
+        EXPECT(check, tlc::wide_store(module).empty());
+        builder.SetInsertPoint(&fn->getEntryBlock().back());
+        builder.CreateStore(llvm::ConstantFP::get(builder.getDoubleTy(), 2.5), slot);
+        EXPECT_HAS(check, tlc::wide_store(module), "store of double into i32 in f");
+    }
     return check.failed;
 }

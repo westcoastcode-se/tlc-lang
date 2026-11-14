@@ -341,10 +341,28 @@ bool Checker::init_pointee_steps(const Symbol &symbol, std::vector<InitStep> ste
 }
 
 void Checker::init_touch(const Symbol &symbol, SourceLoc loc) {
+    init_touch_steps(symbol, std::vector<InitStep>(init_stack_.rbegin(), init_stack_.rend()), loc);
+}
+
+void Checker::init_read_place(const Expr &place) {
     if (assign_.unreachable || quiet_ || init_quiet_) {
         return;
     }
-    std::vector<InitStep> steps(init_stack_.rbegin(), init_stack_.rend());
+    std::vector<InitStep> steps;
+    if (!init_collect(place, steps)) {
+        return;
+    }
+    const Expr::Name *named = init_root(place, true);
+    const Symbol *symbol = named == nullptr ? nullptr : lookup(named->text);
+    if (symbol != nullptr) {
+        init_touch_steps(*symbol, std::move(steps), expr_loc(place));
+    }
+}
+
+void Checker::init_touch_steps(const Symbol &symbol, std::vector<InitStep> steps, SourceLoc loc) {
+    if (assign_.unreachable || quiet_ || init_quiet_) {
+        return;
+    }
     if (init_pointee_steps(symbol, steps)) {
         if (steps.front().kind == InitStep::Kind::Deref) {
             steps.erase(steps.begin());

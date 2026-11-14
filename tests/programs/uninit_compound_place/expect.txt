@@ -1,0 +1,3 @@
+compile-error: uninitialized
+stderr:
+main.tlc:6:5: error: uninitialized

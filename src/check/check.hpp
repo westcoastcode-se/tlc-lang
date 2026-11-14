@@ -1135,6 +1135,9 @@ class Checker {
     void init_mark_all(int id);
     void init_require_span(int id, int offset, int count, SourceLoc loc);
     void init_touch(const Symbol &symbol, SourceLoc loc);
+    void init_touch_steps(const Symbol &symbol, std::vector<InitStep> steps, SourceLoc loc);
+    // `a[1] += 1` and `s.f++` read the place before they store it. A plain name is read by its check.
+    void init_read_place(const Expr &place);
     InitTouch init_resolve(Type type, int offset, int count, const std::vector<InitStep> &steps, bool storing);
     bool init_collect(const Expr &expr, std::vector<InitStep> &steps);
     void init_replace(const Expr &lhs, const Expr &rhs);

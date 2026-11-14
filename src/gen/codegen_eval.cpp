@@ -1,5 +1,6 @@
 // Running one comptime function by compiling it and calling the result.
 #include "gen/gen.hpp"
+#include "gen/store_check.hpp"
 
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include "llvm/IR/Verifier.h"
@@ -481,6 +482,7 @@ std::optional<std::string> eval_comptime_string(
     }
     std::string verify_error;
     llvm::raw_string_ostream verify_stream(verify_error);
+    check_stores(*module);
     if (llvm::verifyModule(*module, &verify_stream)) {
         return std::nullopt;
     }
@@ -578,6 +580,7 @@ std::optional<int32_t> eval_comptime_i32(
     }
     std::string verify_error;
     llvm::raw_string_ostream verify_stream(verify_error);
+    check_stores(*module);
     if (llvm::verifyModule(*module, &verify_stream)) {
         return std::nullopt;
     }
@@ -652,6 +655,7 @@ std::optional<int64_t> eval_comptime_i64(
     }
     std::string verify_error;
     llvm::raw_string_ostream verify_stream(verify_error);
+    check_stores(*module);
     if (llvm::verifyModule(*module, &verify_stream)) {
         return std::nullopt;
     }
@@ -727,6 +731,7 @@ std::optional<uint32_t> eval_comptime_u32(
     }
     std::string verify_error;
     llvm::raw_string_ostream verify_stream(verify_error);
+    check_stores(*module);
     if (llvm::verifyModule(*module, &verify_stream)) {
         return std::nullopt;
     }
@@ -801,6 +806,7 @@ std::optional<float> eval_comptime_f32(
     }
     std::string verify_error;
     llvm::raw_string_ostream verify_stream(verify_error);
+    check_stores(*module);
     if (llvm::verifyModule(*module, &verify_stream)) {
         return std::nullopt;
     }
@@ -875,6 +881,7 @@ std::optional<double> eval_comptime_f64(
     }
     std::string verify_error;
     llvm::raw_string_ostream verify_stream(verify_error);
+    check_stores(*module);
     if (llvm::verifyModule(*module, &verify_stream)) {
         return std::nullopt;
     }
@@ -2157,6 +2164,7 @@ ComptimeStructValue eval_comptime_struct(
     }
     std::string verify_error;
     llvm::raw_string_ostream verify_stream(verify_error);
+    check_stores(*module);
     if (llvm::verifyModule(*module, &verify_stream)) {
         return out;
     }

@@ -5648,9 +5648,12 @@ bool Checker::recheck_comptime_copy(FunctionDecl &wrapper, bool force) {
         return true;
     }
     const bool deferred = deferred_comptime(*wrapper.body);
-    if (!force && !deferred) {
+    if (!force && !deferred && wrapper.body_checked) {
         return true;
     }
+    // Only checked to fill in what the checker records, such as a tuple slot. A failure here, `10 / 0` once
+    // `n` is 0, is left to the run, which reports it with the call stack.
+    const bool only_unchecked = !force && !deferred;
     // The copy is checked from the call. Locals of the caller must not hide file-scope names.
     struct FileScopes {
         Checker &self;
@@ -5696,7 +5699,7 @@ bool Checker::recheck_comptime_copy(FunctionDecl &wrapper, bool force) {
     if (failed && note == kArrayLength) {
         recheck_fault_ = note;
     }
-    return !failed;
+    return !failed || only_unchecked;
 }
 
 int Checker::explain_comptime_stmt(const Stmt &stmt, const std::string &fn_name) {

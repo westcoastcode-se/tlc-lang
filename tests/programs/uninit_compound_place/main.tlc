@@ -1,0 +1,8 @@
+// `a[1] += 1` reads the element before it stores it, so an element that was never set is `uninitialized`,
+// as `a[1] = a[1] + 1` is. The read took whatever was on the stack.
+func main() i32 {
+    var counts [3]i32;
+    counts[0] = 0;
+    counts[1] += 1;
+    return counts[1];
+}

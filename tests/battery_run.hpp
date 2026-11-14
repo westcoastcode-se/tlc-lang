@@ -1,4 +1,4 @@
-// Runs the battery programs. Included only by programs_test.cpp, so the test target needs no new file. A shape case returns 42. An arithmetic case prints no `FAIL` line and exits 0.
+// Runs the battery programs. Included only by programs_test.cpp, so the test target needs no new file. A shape case and a store case return 42. An arithmetic case prints no `FAIL` line and exits 0.
 //
 // A case that compiles and does anything else is wrong code. That always fails. A case the compiler rejects
 // is a known limit when it is listed in `tests/battery/rejected.txt`. A rejection not in that list, or a
@@ -12,6 +12,7 @@
 #include "battery.hpp"
 #include "battery_arith.hpp"
 #include "battery_shapes.hpp"
+#include "battery_stores.hpp"
 #include "harness.hpp"
 
 #include <algorithm>
@@ -122,11 +123,21 @@ int run_battery_tests() {
         for (tlc::test::BatteryCase &arith : tlc::test::arithmetic_battery_cases()) {
             cases.push_back(std::move(arith));
         }
+        std::vector<tlc::test::BatteryCase> stores = tlc::test::store_battery_cases();
+        for (std::size_t i = 0; i < stores.size(); ++i) {
+            if (every || i % 40 == 0) {
+                cases.push_back(std::move(stores[i]));
+            }
+        }
     }
 
     namespace fs = std::filesystem;
     if (const char *dump = std::getenv("TLC_BATTERY_DUMP")) {
-        for (const tlc::test::BatteryCase &item : tlc::test::shape_battery_cases()) {
+        std::vector<tlc::test::BatteryCase> dumped = tlc::test::shape_battery_cases();
+        for (tlc::test::BatteryCase &item : tlc::test::store_battery_cases()) {
+            dumped.push_back(std::move(item));
+        }
+        for (const tlc::test::BatteryCase &item : dumped) {
             const fs::path dir = fs::path(dump) / item.battery;
             fs::create_directories(dir);
             std::ofstream(dir / (item.name + ".tlc")) << item.source;

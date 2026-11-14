@@ -1373,6 +1373,7 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
     copy.body = fn.body ? clone_stmt(*fn.body) : nullptr;
     copy.exported = fn.exported;
     copy.is_comptime = fn.is_comptime;
+    copy.body_checked = fn.body_checked;
     copy.is_macro = fn.is_macro;
     copy.unsafe = fn.unsafe;
     copy.is_static = fn.is_static;

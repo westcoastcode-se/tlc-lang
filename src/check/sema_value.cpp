@@ -107,6 +107,7 @@ Type Checker::increment_operand(const Expr &expr) {
             return type_invalid();
         }
         const std::size_t before = diags_.size();
+        init_read_place(expr);
         init_store_if(expr, before);
         return type;
     };

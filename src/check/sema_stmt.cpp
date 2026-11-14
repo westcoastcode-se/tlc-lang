@@ -4365,6 +4365,7 @@ bool Checker::comptime_for_pending(const Stmt::For &loop) const {
 }
 
 void Checker::check_function(const FunctionDecl &fn) {
+    fn.body_checked = true;
     InitSuspend suspend(*this);
     struct Depths {
         int &comptime_slot;
