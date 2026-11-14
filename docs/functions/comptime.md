@@ -364,7 +364,11 @@ func main() i32 {
 
 A null `!` while the body runs is `null pointer`. A call deeper than 2 MiB of the compiler's stack is `comptime recursion too deep`. A body that runs more than 500 million loop steps and calls is `comptime loop does not end`. Each error is followed by the same call stack. The first fault is the one reported.
 
-A `comptime const` whose initializer faults is still declared. A later use of the name, as a value, an array length, or a `comptime if` condition, reports nothing more.
+A compound assignment faults the same way. `x += 10 / n`, `x /= n`, and `x %= n` with `n` equal to 0 are `division by zero`. `x <<= n` and `x >>= n` with an amount at or past the width are `shift out of range`.
+
+A `comptime const` whose initializer faults is still declared. A later use of the name, as a value, an array length, or a `comptime if` condition, reports nothing more. A file-scope `const k = f(0)` whose call faults reports that fault only.
+
+A file-scope `comptime const g = f(2)` is bound where a later `const` or `var` names it, as in `const h = g + 1` and `var arr [g]i32`. A struct field cannot use it as an array length yet.
 
 A tuple result is that tuple. `pair(40)[0] + pair(40)[1]` is 82. `comptime const got = pair(40)` names it. `var got = pair(40)` copies that folded tuple.
 

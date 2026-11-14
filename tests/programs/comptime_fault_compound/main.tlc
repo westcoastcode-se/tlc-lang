@@ -1,0 +1,13 @@
+// A fault in the value of a compound assignment in a `comptime func` is that fault with its call stack.
+// It was `not supported yet`, reported twice.
+comptime func f(n i32) i32 {
+    var x = 8;
+    x += 10 / n;
+    return x;
+}
+
+const k = f(0);
+
+func main() i32 {
+    return k;
+}

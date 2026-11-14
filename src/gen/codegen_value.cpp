@@ -794,7 +794,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         mem = leaf_type(0, slot.elem_char, -1, false, slot.elem_bits, false);
                     }
                     const TypedValue right = node.rhs != nullptr ? emit_rvalue(*node.rhs) : TypedValue{};
-                    if (mem == nullptr || !mem->isIntegerTy() || right.value == nullptr || terminated() ||
+                    // A comptime fault in the place or the value already ended the block, `x += 10 / 0`.
+                    // That fault is the report, not this store.
+                    if (terminated()) {
+                        return {zero(), 0};
+                    }
+                    if (mem == nullptr || !mem->isIntegerTy() || right.value == nullptr ||
                         !right.value->getType()->isIntegerTy()) {
                         error(node.loc, "type mismatch");
                         return {zero(), 0};
@@ -837,6 +842,17 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         // `sdiv` and `srem` of the minimum signed value and -1 are poison.
                         // The quotient wraps. The remainder is 0.
                         const bool remainder = node.op == TokenKind::PercentEq;
+                        if (const auto *divisor = llvm::dyn_cast<llvm::ConstantInt>(rhs);
+                            divisor != nullptr && divisor->isZero()) {
+                            // `x /= n` with `n` known to be 0, as `x / 0` is. LLVM folded it to poison.
+                            if (eval_ && function_ != nullptr) {
+                                install_eval_fault();
+                                eval_fail(node.loc, 1);
+                            } else {
+                                error(node.loc, "division by zero");
+                            }
+                            return {zero(), 0};
+                        }
                         if (!llvm::isa<llvm::ConstantInt>(rhs)) {
                             guard_divisor(node.loc, rhs);
                         }
@@ -862,7 +878,11 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         error(node.loc, "type mismatch");
                         return {zero(), 0};
                     }
-                    if (!terminated() && combined != nullptr) {
+                    // A constant amount past the width faults in a comptime body and ends the block.
+                    if (terminated()) {
+                        return {zero(), 0};
+                    }
+                    if (combined != nullptr) {
                         builder_.CreateStore(resize_int(combined, mem, common_unsigned), slot.value);
                     }
                     return load_object(slot.value, slot.depth, slot.elem_char, -1, slot.elem_void, slot.elem_bool,

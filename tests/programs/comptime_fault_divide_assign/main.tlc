@@ -1,0 +1,11 @@
+// `x /= n` with `n` equal to 0 in a comptime body is `division by zero`. It folded to 0 without an error.
+comptime func f(n i32) i32 {
+    var x = 8;
+    x /= n;
+    return x;
+}
+
+func main() i32 {
+    const k = f(0);
+    return k;
+}

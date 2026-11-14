@@ -3594,6 +3594,8 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
     }
     const std::optional<int32_t> ran = eval_comptime_i32(*graph_, wrapper, file, &fault, specs, structs, aliases);
     if (fault.valid()) {
+        // The fault is the report. A file-scope `const k = f(0)` is not `global initializer is not a constant` too.
+        call.comptime_failed = true;
         const std::string message = comptime_assert_message(*wrapper.body, fault);
         report_comptime_fault(fault, message.empty() ? std::string(comptime_fault_text())
                                 : message, fn->name);
@@ -4157,6 +4159,7 @@ bool Checker::fold_comptime_enum(const Expr::Call &call) {
     }
     const std::optional<int32_t> ran = eval_comptime_i32(*graph_, wrapper, file, &fault, specs, structs, aliases);
     if (fault.valid()) {
+        call.comptime_failed = true;
         const std::string message = comptime_assert_message(*wrapper.body, fault);
         report_comptime_fault(fault, message.empty() ? std::string(comptime_fault_text())
                                 : message, fn->name);

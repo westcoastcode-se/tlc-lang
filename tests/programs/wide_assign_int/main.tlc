@@ -1,0 +1,21 @@
+// A wider integer assigned to an `i32` place keeps the low bits, through a name, a pointer, or an element.
+var g = 0;
+func main() i32 {
+    var x = 1;
+    x = x + 4294967336i64;
+    g = 8589934634i64;
+    var k = 0;
+    var pk = &k;
+    *pk = 4294967338i64;
+    var i = 5;
+    i = i < 1;
+    var row [2]i32 = {0, 0};
+    row[1] = 4294967296i64 + 7;
+    var bad = 0;
+    if (x != 41) { bad += 1; }
+    if (g != 42) { bad += 2; }
+    if (k != 42) { bad += 4; }
+    if (i != 0) { bad += 8; }
+    if (row[1] != 7 || row[0] != 0) { bad += 16; }
+    return bad == 0 ? 42 : bad;
+}

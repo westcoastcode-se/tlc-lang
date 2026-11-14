@@ -1,0 +1,14 @@
+// A file-scope `comptime const` set by a call is bound where a later declaration names it, in a `const`
+// initializer or an array length. Both were `undeclared identifier` and `not supported yet`.
+comptime func twice(n i32) i32 {
+    return n * 2;
+}
+
+comptime const a = twice(3);
+comptime const b = twice(a);
+const c = b + 30;
+var arr [b]i32;
+
+func main() i32 {
+    return c + arr.len - 12;
+}

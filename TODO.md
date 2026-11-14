@@ -13,10 +13,8 @@ These were found by review and have a repro. They are not fixed yet.
 ### Checker
 
 - A `*this` method is called through `*const Shape`. `func use(s *const Shape) void { s.grow(41); }` is accepted when `Rect::grow` takes `self *this`. A trait method has no receiver in the trait, and the body is checked once, not per struct. The spelling of a const trait method is not decided.
-- A file-scope `comptime const k = f(2)` used as a file-scope array length, `var g [k]i32`, is `not supported yet` twice. The length is resolved before the constant is bound.
+- A file-scope `comptime const k = f(2)` used as an array length in a struct field, `type S struct { buf [k]u8; }`, is `not supported yet` twice. Types are resolved before the call runs. A `const` or a `var` that names `k` binds it first.
 - A C function pointer type that differs from the tlc one has no spelling of its own. A local or a tlc struct field holds it only by inference, `var f = get_cb()`. A generic parameter `func (T) i32` is a tlc type, so a C pointer that passes a struct is `type mismatch` there.
-- A fault inside an assignment in a `comptime func`, `d >>= n` or `d = d + 8 / (n - 40)`, is reported as `not supported yet` at the call, not as the fault with its call stack.
-- A failed file-scope `comptime const g = f(0)` still cascades: `const h = g + 1` is `undeclared identifier`, and `var arr [g]i32` is `not supported yet` twice.
 - A function with many held `k := i` locals is still quadratic to check. 1500 of them take about 20 seconds.
 - `?func` is not allowed as an array element, `[2]?func (i32) i32`, or behind a pointer, `*?func (i32) i32`. The cast form `?func (i32) i32(x)` is `expected an expression`.
 - Deeply nested blocks check in quadratic time. 4000 nested `if` take 1.6 seconds and 10000 take about 10, so the nesting limit stays at 10000 levels.

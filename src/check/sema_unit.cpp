@@ -302,6 +302,35 @@ void Checker::declare_globals(const TranslationUnit &unit) {
             },
             expr.data);
     };
+    // `comptime const g = f(2)` waits for the end, since a call is not known to be ready. A later
+    // `const h = g + 1` or `var arr [g]i32` names it, so it is bound there, after the names it uses.
+    auto names_pending = [&](const VarDecl &target, const VarDecl &pending) {
+        if (pending.name.empty() || &target == &pending) {
+            return false;
+        }
+        if (target.array_len_name == pending.name) {
+            return true;
+        }
+        for (const TypeShell &shell : target.shells) {
+            if (shell.length_name == pending.name ||
+                (shell.length_expr != nullptr && expr_mentions_name(*shell.length_expr, pending.name))) {
+                return true;
+            }
+        }
+        return target.init != nullptr && expr_mentions_name(*target.init, pending.name);
+    };
+    auto bind_named = [&](const auto &self, const VarDecl &target) -> void {
+        for (VarDecl *&slot : pending_consts) {
+            if (slot == nullptr || !names_pending(target, *slot)) {
+                continue;
+            }
+            VarDecl *pending = slot;
+            // Cleared first, so a cycle stops here and reports through the initializer.
+            slot = nullptr;
+            self(self, *pending);
+            bind_file_const(*pending);
+        }
+    };
     auto bind_ready = [&]() {
         bool progress = true;
         while (progress) {
@@ -777,6 +806,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 continue;
             }
             bind_ready();
+            bind_named(bind_named, *var);
             Type alias;
             if (package_typedef(file_id_, var->name, alias) || package_trait(file_id_, var->name) >= 0) {
                 error(var->loc, "redefinition");
@@ -1979,7 +2009,8 @@ void Checker::check_globals(const TranslationUnit &unit) {
                         }
                         const auto *call = std::get_if<Expr::Call>(&cursor->data);
                         const bool folded = fold_int(*var->init).has_value() ||
-                                            (call != nullptr && (call->comptime_struct != nullptr || call->comptime_text));
+                                            (call != nullptr && (call->comptime_struct != nullptr || call->comptime_text ||
+                                                                 call->comptime_failed));
                         if (!folded) {
                             error(var->loc, "global initializer is not a constant");
                         }

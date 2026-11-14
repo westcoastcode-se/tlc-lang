@@ -1,0 +1,4 @@
+compile-error: division by zero
+stderr:
+main.tlc:4:15: error: division by zero
+main.tlc:4:15: f

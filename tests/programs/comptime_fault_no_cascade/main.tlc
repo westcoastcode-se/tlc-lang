@@ -1,0 +1,11 @@
+// A failed comptime call in a file-scope `const` reports the fault only. It is not also
+// `global initializer is not a constant`.
+comptime func f(n i32) i32 {
+    return 10 / n;
+}
+
+const k = f(0);
+
+func main() i32 {
+    return 1;
+}

@@ -1160,11 +1160,8 @@ class CodeGen {
         if (slot.depth > 0 && !holds_pointer(rhs) && !rhs.value->getType()->isPointerTy()) {
             return null_ptr();
         }
-        if (llvm::Type *slot_type = slot_int_type(slot); slot_type != nullptr && rhs.value->getType()->isIntegerTy()) {
-            return resize_int(rhs.value, slot_type, rhs.elem_unsigned);
-        }
-        // `{.y = 2.5}` for an `i32` field stores 2, as `i32(2.5)` does. Storing the `double` itself wrote
-        // eight bytes into a four-byte slot. A `bool` slot is true for any value but 0.
+        // The value is stored at the slot's width. A wider value written as it is overwrote the next bytes,
+        // `x = x + 1i64` into an `i32` and `{.y = 2.5}` into an `i32` field.
         llvm::Type *slot_type = slot_int_type(slot);
         if (slot_type == nullptr && slot.value != nullptr && slot.depth == 0 && slot.struct_id < 0) {
             // A plain `i32` local carries no width. The slot's own memory type says it.
@@ -1186,6 +1183,10 @@ class CodeGen {
                 slot_type = i32();
             }
         }
+        if (slot_type != nullptr && rhs.value->getType()->isIntegerTy()) {
+            return resize_int(rhs.value, slot_type, rhs.elem_unsigned);
+        }
+        // `{.y = 2.5}` stores 2, as `i32(2.5)` does. A `bool` slot is true for any value but 0.
         if (slot_type != nullptr && rhs.value->getType()->isFloatingPointTy()) {
             if (slot.elem_bool) {
                 llvm::Value *truth = builder_.CreateFCmpUNE(rhs.value, llvm::ConstantFP::get(rhs.value->getType(), 0.0));
