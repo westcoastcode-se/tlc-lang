@@ -1,3 +1,7 @@
+#include <algorithm>
+#include <random>
+#include <map>
+#include "check/open_map.hpp"
 #include "driver/driver.hpp"
 #include "harness.hpp"
 #include "lex/lexer.hpp"
@@ -193,6 +197,87 @@ std::string diagnose_files(const std::vector<std::pair<std::string, std::string>
 
 int run_sema_tests() {
     tlc::test::Check check;
+
+    {
+        // `OpenMap` keeps what a plain map would, through sets, erases, copies, and joins.
+        // A join keeps a leaf set only where both sides set it, and drops a local both sides set fully.
+        using Bits = std::vector<uint8_t>;
+        std::mt19937 rng(7);
+        std::vector<tlc::OpenMap> maps(4);
+        std::vector<std::map<int, Bits>> want(4);
+        const auto same = [&](std::size_t k) {
+            for (int id = 0; id < 300; ++id) {
+                const Bits *got = maps[k].get(id);
+                const auto it = want[k].find(id);
+                if ((got == nullptr) != (it == want[k].end()) || (got != nullptr && *got != it->second)) {
+                    return false;
+                }
+            }
+            return true;
+        };
+        for (int step = 0; step < 4000; ++step) {
+            const std::size_t k = rng() % 4;
+            const int id = static_cast<int>(rng() % 300);
+            switch (rng() % 4) {
+            case 0: {
+                Bits bits(1 + rng() % 4);
+                for (uint8_t &bit : bits) {
+                    bit = static_cast<uint8_t>(rng() % 2);
+                }
+                // A fully set local is erased, never stored. The join relies on that.
+                bits[rng() % bits.size()] = 0;
+                maps[k].set(id, bits);
+                want[k][id] = bits;
+                break;
+            }
+            case 1:
+                maps[k].erase(id);
+                want[k].erase(id);
+                break;
+            case 2: {
+                const std::size_t from = rng() % 4;
+                maps[k] = maps[from];
+                want[k] = want[from];
+                break;
+            }
+            default: {
+                const std::size_t other = rng() % 4;
+                std::map<int, Bits> joined;
+                for (const auto &[key, left] : want[k]) {
+                    const auto right = want[other].find(key);
+                    if (right == want[other].end()) {
+                        joined[key] = left;
+                        continue;
+                    }
+                    const std::size_t width = std::max(left.size(), right->second.size());
+                    Bits bits(width, 0);
+                    bool all = width > 0;
+                    for (std::size_t i = 0; i < width; ++i) {
+                        bits[i] = (i < left.size() ? left[i] : 0) & (i < right->second.size() ? right->second[i] : 0);
+                        all = all && bits[i] != 0;
+                    }
+                    if (!all) {
+                        joined[key] = bits;
+                    }
+                }
+                for (const auto &[key, right] : want[other]) {
+                    if (!want[k].contains(key)) {
+                        joined[key] = right;
+                    }
+                }
+                maps[k] = tlc::OpenMap::merge(maps[k], maps[other]);
+                want[k] = std::move(joined);
+                break;
+            }
+            }
+            EXPECT(check, same(k));
+            if (!same(k)) {
+                break;
+            }
+        }
+        maps[0].set(2147483647, Bits{0});
+        EXPECT(check, maps[0].contains(2147483647));
+    }
 
     {
         const std::string errors = diagnose(

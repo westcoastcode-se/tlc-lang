@@ -1,3 +1,4 @@
+#include <chrono>
 #include <algorithm>
 #include "driver/driver.hpp"
 #include "harness.hpp"
@@ -279,6 +280,26 @@ int run_cli_tests() {
                "extern(abi=\"c\") func from_so() i32;\n"
                "func main() i32 { return from_a() + from_so(); }\n");
     write_file("pick.tlc", "extern(abi=\"c\") func pick() i32;\nfunc main() i32 { return pick(); }\n");
+    // Many locals that are set in branches stay linear to check. Each `if` copied every open local
+    // and walked every symbol, and 5000 of them took about 28 seconds.
+    {
+        std::string body = "func main() i32 {\n    var c = 1;\n    var s = 0;\n";
+        for (int n = 0; n < 5000; ++n) {
+            body += "    var a" + std::to_string(n) + " i32;\n";
+        }
+        for (int n = 0; n < 5000; ++n) {
+            const std::string name = "a" + std::to_string(n);
+            body += "    if (c > " + std::to_string(n) + ") { " + name + " = 1; } else { " + name + " = 2; }\n";
+            body += "    while (c > " + std::to_string(n) + ") { s += " + name + "; break; }\n";
+        }
+        body += "    return s;\n}\n";
+        write_file("many_locals.tlc", body);
+        const auto start = std::chrono::steady_clock::now();
+        const tlc::test::Proc many = tlc::test::spawn({bin, "--check", (dir.path / "many_locals.tlc").string()});
+        const auto took = std::chrono::steady_clock::now() - start;
+        EXPECT(check, many.code == 0);
+        EXPECT(check, took < std::chrono::seconds(10));
+    }
     // The command line lists 100 diagnostics. A 101st is replaced by `too many errors`.
     {
         std::string exact = "func main() i32 {\n    return 0;\n}\n";

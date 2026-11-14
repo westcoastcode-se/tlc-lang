@@ -28,6 +28,8 @@ void Checker::push_function() {
 
 void Checker::pop() {
     if (!scopes_.empty()) {
+        const std::size_t popped = scopes_.size() - 1;
+        std::erase_if(held_names_, [&](const auto &entry) { return entry.first >= popped; });
         for (const auto &[name, symbol] : scopes_.back().symbols) {
             (void)name;
             if (symbol.is_local_function) {
@@ -996,6 +998,7 @@ bool Checker::declare(Symbol symbol, SourceLoc loc) {
         error(loc, "redefinition");
         return false;
     }
+    note_held_name(symbol);
     table.emplace(symbol.name, std::move(symbol));
     return true;
 }
@@ -1005,8 +1008,15 @@ bool Checker::shadow(Symbol symbol, SourceLoc loc) {
         return false;
     }
     (void)loc;
+    note_held_name(symbol);
     scopes_.back().symbols.insert_or_assign(symbol.name, std::move(symbol));
     return true;
+}
+
+void Checker::note_held_name(const Symbol &symbol) {
+    if ((symbol.held_comptime || symbol.pending_fold) && !scopes_.empty()) {
+        held_names_.emplace_back(scopes_.size() - 1, symbol.name);
+    }
 }
 
 Type Checker::type_of_name(const std::string &name, SourceLoc loc, bool allow_incomplete) {

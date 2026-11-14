@@ -1,4 +1,5 @@
 // Compile-time folding of constants.
+#include <set>
 #include "check/check.hpp"
 #include "check/check_util.hpp"
 
@@ -5065,14 +5066,7 @@ void Checker::release_assigned(const Stmt *stmt, const std::string &hide_name) {
     if (stmt == nullptr) {
         return;
     }
-    std::vector<std::pair<std::size_t, std::string>> names;
-    for (std::size_t scope = 0; scope < scopes_.size(); ++scope) {
-        for (const auto &item : scopes_[scope].symbols) {
-            if (item.second.held_comptime || item.second.pending_fold) {
-                names.emplace_back(scope, item.first);
-            }
-        }
-    }
+    const std::vector<std::pair<std::size_t, std::string>> names = held_candidates();
     for (const auto &item : names) {
         if (!hide_name.empty() && item.second == hide_name) {
             continue;
@@ -5103,14 +5097,7 @@ void Checker::release_assigned_expr(const Expr *expr) {
     if (expr == nullptr) {
         return;
     }
-    std::vector<std::pair<std::size_t, std::string>> names;
-    for (std::size_t scope = 0; scope < scopes_.size(); ++scope) {
-        for (const auto &item : scopes_[scope].symbols) {
-            if (item.second.held_comptime || item.second.pending_fold) {
-                names.emplace_back(scope, item.first);
-            }
-        }
-    }
+    const std::vector<std::pair<std::size_t, std::string>> names = held_candidates();
     for (const auto &item : names) {
         if (!expr_assigns(*expr, item.second, false)) {
             continue;
@@ -5183,13 +5170,31 @@ bool Checker::global_assigned(const TranslationUnit &unit, const std::string &na
     return false;
 }
 
+std::vector<std::pair<std::size_t, std::string>> Checker::held_candidates() const {
+    // Each symbol that is held or pending now, once, from `held_names_`. Walking every symbol in every
+    // scope made each `if` and each loop linear in the locals.
+    std::vector<std::pair<std::size_t, std::string>> out;
+    std::set<std::pair<std::size_t, std::string>> seen;
+    for (const auto &[scope, name] : held_names_) {
+        if (scope >= scopes_.size() || !seen.emplace(scope, name).second) {
+            continue;
+        }
+        const auto found = scopes_[scope].symbols.find(name);
+        if (found == scopes_[scope].symbols.end() ||
+            (!found->second.held_comptime && !found->second.pending_fold)) {
+            continue;
+        }
+        out.emplace_back(scope, name);
+    }
+    return out;
+}
+
 std::vector<Checker::HeldSlot> Checker::held_snapshot() const {
     std::vector<HeldSlot> out;
-    for (std::size_t scope = 0; scope < scopes_.size(); ++scope) {
-        for (const auto &item : scopes_[scope].symbols) {
-            if (!item.second.held_comptime && !item.second.pending_fold) {
-                continue;
-            }
+    for (const auto &[scope, name] : held_candidates()) {
+        const auto found = scopes_[scope].symbols.find(name);
+        {
+            const auto &item = *found;
             HeldSlot slot;
             slot.scope = scope;
             slot.name = item.first;

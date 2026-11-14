@@ -750,6 +750,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             push();
             if (const auto found = statics_.find(owner); found != statics_.end()) {
                 for (const auto &[static_name, symbol] : found->second) {
+                    note_held_name(symbol);
                     scopes_.back().symbols.emplace(static_name, symbol);
                 }
             }
@@ -853,6 +854,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         push();
         if (const auto found = statics_.find(owner); found != statics_.end()) {
             for (const auto &[name, symbol] : found->second) {
+                note_held_name(symbol);
                 scopes_.back().symbols.emplace(name, symbol);
             }
         }

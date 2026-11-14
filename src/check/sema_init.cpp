@@ -105,7 +105,7 @@ void Checker::init_open(Symbol &symbol) {
     }
     symbol.init_id = ++init_seq_;
     init_leaves_[symbol.init_id] = leaves;
-    assign_.open[symbol.init_id] = std::vector<uint8_t>(static_cast<std::size_t>(leaves), 0);
+    assign_.open.set(symbol.init_id, std::vector<uint8_t>(static_cast<std::size_t>(leaves), 0));
     init_note_local(symbol.init_id, leaves);
 }
 
@@ -121,11 +121,11 @@ void Checker::init_mark_span(int id, int offset, int count) {
     if (id == 0 || count <= 0 || assign_.unreachable || quiet_ || init_quiet_) {
         return;
     }
-    const auto found = assign_.open.find(id);
-    if (found == assign_.open.end()) {
+    const std::vector<uint8_t> *found = assign_.open.get(id);
+    if (found == nullptr) {
         return;
     }
-    std::vector<uint8_t> &bits = found->second;
+    std::vector<uint8_t> bits = *found;
     if (offset < 0 || offset > static_cast<int>(bits.size())) {
         return;
     }
@@ -134,7 +134,9 @@ void Checker::init_mark_span(int id, int offset, int count) {
         bits[static_cast<std::size_t>(i)] = 1;
     }
     if (bits_full(bits)) {
-        assign_.open.erase(found);
+        assign_.open.erase(id);
+    } else {
+        assign_.open.set(id, std::move(bits));
     }
 }
 
@@ -154,11 +156,11 @@ void Checker::init_require_span(int id, int offset, int count, SourceLoc loc) {
     if (id == 0 || count <= 0 || assign_.unreachable || quiet_ || init_quiet_) {
         return;
     }
-    const auto found = assign_.open.find(id);
-    if (found == assign_.open.end()) {
+    const std::vector<uint8_t> *found = assign_.open.get(id);
+    if (found == nullptr) {
         return;
     }
-    const std::vector<uint8_t> &bits = found->second;
+    const std::vector<uint8_t> &bits = *found;
     if (offset < 0 || offset >= static_cast<int>(bits.size())) {
         error(loc, "uninitialized");
         return;
@@ -477,9 +479,8 @@ void Checker::init_replace(const Expr &lhs, const Expr &rhs) {
     }
     const int count = init_leaf_count(focused);
     std::vector<uint8_t> bits(static_cast<std::size_t>(total->second), 1);
-    const auto open = assign_.open.find(id);
-    if (open != assign_.open.end()) {
-        bits = open->second;
+    if (const std::vector<uint8_t> *open = assign_.open.get(id)) {
+        bits = *open;
     }
     std::vector<uint8_t> cover(static_cast<std::size_t>(std::max(count, 0)), 0);
     init_fill(focused, &rhs, cover, 0);
@@ -492,7 +493,7 @@ void Checker::init_replace(const Expr &lhs, const Expr &rhs) {
     if (bits_full(bits)) {
         assign_.open.erase(id);
     } else {
-        assign_.open[id] = std::move(bits);
+        assign_.open.set(id, std::move(bits));
     }
 }
 
@@ -593,38 +594,7 @@ Checker::AssignState Checker::init_merge(const AssignState &lhs, const AssignSta
         return lhs;
     }
     AssignState out;
-    auto consider = [&](int id, const std::vector<uint8_t> *left, const std::vector<uint8_t> *right) {
-        if (left == nullptr) {
-            out.open[id] = *right;
-            return;
-        }
-        if (right == nullptr) {
-            out.open[id] = *left;
-            return;
-        }
-        const std::size_t width = std::max(left->size(), right->size());
-        std::vector<uint8_t> bits(width, 0);
-        bool all = width > 0;
-        for (std::size_t i = 0; i < width; ++i) {
-            const uint8_t bit = (i < left->size() ? (*left)[i] : 0) & (i < right->size() ? (*right)[i] : 0);
-            bits[i] = bit;
-            if (bit == 0) {
-                all = false;
-            }
-        }
-        if (!all) {
-            out.open[id] = std::move(bits);
-        }
-    };
-    for (const auto &[id, bits] : lhs.open) {
-        const auto other = rhs.open.find(id);
-        consider(id, &bits, other == rhs.open.end() ? nullptr : &other->second);
-    }
-    for (const auto &[id, bits] : rhs.open) {
-        if (!lhs.open.contains(id)) {
-            consider(id, nullptr, &bits);
-        }
-    }
+    out.open = OpenMap::merge(lhs.open, rhs.open);
     return out;
 }
 
@@ -907,7 +877,7 @@ void Checker::init_cover(Symbol &symbol, const Expr *init) {
         assign_.open.erase(symbol.init_id);
         return;
     }
-    assign_.open[symbol.init_id] = std::move(bits);
+    assign_.open.set(symbol.init_id, std::move(bits));
 }
 
 void Checker::init_track_pointee(Symbol &symbol, const Type &object, const Expr *init, bool fresh) {
@@ -920,13 +890,13 @@ void Checker::init_track_pointee(Symbol &symbol, const Type &object, const Expr 
     init_leaves_[id] = leaves;
     init_note_local(id, leaves);
     if (fresh) {
-        assign_.open[id] = std::vector<uint8_t>(static_cast<std::size_t>(leaves), 0);
+        assign_.open.set(id, std::vector<uint8_t>(static_cast<std::size_t>(leaves), 0));
         return;
     }
     std::vector<uint8_t> bits(static_cast<std::size_t>(leaves), 0);
     init_fill(object, init, bits, 0);
     if (!bits_full(bits)) {
-        assign_.open[id] = std::move(bits);
+        assign_.open.set(id, std::move(bits));
     }
 }
 
@@ -979,15 +949,14 @@ void Checker::init_address_span(const Expr &expr, bool mark, SourceLoc loc, bool
     const int count = touch.array_addr || touch.read || touch.mark ? touch.count : total;
     if (mark) {
         std::vector<uint8_t> bits(static_cast<std::size_t>(total), 1);
-        const auto found = assign_.open.find(id);
-        if (found != assign_.open.end()) {
-            bits = found->second;
+        if (const std::vector<uint8_t> *found = assign_.open.get(id)) {
+            bits = *found;
         }
         init_set_span(bits, offset, count);
         if (bits_full(bits)) {
             assign_.open.erase(id);
         } else {
-            assign_.open[id] = std::move(bits);
+            assign_.open.set(id, std::move(bits));
         }
         return;
     }

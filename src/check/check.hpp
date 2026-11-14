@@ -2,6 +2,7 @@
 
 // Internal type checker. The public entry points are analyze() in sema.hpp.
 
+#include "check/open_map.hpp"
 #include "check/sema.hpp"
 
 #include <cstdint>
@@ -992,7 +993,8 @@ class Checker {
     // Absent from `open` means every leaf is assigned. A present byte is 1 when that leaf is assigned.
     struct AssignState {
         bool unreachable = false;
-        std::unordered_map<int, std::vector<uint8_t>> open;
+        // Copied for every expression. See `OpenMap` for why that copy is cheap.
+        OpenMap open;
     };
     struct FlowFrame {
         enum class Kind { Loop, Switch };
@@ -1329,6 +1331,11 @@ class Checker {
         const Expr *init = nullptr;
     };
     std::vector<HeldSlot> held_snapshot() const;
+    // Scope and name of each symbol that has been held or pending. `held_snapshot` reads only these, so an
+    // `if` in a function with many locals does not walk every symbol. An entry is checked again when read.
+    std::vector<std::pair<std::size_t, std::string>> held_names_;
+    void note_held_name(const Symbol &symbol);
+    std::vector<std::pair<std::size_t, std::string>> held_candidates() const;
     void held_restore(const std::vector<HeldSlot> &snap);
     // Kept only when both arms still have the value from `before`.
     void held_and(const std::vector<HeldSlot> &before, const std::vector<HeldSlot> &left,

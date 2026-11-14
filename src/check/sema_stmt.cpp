@@ -3162,8 +3162,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                     assign_.unreachable = false;
                     for (const FlowFrame::Local &local : sw->locals) {
-                        assign_.open[local.id] =
-                            std::vector<uint8_t>(static_cast<std::size_t>(local.leaves), 0);
+                        assign_.open.set(local.id, std::vector<uint8_t>(static_cast<std::size_t>(local.leaves), 0));
                     }
                 }
                 check_case_label(node);
@@ -3758,6 +3757,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                                     // `comptime const k = n` waits until the call substitutes `n`.
                                     if (comptime_param_pending(written.init.get())) {
                                         live->pending_fold = true;
+                                        note_held_name(*live);
                                     } else if (mentions_var(*written.init)) {
                                         error(var.loc, "var is not a compile-time constant");
                                     } else if (comptime_array_literal(*written.init)) {
