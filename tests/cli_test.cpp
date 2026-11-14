@@ -278,6 +278,25 @@ int run_cli_tests() {
                "extern(abi=\"c\") func from_so() i32;\n"
                "func main() i32 { return from_a() + from_so(); }\n");
     write_file("pick.tlc", "extern(abi=\"c\") func pick() i32;\nfunc main() i32 { return pick(); }\n");
+    // A failed `comptime const` is still declared. Its uses add no `undeclared identifier`, and a length or
+    // a `comptime if` that names it adds no `not supported yet`. The fault needs the compile-time JIT.
+    write_file("failed_const.tlc",
+               "comptime func f(x i32) i32 { return 1 / x; }\n"
+               "comptime const k = f(0);\n"
+               "func main() i32 {\n"
+               "    comptime const j = f(0);\n"
+               "    var a [j]i32;\n"
+               "    var b = k + j;\n"
+               "    comptime if (k == 1) { return 2; }\n"
+               "    return b;\n"
+               "}\n");
+    {
+        const tlc::test::Proc failed = tlc::test::spawn({bin, "--check", (dir.path / "failed_const.tlc").string()});
+        EXPECT(check, failed.code != 0);
+        EXPECT_HAS(check, failed.err, "division by zero");
+        EXPECT(check, failed.err.find("undeclared identifier") == std::string::npos);
+        EXPECT(check, failed.err.find("not supported yet") == std::string::npos);
+    }
 
     const std::string dir_text = dir.path.string();
     auto cc = [&](const std::vector<std::string> &args) {

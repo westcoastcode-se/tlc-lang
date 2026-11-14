@@ -166,6 +166,8 @@ bool Checker::narrow_optional(const std::string &name) {
     }
     symbol->type.optional = false;
     symbol->narrowed = true;
+    symbol->narrow_loop = loop_depth_;
+    symbol->narrow_defers = defers_checked_;
     return true;
 }
 
@@ -2939,8 +2941,11 @@ void Checker::check_stmt(const Stmt &stmt) {
                 } restore{macro_depth_, saved_macro};
                 AssignState on_true = assign_;
                 AssignState on_false = assign_;
+                bool cond_invalid = false;
                 if (node.cond) {
-                    expect_condition(check_expr(*node.cond, true), expr_loc(*node.cond));
+                    const Type cond = check_expr(*node.cond, true);
+                    cond_invalid = cond.kind == TypeKind::Invalid;
+                    expect_condition(cond, expr_loc(*node.cond));
                     on_true = cond_true_;
                     on_false = cond_false_;
                 }
@@ -2952,8 +2957,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     if (!folded) {
                         // A `comptime` parameter is comptime. This copy still receives it, so both arms stay.
                         // A parameter of a `comptime func` is not a constant until the call substitutes it.
+                        // An invalid condition already reported its error.
                         if ((node.cond == nullptr || !comptime_value(*node.cond)) &&
-                            !comptime_param_pending(node.cond.get())) {
+                            !comptime_param_pending(node.cond.get()) && !cond_invalid) {
                             error(node.loc, "not supported yet");
                         }
                     } else {
@@ -3249,16 +3255,18 @@ void Checker::check_stmt(const Stmt &stmt) {
                 if (node.body) {
                     check_stmt(*node.body);
                 }
-                if (narrowed) {
-                    restore_optional(guard->name);
-                }
                 AssignState step_state = assign_;
                 for (const AssignState &continued : flow_frames_.back().continues) {
                     step_state = init_merge(step_state, continued);
                 }
                 assign_ = step_state;
+                // The step runs only after the condition held, so `p = p.next` sees `p` narrowed.
+                // A store in the body that ended the narrowing has already made `p` a `?*T` again.
                 if (node.step) {
                     check_expr(*node.step, false);
+                }
+                if (narrowed) {
+                    restore_optional(guard->name);
                 }
                 const FlowFrame done = std::move(flow_frames_.back());
                 flow_frames_.pop_back();
@@ -3285,6 +3293,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     check_local_function(*node.decl);
                 }
             } else if constexpr (std::is_same_v<T, Stmt::Defer>) {
+                ++defers_checked_;
                 const Expr *call = node.call.get();
                 int extra = 0;
                 while (call != nullptr) {
@@ -3396,6 +3405,23 @@ void Checker::check_stmt(const Stmt &stmt) {
                     rhs = check_expr(*node.value, true);
                 }
                 if (rhs.kind == TypeKind::Invalid) {
+                    // The initializer already reported its error. Each name is still declared, with the
+                    // invalid type, so a later use does not add `undeclared identifier`.
+                    for (std::size_t index = 0; index < node.names.size(); ++index) {
+                        if (node.names[index] == "_" || scopes_.empty() ||
+                            scopes_.back().symbols.contains(node.names[index])) {
+                            continue;
+                        }
+                        Symbol symbol;
+                        symbol.name = node.names[index];
+                        symbol.type = type_invalid();
+                        symbol.is_var = node.is_var && !node.is_const;
+                        symbol.is_immutable = node.is_const;
+                        symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
+                        const SourceLoc loc = index < node.name_locs.size() ? node.name_locs[index] : node.loc;
+                        symbol.loc = loc;
+                        declare(std::move(symbol), loc);
+                    }
                     return;
                 }
                 // `var _ = close(fd)` evaluates the call and does not declare `_`.

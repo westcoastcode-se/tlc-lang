@@ -946,7 +946,8 @@ void Checker::define_constant(const VarDecl &var, Type type, int folded) {
     symbol.type = std::move(type);
     symbol.is_constant = true;
     symbol.const_value = folded;
-    symbol.const_init = var.init.get();
+    // An invalid constant is not folded again. Its initializer would repeat the error.
+    symbol.const_init = symbol.type.kind == TypeKind::Invalid ? nullptr : var.init.get();
     symbol.package_file = file_id_;
     Symbol exported = symbol;
     bool defined = false;
@@ -1370,9 +1371,8 @@ void Checker::bind_file_const(VarDecl &written) {
         define_constant(written, type_int(), written.const_value);
         return;
     }
-    if (got.kind == TypeKind::Invalid) {
-        return;
-    }
+    // A failed initializer already reported its error. The name is still declared, with the invalid type,
+    // so a later use does not add `undeclared identifier`.
     define_constant(written, std::move(got), 0);
 }
 

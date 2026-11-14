@@ -114,6 +114,52 @@ std::optional<int> eval_int_op(TokenKind op, int lhs, int rhs) {
     }
 }
 
+// Two non-negative operands give the same answer signed or unsigned, at any width, while the exact
+// result fits in `i32`. A cast such as `i64(2.5)` folds only through the `i32` fold, so it takes this path.
+std::optional<int32_t> exact_nonnegative_op(TokenKind op, int32_t lhs, int32_t rhs) {
+    if (lhs < 0 || rhs < 0) {
+        return std::nullopt;
+    }
+    const int64_t a = lhs;
+    const int64_t b = rhs;
+    int64_t result = 0;
+    switch (op) {
+    case TokenKind::Plus: result = a + b; break;
+    case TokenKind::Minus: result = a - b; break;
+    case TokenKind::Star: result = a * b; break;
+    case TokenKind::Slash:
+        if (b == 0) return std::nullopt;
+        result = a / b;
+        break;
+    case TokenKind::Percent:
+        if (b == 0) return std::nullopt;
+        result = a % b;
+        break;
+    case TokenKind::Amp: result = a & b; break;
+    case TokenKind::Pipe: result = a | b; break;
+    case TokenKind::Caret: result = a ^ b; break;
+    case TokenKind::LtLt:
+        if (b >= 31) return std::nullopt;
+        result = a << b;
+        break;
+    case TokenKind::GtGt:
+        if (b >= 32) return std::nullopt;
+        result = a >> b;
+        break;
+    case TokenKind::EqEq: return a == b ? 1 : 0;
+    case TokenKind::BangEq: return a != b ? 1 : 0;
+    case TokenKind::Lt: return a < b ? 1 : 0;
+    case TokenKind::Gt: return a > b ? 1 : 0;
+    case TokenKind::Le: return a <= b ? 1 : 0;
+    case TokenKind::Ge: return a >= b ? 1 : 0;
+    default: return std::nullopt;
+    }
+    if (result < 0 || result > 2147483647LL) {
+        return std::nullopt;
+    }
+    return static_cast<int32_t>(result);
+}
+
 bool is_float_logic(TokenKind op) {
     switch (op) {
     case TokenKind::EqEq:
@@ -537,7 +583,7 @@ std::optional<Checker::FoldedNumber> Checker::fold_number(const Expr &expr, std:
                 const std::optional<int> left_int = fold_int(*node.lhs);
                 const std::optional<int> right_int = fold_int(*node.rhs);
                 if (left_int && right_int) {
-                    const std::optional<int> value = eval_int_op(node.op, *left_int, *right_int);
+                    const std::optional<int> value = fold_int_binary(expr, node.op, *left_int, *right_int);
                     if (!value) {
                         return std::nullopt;
                     }
@@ -658,7 +704,7 @@ std::optional<int> Checker::fold_runtime_const(const Expr &expr, int depth) {
                 if (!lhs || !rhs) {
                     return std::nullopt;
                 }
-                return eval_int_op(item.op, *lhs, *rhs);
+                return fold_int_binary(expr, item.op, *lhs, *rhs);
             } else {
                 return std::nullopt;
             }
@@ -734,7 +780,8 @@ std::optional<int> Checker::fold_condition(const Expr &expr) {
                         }
                         if (kept != nullptr) {
                             const auto as_kept = [&](const WideInt &from) -> uint64_t {
-                                if (kept->bits == 64 && !kept->is_unsigned && from.bits <= 32 && !from.is_unsigned) {
+                                // `3u64 + -1` is 2. A signed `i32` sign-extends into `u64` as into `i64`.
+                                if (kept->bits == 64 && from.bits <= 32 && !from.is_unsigned) {
                                     return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(from.value)));
                                 }
                                 return from.value & (kept->bits >= 64 ? ~uint64_t{0}
@@ -1129,7 +1176,7 @@ std::optional<int> Checker::constant_index(const Expr &expr) {
                     if (!lhs || !rhs) {
                         return std::nullopt;
                     }
-                    return eval_int_op(item.op, *lhs, *rhs);
+                    return fold_int_binary(node, item.op, *lhs, *rhs);
                 } else {
                     return std::nullopt;
                 }
@@ -1220,6 +1267,12 @@ std::optional<Checker::WideInt> Checker::fold_wide_int(const Expr &expr) {
                     case TokenKind::Caret:
                     case TokenKind::LtLt:
                     case TokenKind::GtGt:
+                    case TokenKind::EqEq:
+                    case TokenKind::BangEq:
+                    case TokenKind::Lt:
+                    case TokenKind::Gt:
+                    case TokenKind::Le:
+                    case TokenKind::Ge:
                         break;
                     default:
                         return std::nullopt;
@@ -1227,6 +1280,15 @@ std::optional<Checker::WideInt> Checker::fold_wide_int(const Expr &expr) {
                     const auto piece = [&](const Expr &side) -> std::optional<WideInt> {
                         if (const std::optional<WideInt> wide = self(self, side, depth + 1, seen)) {
                             return wide;
+                        }
+                        // Past the depth the side starts a new walk. Below it a wide side that failed
+                        // would only fail again in `fold_int`, and each level would double the work.
+                        if (depth + 1 > 32) {
+                            if (wide_operand(side)) {
+                                return fold_wide_int(side);
+                            }
+                        } else if (wide_operand(side)) {
+                            return std::nullopt;
                         }
                         if (const std::optional<int> narrow = fold_int(side)) {
                             WideInt wide;
@@ -1254,7 +1316,8 @@ std::optional<Checker::WideInt> Checker::fold_wide_int(const Expr &expr) {
                         return std::nullopt;
                     }
                     const auto as_kept = [&](const WideInt &from) -> uint64_t {
-                        if (kept->bits == 64 && !kept->is_unsigned && from.bits <= 32 && !from.is_unsigned) {
+                        // `3u64 + -1` is 2. A signed `i32` sign-extends into `u64` as into `i64`.
+                        if (kept->bits == 64 && from.bits <= 32 && !from.is_unsigned) {
                             return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(from.value)));
                         }
                         return from.value & wide_mask(kept->bits);
@@ -1264,6 +1327,27 @@ std::optional<Checker::WideInt> Checker::fold_wide_int(const Expr &expr) {
                     const uint64_t mask = wide_mask(kept->bits);
                     const bool signed64 = kept->bits == 64 && !kept->is_unsigned;
                     WideInt wide = *kept;
+                    // `1u32 < -1` compares as `u32`. The result is an `i32` 0 or 1.
+                    const auto as_signed = [&](uint64_t v) -> int64_t {
+                        const uint64_t sign = uint64_t{1} << static_cast<unsigned>(kept->bits - 1);
+                        return (v & sign) != 0 ? static_cast<int64_t>(v | ~mask) : static_cast<int64_t>(v);
+                    };
+                    const auto compare = [&](bool truth) {
+                        WideInt flag;
+                        flag.value = truth ? 1u : 0u;
+                        flag.bits = 32;
+                        flag.is_unsigned = false;
+                        return flag;
+                    };
+                    switch (item.op) {
+                    case TokenKind::EqEq: return compare(a == b);
+                    case TokenKind::BangEq: return compare(a != b);
+                    case TokenKind::Lt: return compare(kept->is_unsigned ? a < b : as_signed(a) < as_signed(b));
+                    case TokenKind::Gt: return compare(kept->is_unsigned ? a > b : as_signed(a) > as_signed(b));
+                    case TokenKind::Le: return compare(kept->is_unsigned ? a <= b : as_signed(a) <= as_signed(b));
+                    case TokenKind::Ge: return compare(kept->is_unsigned ? a >= b : as_signed(a) >= as_signed(b));
+                    default: break;
+                    }
                     switch (item.op) {
                     case TokenKind::Plus: wide.value = (a + b) & mask; break;
                     case TokenKind::Minus: wide.value = (a - b) & mask; break;
@@ -1455,6 +1539,88 @@ bool Checker::rewrite_wide_int(std::unique_ptr<Expr> &expr, bool signed_form) {
     }
     expr = literal(wide->value);
     return true;
+}
+
+bool Checker::wide_operand(const Expr &expr, int depth) {
+    // A `u32` or 64-bit operand. `i8`, `u8`, `i16`, and `u16` promote to `i32` and stay in the `i32` fold.
+    if (depth > 64) {
+        return false;
+    }
+    const auto wide_type = [](const Type &type) {
+        const int bits = width_of(type);
+        return type.kind == TypeKind::Int && (bits == 64 || (bits == 32 && type.is_unsigned));
+    };
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Int>) {
+                if (node.suffix.bits == 0) {
+                    return node.value > 2147483647ULL;
+                }
+                return node.suffix.bits == 64 || (node.suffix.bits == 32 && node.suffix.is_unsigned);
+            } else if constexpr (std::is_same_v<T, Expr::Name>) {
+                const Symbol *symbol = lookup(node.text);
+                return symbol != nullptr && !symbol->is_type && wide_type(symbol->type);
+            } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                return !node.postfix && node.expr != nullptr && node.op != TokenKind::Bang &&
+                       node.op != TokenKind::Star && node.op != TokenKind::Amp && wide_operand(*node.expr, depth + 1);
+            } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                Type named;
+                return node.indirections == 0 && !node.is_struct && !node.is_enum && node.type_package.empty() &&
+                       fill_builtin(node.type_name, named) && wide_type(named);
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                switch (node.op) {
+                case TokenKind::Question:
+                    return (node.mid != nullptr && wide_operand(*node.mid, depth + 1)) ||
+                           (node.rhs != nullptr && wide_operand(*node.rhs, depth + 1));
+                case TokenKind::Plus:
+                case TokenKind::Minus:
+                case TokenKind::Star:
+                case TokenKind::Slash:
+                case TokenKind::Percent:
+                case TokenKind::Amp:
+                case TokenKind::Pipe:
+                case TokenKind::Caret:
+                case TokenKind::LtLt:
+                case TokenKind::GtGt:
+                    return (node.lhs != nullptr && wide_operand(*node.lhs, depth + 1)) ||
+                           (node.rhs != nullptr && wide_operand(*node.rhs, depth + 1));
+                default:
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        },
+        expr.data);
+}
+
+std::optional<int> Checker::fold_int_binary(const Expr &expr, TokenKind op, int lhs, int rhs) {
+    // `eval_int_op` is signed `i32`. `(0u32 - 1u32) >> 28u32` is 15 and `1u32 < -1` is true, so a
+    // `u32` or 64-bit side folds at its own width. The result is the `i32` bits, as `fold_int` keeps a `u32`.
+    const auto *binary = std::get_if<Expr::Binary>(&expr.data);
+    if (binary == nullptr || op == TokenKind::AmpAmp || op == TokenKind::PipePipe || binary->lhs == nullptr ||
+        binary->rhs == nullptr || (!wide_operand(*binary->lhs) && !wide_operand(*binary->rhs))) {
+        return eval_int_op(op, lhs, rhs);
+    }
+    const std::optional<WideInt> wide = fold_wide_int(expr);
+    if (!wide) {
+        return exact_nonnegative_op(op, lhs, rhs);
+    }
+    if (wide->bits <= 32) {
+        return static_cast<int>(static_cast<uint32_t>(wide->value));
+    }
+    if (wide->is_unsigned) {
+        if (wide->value > 2147483647ULL) {
+            return std::nullopt;
+        }
+        return static_cast<int>(wide->value);
+    }
+    const int64_t value = static_cast<int64_t>(wide->value);
+    if (value < -2147483647LL - 1 || value > 2147483647LL) {
+        return std::nullopt;
+    }
+    return static_cast<int>(value);
 }
 
 std::optional<int> Checker::fold_int(const Expr &expr) {
@@ -1747,7 +1913,7 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                 const std::optional<int> lhs = fold_int(*node.lhs);
                 const std::optional<int> rhs = fold_int(*node.rhs);
                 if (lhs && rhs) {
-                    return eval_int_op(node.op, *lhs, *rhs);
+                    return fold_int_binary(expr, node.op, *lhs, *rhs);
                 }
                 if (!is_float_logic(node.op)) {
                     return std::nullopt;

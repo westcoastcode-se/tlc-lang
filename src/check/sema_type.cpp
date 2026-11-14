@@ -3260,11 +3260,16 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
     if (array_len <= 0) {
         bool waiting = false;
         bool ordinary = false;
+        bool failed = false;
         for (const TypeShell &shell : shells) {
             if (shell.kind != TypeShell::Kind::Array || shell.length_name.empty()) {
                 continue;
             }
-            if (length_waits(shell.length_name)) {
+            if (const Symbol *named = lookup(shell.length_name);
+                named != nullptr && named->type.kind == TypeKind::Invalid) {
+                // `comptime const n = f(0)` already reported why it has no value.
+                failed = true;
+            } else if (length_waits(shell.length_name)) {
                 waiting = true;
             } else if (baked_comptime_params() && value_name_waits(shell.length_name)) {
                 // A local and the result `[n]i32` both stand in until the call.
@@ -3283,7 +3288,9 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
             }
             return type_array(std::move(type), 1);
         }
-        error(loc, "not supported yet");
+        if (!failed) {
+            error(loc, "not supported yet");
+        }
         return type_invalid();
     }
     return type_array(std::move(type), array_len);

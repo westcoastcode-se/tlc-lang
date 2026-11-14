@@ -107,6 +107,8 @@ A signed quotient wraps in its width. `(-2147483647 - 1) / -1` is `-2147483648`,
 
 > **Warning:** A mixed comparison converts the signed operand. `1u32 < -1` is true, because `-1` becomes the largest unsigned value.
 
+A constant folds with these same conversions. `const less = 1u32 < -1` is true, `(0u32 - 1u32) >> 28u32` is 15, and `3u64 + -1` is 2, at file scope, in a local `const`, and in `comptime if`.
+
 ## Stores
 
 Assignment is allowed among the integer ranks, `u8`, and `bool`.

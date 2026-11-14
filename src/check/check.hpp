@@ -97,6 +97,11 @@ struct Symbol {
     bool address_taken = false;
     // A null check made this `?*T` a `*T` for the region it guards. `restore_optional` ends it.
     bool narrowed = false;
+    // The loop depth and the count of checked `defer` statements when the narrowing began. A store of a `?*T`
+    // ends the narrowing only at that depth with no `defer` since. A use above it in an inner loop or a
+    // `defer` can run after the store.
+    int narrow_loop = 0;
+    int narrow_defers = 0;
     // Set with `promote_init` when `comptime const folded = name` may copy this initializer.
     // The name is not itself a compiler constant.
     bool promotable = false;
@@ -417,6 +422,8 @@ class Checker {
     // Nested functions do not inherit it.
     int unsafe_depth_ = 0;
     int loop_depth_ = 0;
+    // Each `defer` checked so far. A narrowed name compares it, see `Symbol::narrow_defers`.
+    int defers_checked_ = 0;
     bool checking_defer_ = false;
     std::vector<SwitchFrame> switches_;
     // Functions whose bodies are on the stack, innermost last.
@@ -928,6 +935,9 @@ class Checker {
         bool wide = false;
     };
     std::optional<int> fold_int(const Expr &expr);
+    // `u32` and 64-bit operands fold at their width. The other operands keep `eval_int_op`.
+    bool wide_operand(const Expr &expr, int depth = 0);
+    std::optional<int> fold_int_binary(const Expr &expr, TokenKind op, int lhs, int rhs);
     // `3000000000u32 + 1u32`. The width is the suffix. A value `fold_int` holds is not one.
     struct WideInt {
         uint64_t value = 0;

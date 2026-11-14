@@ -66,6 +66,52 @@ std::optional<int32_t> eval_local_op(TokenKind op, int32_t lhs, int32_t rhs) {
 
 // A float converted to an integer of `bits` drops the fraction. Out of range is not a constant:
 // LLVM makes that conversion poison.
+// Two non-negative operands give the same answer signed or unsigned, at any width, while the exact
+// result fits in `i32`. A cast such as `i64(2.5)` folds only through the `i32` fold, so it takes this path.
+std::optional<int32_t> exact_nonnegative_op(TokenKind op, int32_t lhs, int32_t rhs) {
+    if (lhs < 0 || rhs < 0) {
+        return std::nullopt;
+    }
+    const int64_t a = lhs;
+    const int64_t b = rhs;
+    int64_t result = 0;
+    switch (op) {
+    case TokenKind::Plus: result = a + b; break;
+    case TokenKind::Minus: result = a - b; break;
+    case TokenKind::Star: result = a * b; break;
+    case TokenKind::Slash:
+        if (b == 0) return std::nullopt;
+        result = a / b;
+        break;
+    case TokenKind::Percent:
+        if (b == 0) return std::nullopt;
+        result = a % b;
+        break;
+    case TokenKind::Amp: result = a & b; break;
+    case TokenKind::Pipe: result = a | b; break;
+    case TokenKind::Caret: result = a ^ b; break;
+    case TokenKind::LtLt:
+        if (b >= 31) return std::nullopt;
+        result = a << b;
+        break;
+    case TokenKind::GtGt:
+        if (b >= 32) return std::nullopt;
+        result = a >> b;
+        break;
+    case TokenKind::EqEq: return a == b ? 1 : 0;
+    case TokenKind::BangEq: return a != b ? 1 : 0;
+    case TokenKind::Lt: return a < b ? 1 : 0;
+    case TokenKind::Gt: return a > b ? 1 : 0;
+    case TokenKind::Le: return a <= b ? 1 : 0;
+    case TokenKind::Ge: return a >= b ? 1 : 0;
+    default: return std::nullopt;
+    }
+    if (result < 0 || result > 2147483647LL) {
+        return std::nullopt;
+    }
+    return static_cast<int32_t>(result);
+}
+
 std::optional<double> truncated_float(double value, int bits, bool is_unsigned) {
     if (std::isnan(value)) {
         return std::nullopt;
@@ -725,6 +771,10 @@ std::optional<int32_t> CodeGen::local_folded_i32(const Expr &expr) const {
                     if (!lhs || !rhs) {
                         return std::nullopt;
                     }
+                    if (node.op != TokenKind::AmpAmp && node.op != TokenKind::PipePipe &&
+                        (wide_operand(*node.lhs) || wide_operand(*node.rhs))) {
+                        return wide_as_i32(expr, node.op, *lhs, *rhs);
+                    }
                     return eval_local_op(node.op, *lhs, *rhs);
                 } else {
                     return std::nullopt;
@@ -733,6 +783,90 @@ std::optional<int32_t> CodeGen::local_folded_i32(const Expr &expr) const {
             expr.data);
     }
     return fold(expr);
+}
+
+bool CodeGen::wide_operand(const Expr &expr, int depth) const {
+    // Same test as `Checker::wide_operand`. A `u32` or 64-bit operand is not the signed `i32` fold.
+    if (depth > 64) {
+        return false;
+    }
+    const auto wide_bits = [](int bits, bool is_unsigned) { return bits == 64 || (bits == 32 && is_unsigned); };
+    const auto wide_name = [&](const std::string &type_name) {
+        return type_name == "u32" || type_name == "u64" || type_name == "i64";
+    };
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Int>) {
+                if (node.suffix.bits == 0) {
+                    return node.value > 2147483647ULL;
+                }
+                return wide_bits(node.suffix.bits, node.suffix.is_unsigned);
+            } else if constexpr (std::is_same_v<T, Expr::Name>) {
+                if (local_shadow(node.text)) {
+                    const Binding *binding = lookup(node.text);
+                    return binding != nullptr && binding->depth == 0 && !binding->is_array && !binding->elem_float &&
+                           !binding->elem_bool && wide_bits(binding->elem_bits, binding->elem_unsigned);
+                }
+                if (const std::optional<WideInt> global = fold_global_wide(current_file_, node.text, true)) {
+                    return wide_bits(global->bits, global->is_unsigned);
+                }
+                const VarDecl *written = global_decl(node.text);
+                return written != nullptr && written->indirections == 0 && !written->is_array &&
+                       written->type_package.empty() && wide_name(written->type_name);
+            } else if constexpr (std::is_same_v<T, Expr::Unary>) {
+                return !node.postfix && node.expr != nullptr && node.op != TokenKind::Bang &&
+                       node.op != TokenKind::Star && node.op != TokenKind::Amp && wide_operand(*node.expr, depth + 1);
+            } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                return node.indirections == 0 && !node.is_struct && !node.is_enum && !node.is_fn_ptr &&
+                       node.type_package.empty() && wide_name(node.type_name);
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                switch (node.op) {
+                case TokenKind::Question:
+                    return (node.mid != nullptr && wide_operand(*node.mid, depth + 1)) ||
+                           (node.rhs != nullptr && wide_operand(*node.rhs, depth + 1));
+                case TokenKind::Plus:
+                case TokenKind::Minus:
+                case TokenKind::Star:
+                case TokenKind::Slash:
+                case TokenKind::Percent:
+                case TokenKind::Amp:
+                case TokenKind::Pipe:
+                case TokenKind::Caret:
+                case TokenKind::LtLt:
+                case TokenKind::GtGt:
+                    return (node.lhs != nullptr && wide_operand(*node.lhs, depth + 1)) ||
+                           (node.rhs != nullptr && wide_operand(*node.rhs, depth + 1));
+                default:
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        },
+        expr.data);
+}
+
+std::optional<int32_t> CodeGen::wide_as_i32(const Expr &expr, TokenKind op, int32_t lhs, int32_t rhs) const {
+    // Same result as `Checker::fold_int_binary`. A `u32` keeps its bits. A 64-bit value must fit.
+    const std::optional<WideInt> wide = fold_wide(expr);
+    if (!wide) {
+        return exact_nonnegative_op(op, lhs, rhs);
+    }
+    if (wide->bits <= 32) {
+        return static_cast<int32_t>(static_cast<uint32_t>(wide->value));
+    }
+    if (wide->is_unsigned) {
+        if (wide->value > 2147483647ULL) {
+            return std::nullopt;
+        }
+        return static_cast<int32_t>(wide->value);
+    }
+    const int64_t value = static_cast<int64_t>(wide->value);
+    if (value < -2147483647LL - 1 || value > 2147483647LL) {
+        return std::nullopt;
+    }
+    return static_cast<int32_t>(value);
 }
 
 std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
@@ -900,6 +1034,10 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                     case TokenKind::PipePipe: return (a != 0.0 || b != 0.0) ? 1 : 0;
                     default: return std::nullopt;
                     }
+                }
+                if (node.op != TokenKind::AmpAmp && node.op != TokenKind::PipePipe &&
+                    (wide_operand(*node.lhs) || wide_operand(*node.rhs))) {
+                    return wide_as_i32(expr, node.op, *lhs, *rhs);
                 }
                 const int64_t a = *lhs;
                 const int64_t b = *rhs;
@@ -1196,6 +1334,12 @@ std::optional<CodeGen::WideInt> CodeGen::fold_wide(const Expr &expr) const {
                     case TokenKind::Caret:
                     case TokenKind::LtLt:
                     case TokenKind::GtGt:
+                    case TokenKind::EqEq:
+                    case TokenKind::BangEq:
+                    case TokenKind::Lt:
+                    case TokenKind::Gt:
+                    case TokenKind::Le:
+                    case TokenKind::Ge:
                         break;
                     default:
                         return std::nullopt;
@@ -1203,6 +1347,15 @@ std::optional<CodeGen::WideInt> CodeGen::fold_wide(const Expr &expr) const {
                     const auto piece = [&](const Expr &side) -> std::optional<WideInt> {
                         if (const std::optional<WideInt> wide = self(self, side, depth + 1, seen)) {
                             return wide;
+                        }
+                        // Past the depth the side starts a new walk. Below it a wide side that failed
+                        // would only fail again in `fold`, and each level would double the work.
+                        if (depth + 1 > 32) {
+                            if (wide_operand(side)) {
+                                return fold_wide(side);
+                            }
+                        } else if (wide_operand(side)) {
+                            return std::nullopt;
                         }
                         if (const std::optional<int32_t> narrow = fold(side)) {
                             return WideInt{static_cast<uint32_t>(*narrow), 32, false};
@@ -1225,7 +1378,8 @@ std::optional<CodeGen::WideInt> CodeGen::fold_wide(const Expr &expr) const {
                         return std::nullopt;
                     }
                     const auto as_kept = [&](const WideInt &from) -> uint64_t {
-                        if (kept->bits == 64 && !kept->is_unsigned && from.bits <= 32 && !from.is_unsigned) {
+                        // `3u64 + -1` is 2. A signed `i32` sign-extends into `u64` as into `i64`.
+                        if (kept->bits == 64 && from.bits <= 32 && !from.is_unsigned) {
                             return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(from.value)));
                         }
                         return from.value & wide_mask(kept->bits);
@@ -1235,6 +1389,21 @@ std::optional<CodeGen::WideInt> CodeGen::fold_wide(const Expr &expr) const {
                     const uint64_t mask = wide_mask(kept->bits);
                     const bool signed64 = kept->bits == 64 && !kept->is_unsigned;
                     WideInt wide = *kept;
+                    // `1u32 < -1` compares as `u32`. The result is an `i32` 0 or 1.
+                    const auto as_signed = [&](uint64_t v) -> int64_t {
+                        const uint64_t sign = uint64_t{1} << static_cast<unsigned>(kept->bits - 1);
+                        return (v & sign) != 0 ? static_cast<int64_t>(v | ~mask) : static_cast<int64_t>(v);
+                    };
+                    const auto compare = [](bool truth) { return WideInt{truth ? 1u : 0u, 32, false}; };
+                    switch (item.op) {
+                    case TokenKind::EqEq: return compare(a == b);
+                    case TokenKind::BangEq: return compare(a != b);
+                    case TokenKind::Lt: return compare(kept->is_unsigned ? a < b : as_signed(a) < as_signed(b));
+                    case TokenKind::Gt: return compare(kept->is_unsigned ? a > b : as_signed(a) > as_signed(b));
+                    case TokenKind::Le: return compare(kept->is_unsigned ? a <= b : as_signed(a) <= as_signed(b));
+                    case TokenKind::Ge: return compare(kept->is_unsigned ? a >= b : as_signed(a) >= as_signed(b));
+                    default: break;
+                    }
                     switch (item.op) {
                     case TokenKind::Plus: wide.value = (a + b) & mask; break;
                     case TokenKind::Minus: wide.value = (a - b) & mask; break;

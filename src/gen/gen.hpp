@@ -1631,6 +1631,9 @@ class CodeGen {
     // A field default `{1}` or `{1, 0...}` on `[2]i32`. Missing elements are zero in this constant.
     llvm::Constant *const_default_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags);
     std::optional<int32_t> fold(const Expr &expr) const;
+    // `u32` and 64-bit operands fold at their width. The other operands stay in the `i32` fold.
+    bool wide_operand(const Expr &expr, int depth = 0) const;
+    std::optional<int32_t> wide_as_i32(const Expr &expr, TokenKind op, int32_t lhs, int32_t rhs) const;
     // Mirrors `Checker::WideInt`: a value past the i32 fold, with the width and signedness of its suffix.
     struct WideInt {
         uint64_t value = 0;

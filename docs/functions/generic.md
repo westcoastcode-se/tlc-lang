@@ -504,6 +504,10 @@ The omitted result may be a function pointer.
 
 `id[i32](1)` writes the type.
 
+`id(c)` with `c *const i32` binds `T` to `*const i32`. The specialization keeps that `const`, so `*p = 1` in its body is `type mismatch`. `id[*const i32](c)` and a field `Box[*const i32]` are the same.
+
+A `*T` parameter does not bind a `*const i32` argument, and a `[]T` parameter does not bind `[]const i32`. Both are `type mismatch`, because the body could store through them. `*const T` and `[]const T` bind `T` to `i32` and accept both.
+
 A type that cannot be inferred is reported as `type mismatch`.
 
 A type parameter bound to two different types in one call is reported as `type mismatch`.

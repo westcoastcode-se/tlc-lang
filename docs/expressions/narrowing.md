@@ -22,6 +22,12 @@ A field comparison such as `person.home == null` does not narrow.
 
 A name whose address is taken, `var pp = &p`, does not narrow. A store through `pp` could write `null`. Taking `&p` inside a narrowed region ends the narrowing there. `*p` after it is `type mismatch`, and `*p!` asserts that use.
 
+A store into a narrowed name is checked against the declared `?*T`. `p = p.next` in `while (p != null)` walks a list. After a store of a `?*T` or `null` the name is `?*T` again, so a later `p.field` in that region is `type mismatch`. A store of a `*T` keeps the narrowing.
+
+A `?*T` store inside a loop nested in the region, or after a `defer` in it, is `type mismatch`. A use above the store could run again after it.
+
+The step of `for (; p != null; p = p.next)` runs only after the condition held, and it sees `p` narrowed.
+
 `*p`, `p.field`, and `p[i]` on a `?*T` are reported as `type mismatch` until the name is narrowed.
 
 Passing `?*T` where `*T` is required is reported as `type mismatch` until then.

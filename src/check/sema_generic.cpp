@@ -2165,6 +2165,9 @@ void Checker::prepare_written(std::string &type_name, std::string &type_package,
                    symbol != nullptr && symbol->is_constant && symbol->const_init != nullptr &&
                    folded_wide_negative(*symbol->const_init)) {
             // `-3000000000i64` does not fit in `i32`. `fold_shells` reports the length.
+        } else if (const Symbol *failed = lookup(array_len_name);
+                   failed != nullptr && failed->type.kind == TypeKind::Invalid) {
+            // `comptime const n = f(0)` already reported why it has no value.
         } else if (length_waits(array_len_name)) {
             // A parameter of a `comptime func` is not a length until the call substitutes it.
         } else if (baked_comptime_params() && value_name_waits(array_len_name)) {
@@ -2807,6 +2810,10 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
     is_enum = bound->is_enum;
     indirections = written + bound->indirections;
     optional = written_opt | (bound->optional << written);
+    // `T` bound to `*const i32` keeps that `const`. The bound's stars sit below the written ones.
+    if (const_pointee != nullptr) {
+        *const_pointee = written_const | (bound->const_pointee << written);
+    }
     if (bound->is_array) {
         is_array = true;
         array_len = bound->array_len;

@@ -14,17 +14,14 @@ These were found by review and have a repro. They are not fixed yet.
 
 - `**i32` is stored in `**const i32`. `var pp **const i32 = &p` with `p *i32` lets `*pp = &limit` and then `*p = 42` write a `const`. `docs/types/pointer.md` shows that store as valid, and four generic tests use `**const T` that way. Below the top level `const` may be added only while every level above is const, as `?` already is. This is a change to the language and waits for a decision.
 - A `*this` method is called through `*const Shape`. `func use(s *const Shape) void { s.grow(41); }` is accepted when `Rect::grow` takes `self *this`. A trait method has no receiver in the trait, and the body is checked once, not per struct. The spelling of a const trait method is not decided.
-- `id(c)` with `func id[T type](p T) T` and `c *const i32` is `type mismatch: expected *i32, found *const i32`. `func first[T type](s []T) T` called with `[]const i32` is the same error. The type argument drops the pointee's `const`.
-- `p = p.next` inside `while (p != null)` is `type mismatch: expected *Node, found ?*Node`. A store into a narrowed name is checked against the narrowed type, not the declared `?*Node`.
-- `var t = (s, 1)` with `s [][2]i32`, then `t[0][1][1]`, passes `--check`, and the build reports `not an lvalue`.
-- A failed `comptime const k = f(0)` also reports `undeclared identifier` on every later use of `k`.
+- A `?*T` store into a narrowed name inside a nested loop, or after a `defer` in the narrowed region, is still `type mismatch`. Accepting it needs a flow analysis that knows a use above the store runs again after it.
+- A file-scope `comptime const k = f(2)` used as a file-scope array length, `var g [k]i32`, is `not supported yet` twice. The length is resolved before the constant is bound.
 
 ### Codegen
 
 - `const c = 250u8`, a file-scope `var g = 250u8`, and `var a, b = f()` with `u8` results still bind `i32`. A local `var` and `:=` keep the narrow type. Local constants fold only as `i32` in both folders.
 - A runtime shift amount at or past the width, `a << b` with `b` 32, is poison. The result differs between `-O0` and `-O2`.
 - A function pointer from `extern(abi="c")`, `func getFI() func (FI) i32`, is called with the tlc convention for a struct argument. A tlc function passed where C expects a callback is accepted.
-- Constant folding treats a `u32` that fits in `i32` as signed. `1u32 < -1` and `(0u32 - 1u32) >> 28u32` at file scope fold wrong in both folders.
 
 ### Front end
 

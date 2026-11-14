@@ -179,6 +179,8 @@ The object file links `printf` and `errno`.
 
 A variadic function may be declared with `extern(abi="c")` and without a body.
 
+An extra argument is promoted as C promotes it. `bool`, `i8`, `u8`, `i16`, and `u16` pass an `int`, and a `bool` is 0 or 1. `f32` passes a `double`.
+
 A function with a body may use `...`.
 
 `builtin.va()` reads the extra arguments.

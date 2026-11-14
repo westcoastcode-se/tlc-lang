@@ -1260,15 +1260,28 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     check_expr(*node.rhs, true);
                     return type_invalid();
                 }
+                // `p = p.next` in `while (p != null)` stores a `?*Node`. The declared type takes it, and
+                // the name is no longer narrowed after the store. A `*Node` keeps the narrowing.
+                Type want = symbol->type;
+                const bool widen = symbol->narrowed && symbol->narrow_loop == loop_depth_ &&
+                                   symbol->narrow_defers == defers_checked_;
+                if (widen) {
+                    want.optional = true;
+                }
                 const std::size_t before = diags_.size();
-                check_against(*node.rhs, symbol->type);
+                check_against(*node.rhs, want);
+                const Type stored = last_unpromoted_;
                 init_store_if(*node.lhs, before);
                 if (diags_.size() == before && node.rhs != nullptr) {
                     if (Symbol *live = lookup(std::get<Expr::Name>(node.lhs->data).text)) {
                         note_local_slice(*live, node.rhs.get());
+                        if (widen && !(stored.kind == TypeKind::Pointer && !stored.optional)) {
+                            live->type.optional = true;
+                            live->narrowed = false;
+                        }
                     }
                 }
-                return symbol->type;
+                return want;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
                 if (const FunctionDecl *fn = node.callee != nullptr ? mem_compare_callee(node) : nullptr) {
                     if (fold_mem_compare(node)) {

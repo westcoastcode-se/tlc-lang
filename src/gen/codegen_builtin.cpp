@@ -137,7 +137,9 @@ llvm::Value *CodeGen::variadic_arg(const TypedValue &value) {
         return builder_.CreateFPExt(arg, f64_ty());
     }
     if (arg->getType()->isIntegerTy() && arg->getType()->getIntegerBitWidth() < 32) {
-        const bool zero_extend = value.elem_unsigned || value.elem_char;
+        // A `bool` is 0 or 1 in C's `int`. Sign-extending the `i1` true would pass -1.
+        const bool zero_extend =
+            value.elem_unsigned || value.elem_char || value.elem_bool || arg->getType()->isIntegerTy(1);
         return zero_extend ? builder_.CreateZExt(arg, i32()) : builder_.CreateSExt(arg, i32());
     }
     return arg;
