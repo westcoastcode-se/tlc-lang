@@ -1,0 +1,8 @@
+// A `?func` does not convert to a `func`. The value could be null.
+func twice(v i32) i32 { return v * 2; }
+
+func main() i32 {
+    var g ?func (i32) i32 = twice;
+    var h func (i32) i32 = g;
+    return h(21);
+}

@@ -157,9 +157,9 @@ Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc, bool paramet
         prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum,
                         written.ret_indirections, written.ret_optional, is_array, array_len, array_len_name,
                         written.type_args, loc);
-        return type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
+        return fn_optional(type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
                               param.indirections, param.params, param.variadic, param.results, loc, param.ret_optional,
-                              param.ret_const_pointee);
+                              param.ret_const_pointee), param.optional);
     }
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                     written.optional, written.is_array, written.array_len, array_len_name, written.type_args, loc);
@@ -383,9 +383,9 @@ Type Checker::type_of_var(const VarDecl &var) {
         fold_shells(written.shells, written.loc);
         if (type.kind == TypeKind::Invalid && written.type_args.empty()) {
             type = var.is_fn_ptr
-                       ? type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,
+                       ? fn_optional(type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,
                                         var.indirections, var.fn_params, var.fn_variadic, var.fn_results, var.loc,
-                                        var.ret_optional, var.ret_const_pointee)
+                                        var.ret_optional, var.ret_const_pointee), var.optional)
                        : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc, false,
                                      var.type_package, var.is_struct, var.is_enum, false, var.optional,
                                      var.const_pointee, false, var.elem_const, var.elem_slice, written.shells, true);
@@ -485,9 +485,9 @@ Type Checker::type_of_param(const Param &param) {
                         written.loc);
         fold_shells(written.shells, written.loc);
         if (param.is_fn_ptr) {
-            type = type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum,
+            type = fn_optional(type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum,
                                   param.ret_indirections, param.indirections, param.fn_params, param.fn_variadic,
-                                  param.fn_results, param.loc, param.ret_optional, param.ret_const_pointee);
+                                  param.fn_results, param.loc, param.ret_optional, param.ret_const_pointee), param.optional);
         } else {
             type = object_type(param.type_name, param.indirections, param.is_array, param.array_len, param.loc, true,
                                param.type_package, param.is_struct, param.is_enum, param.is_receiver, param.optional,
@@ -543,9 +543,9 @@ Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_i
                     true);
     fold_shells(written.shells, loc);
     if (slot.is_fn_ptr) {
-        return type_of_fn_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.ret_indirections,
+        return fn_optional(type_of_fn_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.ret_indirections,
                               slot.indirections, slot.fn_params, slot.fn_variadic, slot.fn_results, loc,
-                              slot.ret_optional, slot.ret_const_pointee);
+                              slot.ret_optional, slot.ret_const_pointee), slot.optional);
     }
     if (slot.is_array || !written.shells.empty()) {
         return object_type(slot.type_name, slot.indirections, true, slot.array_len, loc, false, slot.type_package,

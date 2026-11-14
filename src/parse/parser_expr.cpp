@@ -276,7 +276,8 @@ bool Parser::skip_placed_type(std::size_t &ahead) const {
 }
 
 bool Parser::starts_func_cast() const {
-    if (!at_func_type()) {
+    // The cast form starts at `func`. `?func (...)(x)` is not a cast.
+    if (check(TokenKind::Question) || !at_func_type()) {
         return false;
     }
     std::size_t ahead = 1;

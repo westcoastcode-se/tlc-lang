@@ -1,0 +1,7 @@
+// A `?func` may be null, so a call without a null check that narrows it is a type error.
+func twice(v i32) i32 { return v * 2; }
+
+func main() i32 {
+    var g ?func (i32) i32 = twice;
+    return g(21);
+}

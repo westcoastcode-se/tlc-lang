@@ -242,9 +242,9 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
         Type field_type = field.is_tuple
                               ? type_of_tuple_field(field)
                               : field.is_fn_ptr
-                              ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
+                              ? fn_optional(type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                field.ret_indirections, field.indirections, field.fn_params, field.fn_variadic,
-                                               field.fn_results, field.loc, field.ret_optional, field.ret_const_pointee)
+                                               field.fn_results, field.loc, field.ret_optional, field.ret_const_pointee), field.optional)
                               : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                             false, field.type_package, field.is_struct, field.is_enum, false, field.optional,
                                             field.const_pointee, false, field.elem_const, field.elem_slice, field.shells,
@@ -709,10 +709,10 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             Type field_type = field.is_tuple
                                   ? type_of_tuple_field(field)
                                   : field.is_fn_ptr
-                                  ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
+                                  ? fn_optional(type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                    field.ret_indirections, field.indirections, field.fn_params,
                                                    field.fn_variadic, field.fn_results, field.loc, field.ret_optional,
-                                                   field.ret_const_pointee)
+                                                   field.ret_const_pointee), field.optional)
                                   : object_type(field.type_name, field.indirections, field.is_array, field.array_len,
                                                 field.loc, false, field.type_package, field.is_struct, field.is_enum,
                                                 false, field.optional, field.const_pointee, false, field.elem_const,
@@ -822,9 +822,9 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         Type field_type = field.is_tuple
                               ? type_of_tuple_field(field)
                               : field.is_fn_ptr
-                              ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
+                              ? fn_optional(type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                field.ret_indirections, field.indirections, field.fn_params, field.fn_variadic,
-                                               field.fn_results, field.loc, field.ret_optional, field.ret_const_pointee)
+                                               field.fn_results, field.loc, field.ret_optional, field.ret_const_pointee), field.optional)
                               : object_type(field.type_name, field.indirections, field.is_array, field.array_len, field.loc,
                                             false, field.type_package, field.is_struct, field.is_enum, false,
                                             field.optional, field.const_pointee, false, field.elem_const,
@@ -2143,9 +2143,9 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
             const bool saved = quiet_;
             quiet_ = true;
             const Type want =
-                type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
+                fn_optional(type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
                                param.indirections, param.fn_params, param.fn_variadic, param.fn_results, param.loc,
-                               param.ret_optional, param.ret_const_pointee);
+                               param.ret_optional, param.ret_const_pointee), param.optional);
             quiet_ = saved;
             return want.kind != TypeKind::Invalid && same_type(want, got);
         }

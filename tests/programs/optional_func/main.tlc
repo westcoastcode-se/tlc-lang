@@ -1,0 +1,22 @@
+// `?func (...)` may be null. A null check narrows it, `cb!(v)` asserts it, and a `func` converts to it.
+// It works for locals, struct fields, parameters, results, and literals.
+type Ops struct {
+    cb ?func (i32) i32;
+    must func (i32) i32;
+};
+func twice(v i32) i32 { return v * 2; }
+func pick(f ?func (i32) i32) ?func (i32) i32 { return f; }
+func main() i32 {
+    var o Ops = {.cb = null, .must = twice};
+    var r = 0;
+    if (o.cb == null) { r += 1; }
+    o.cb = twice;
+    r += o.cb!(1);
+    var q = pick(twice);
+    if (q != null) { r += q(2); }
+    var z = pick(null);
+    if (z == null) { r += 10; }
+    var lam ?func (i32) i32 = func (v i32) i32 { return v + 20; };
+    r += lam!(5);
+    return r + o.must(0);
+}

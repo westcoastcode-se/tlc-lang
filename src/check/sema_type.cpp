@@ -1183,10 +1183,10 @@ void Checker::define_trait_fields() {
             Type field_type =
                 field.is_tuple
                     ? type_of_tuple_field(field)
-                    : field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
+                    : field.is_fn_ptr ? fn_optional(type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                        field.ret_indirections, field.indirections, field.fn_params,
                                                        field.fn_variadic, field.fn_results, field.loc, field.ret_optional,
-                                                       field.ret_const_pointee)
+                                                       field.ret_const_pointee), field.optional)
                                       : object_type(field.type_name, field.indirections, field.is_array, field.array_len,
                                                     field.loc, false, field.type_package, field.is_struct, field.is_enum,
                                                     false, field.optional, field.const_pointee, false, field.elem_const,
@@ -2066,10 +2066,10 @@ void Checker::define_struct_fields() {
             Type field_type =
                 field.is_tuple
                     ? type_of_tuple_field(field)
-                    : field.is_fn_ptr ? type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
+                    : field.is_fn_ptr ? fn_optional(type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                        field.ret_indirections, field.indirections, field.fn_params,
                                                        field.fn_variadic, field.fn_results, field.loc, field.ret_optional,
-                                                       field.ret_const_pointee)
+                                                       field.ret_const_pointee), field.optional)
                                       : object_type(field.type_name, field.indirections, field.is_array, field.array_len,
                                                     field.loc, false, field.type_package, field.is_struct, field.is_enum,
                                                     false, field.optional, field.const_pointee,
@@ -2312,10 +2312,10 @@ void Checker::install_local_type(const Stmt::LocalType &local) {
                 written.is_tuple
                     ? type_of_tuple_field(written)
                     : written.is_fn_ptr
-                          ? type_of_fn_ptr(written.type_name, written.type_package, written.is_struct, written.is_enum,
+                          ? fn_optional(type_of_fn_ptr(written.type_name, written.type_package, written.is_struct, written.is_enum,
                                            written.ret_indirections, written.indirections, written.fn_params,
                                            written.fn_variadic, written.fn_results, written.loc, written.ret_optional,
-                                           written.ret_const_pointee)
+                                           written.ret_const_pointee), written.optional)
                           : object_type(written.type_name, written.indirections, written.is_array, written.array_len,
                                         written.loc, false, written.type_package, written.is_struct, written.is_enum,
                                         false, written.optional, written.const_pointee, hidden, written.elem_const,
@@ -2403,10 +2403,10 @@ void Checker::install_local_type(const Stmt::LocalType &local) {
                         written.array_len_name, written.type_args, written.loc);
         fold_shells(written.shells, written.loc);
         Type type = written.is_fn_ptr
-                        ? type_of_fn_ptr(written.type_name, written.type_package, written.is_struct, written.is_enum,
+                        ? fn_optional(type_of_fn_ptr(written.type_name, written.type_package, written.is_struct, written.is_enum,
                                          written.ret_indirections, written.indirections, written.fn_params,
                                          written.fn_variadic, written.fn_results, written.loc, written.ret_optional,
-                                         written.ret_const_pointee)
+                                         written.ret_const_pointee), written.optional)
                         : object_type(written.type_name, written.indirections, written.is_array, written.array_len,
                                       written.loc, false, written.type_package, written.is_struct, written.is_enum,
                                       false, written.optional, written.const_pointee, false, written.elem_const,
@@ -2849,9 +2849,9 @@ void Checker::register_one_typedef(const TypedefDecl &item) {
         typedefs_[file_id_][item.name] = type;
     } else {
         type = item.is_fn_ptr
-                   ? type_of_fn_ptr(item.type_name, item.type_package, item.is_struct, item.is_enum,
+                   ? fn_optional(type_of_fn_ptr(item.type_name, item.type_package, item.is_struct, item.is_enum,
                                     item.ret_indirections, item.indirections, item.fn_params, item.fn_variadic,
-                                    item.fn_results, item.loc, item.ret_optional)
+                                    item.fn_results, item.loc, item.ret_optional), item.optional)
                    : object_type(item.type_name, item.indirections, item.is_array, item.array_len, item.loc, false,
                                  item.type_package, item.is_struct, item.is_enum, false, item.optional,
                                  item.const_pointee, true, item.elem_const, item.elem_slice, written.shells);

@@ -540,6 +540,13 @@ class Checker {
     void restore_optional(const std::string &name);
     // `parameter` decays a top-level `[N]T`. An element of a tuple stays that array.
     Type type_of_fn_param(const FnParam &param, SourceLoc loc, bool parameter = true);
+    // `?func (...)`: the function pointer may be null. Bit 0 of `optional` marks that one pointer.
+    static Type fn_optional(Type pointer, uint32_t optional) {
+        if ((optional & 1u) != 0 && pointer.kind == TypeKind::Pointer) {
+            pointer.optional = true;
+        }
+        return pointer;
+    }
     Type type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,
                         int ret_indirections, int fn_depth, const std::vector<FnParam> &params, bool variadic,
                         const std::vector<FnParam> &results, SourceLoc loc, uint32_t ret_optional = 0,

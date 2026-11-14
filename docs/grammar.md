@@ -1874,7 +1874,7 @@ type-arg    = integer-literal
             | { pointer } base-type [ type-args ]
             | array-length ;
 
-func-type   = "func" "(" [ func-args ] ")" result ;
+func-type   = [ "?" ] "func" "(" [ func-args ] ")" result ;
 func-args   = placed-type { "," placed-type } ;
 
 base-type   = "void" | "bool"

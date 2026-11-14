@@ -2230,6 +2230,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 const Type *signature = &callee;
                 if (callee.kind == TypeKind::Pointer && callee.pointee && callee.pointee->kind == TypeKind::Function) {
+                    // A `?func` may be null. The call needs a null check that narrows it, or `cb!(v)`.
+                    if (callee.optional) {
+                        error(expr_loc(*node.callee), "type mismatch");
+                    }
                     signature = callee.pointee.get();
                 } else if (callee.kind != TypeKind::Function || !callee.result) {
                     error(node.loc, "type mismatch");
@@ -2781,10 +2785,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 Type target = type_invalid();
                 if (node.is_fn_ptr) {
-                    target = type_of_fn_ptr(node.type_name, node.type_package, node.is_struct, node.is_enum,
+                    target = fn_optional(type_of_fn_ptr(node.type_name, node.type_package, node.is_struct, node.is_enum,
                                             node.ret_indirections, node.indirections < 1 ? 1 : node.indirections,
                                             node.fn_params, node.fn_variadic, node.fn_results, node.loc, node.ret_optional,
-                                            node.ret_const_pointee);
+                                            node.ret_const_pointee), node.optional);
                 } else if (node.is_tuple && !node.shells.empty() &&
                            node.shells.front().kind == TypeShell::Kind::Pointer) {
                     // `?*T(value)` when `T` is `[2](i32, i32)`. The star is optional. Each array follows.

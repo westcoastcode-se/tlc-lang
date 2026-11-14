@@ -538,6 +538,10 @@ std::vector<FieldDecl> Parser::parse_fields(bool extern_c) {
 
 
 bool Parser::at_func_type(std::size_t ahead) const {
+    // `?func (i32) i32` is a function pointer that may be null.
+    if (peek(ahead).kind == TokenKind::Question) {
+        ++ahead;
+    }
     return peek(ahead).kind == TokenKind::KwFunc && peek(ahead + 1).kind == TokenKind::LParen;
 }
 
@@ -547,6 +551,11 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
     type.is_fn_ptr = true;
     // The value is the function pointer. Stars on the result stay in ret_indirections.
     type.indirections = 1;
+    // `?func` marks that one pointer optional, as `?*T` marks its outer pointer.
+    if (check(TokenKind::Question)) {
+        ++pos_;
+        type.optional = 1;
+    }
     expect(TokenKind::KwFunc, "expected 'func'");
     expect(TokenKind::LParen, "expected '('");
     // `func ((i32, i32)) i32` is one parameter. `func ((i32, i32), i32) i32` is that
@@ -712,6 +721,10 @@ Parser::PointerPrefix Parser::parse_pointer_prefix() {
         }
         bool opt = false;
         if (check(TokenKind::Question)) {
+            // `?func (...)` is the optional function pointer. `parse_func_type` reads that `?`.
+            if (peek(1).kind == TokenKind::KwFunc && prefix.count == 0) {
+                break;
+            }
             if (peek(1).kind != TokenKind::Star) {
                 diags_.error(peek().loc, "not supported yet");
                 ++pos_;

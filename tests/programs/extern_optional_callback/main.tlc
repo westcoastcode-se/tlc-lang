@@ -1,0 +1,32 @@
+// `?func` in C signatures and C struct fields carries NULL both ways. A tlc function passed there gets
+// the C wrapper, and a pointer C gives back is called after a null check or with `!`.
+extern(abi="c") func set_cb(f ?func (i32) i32) void;
+extern(abi="c") func get_cb() ?func (i32) i32;
+extern(abi="c") func run_cb(f ?func (i32) i32, v i32) i32;
+extern(abi="c") func run_narrow(f ?func (u8) u8) i32;
+extern(abi="c") type Hooks struct {
+    on ?func (i32) i32;
+    tag i32;
+};
+extern(abi="c") func run_hooks(h *Hooks) i32;
+extern(abi="c") func clear_hooks(h *Hooks) void;
+func twice(v i32) i32 { return v * 2; }
+func half(v u8) u8 { return v / 2; }
+func main() i32 {
+    var bad = 0;
+    if (run_cb(null, 1) != -1) { bad += 1; }
+    if (run_cb(twice, 21) != 42) { bad += 2; }
+    if (run_narrow(null) != -1 || run_narrow(half) != 100) { bad += 4; }
+    set_cb(null);
+    if (get_cb() != null) { bad += 8; }
+    set_cb(twice);
+    var got = get_cb();
+    if (got == null) { bad += 16; } else if (got(4) != 8) { bad += 32; }
+    var h Hooks = {.on = null, .tag = 7};
+    if (run_hooks(&h) != 7) { bad += 64; }
+    h.on = twice;
+    if (run_hooks(&h) != 14 || h.on!(3) != 6) { bad += 128; }
+    clear_hooks(&h);
+    if (h.on != null) { bad += 256; }
+    return bad == 0 ? 42 : bad;
+}

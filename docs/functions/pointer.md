@@ -226,6 +226,21 @@ Inside a struct, the field is written `op func (i32, i32) i32`. `type BinOp func
 
 A function pointer has a value, so a variable of that type needs an initializer. A struct field of that type needs an initializer too.
 
+`?func (i32) i32` is a function pointer that may be `null`. It follows the rules of `?*T` in [Narrowing](../expressions/narrowing.md). A call `cb(v)` needs a null check that narrows `cb`, as in `if (cb != null) { cb(v); }`, and is `type mismatch` without one. `cb!(v)` asserts that one call. Under `--debug` a null `cb` there panics with `panic: null pointer`. A `func` value converts to a `?func` with the same signature. A `?func` does not convert to a `func`, and `var h func (i32) i32 = cb` is `type mismatch: expected *func(i32) i32, found ?*func(i32) i32`. A variable, a field, a parameter, and a result can be `?func`.
+
+```c
+func twice(v i32) i32 {
+    return v * 2;
+}
+
+func run(cb ?func (i32) i32, v i32) i32 {
+    if (cb == null) {
+        return v;
+    }
+    return cb(v);
+}
+```
+
 An `extern(abi="c")` function's parameters and result cannot include a function pointer that returns several results.
 
 ```c

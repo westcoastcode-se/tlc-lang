@@ -1,0 +1,5 @@
+// `cb!(v)` on a null `?func` panics under `--debug`, as `p!` does on a null pointer.
+func main() i32 {
+    var g ?func (i32) i32 = null;
+    return g!(21);
+}

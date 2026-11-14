@@ -122,6 +122,8 @@ C and tlc pass a struct, a union, and an integer narrower than 32 bits different
 
 A tlc function named where C expects such a pointer, `set_cb(mine)`, is passed as a C wrapper. A static method, `set_cb(Box.run)`, and a function literal, `set_cb((v) { return v.a; })`, are too. A literal whose parameter is a C function pointer calls it the C way. A tlc function pointer value has no wrapper, and storing it there is `type mismatch`. An `extern(abi="c")` function, with or without a body, is already a C function and is passed as it is. For an overloaded name, the `extern(abi="c")` list that matches is passed as it is, and a matching tlc list is wrapped.
 
+A C function pointer written `?func (...)` may be `NULL`. `set_cb(null)` passes `NULL`, and a `NULL` that C returns or stores in a field compares equal to `null`. A tlc function stored there gets its wrapper as above. A call through it needs a null check or `cb!(v)`, as for any `?func`. See [Function pointers](../functions/pointer.md). A `func (...)` without `?` in a C signature has a value, so a `NULL` that C passes there is not checked.
+
 Inside an `extern(abi="c")` body, a function pointer parameter and a function pointer result are C function pointers. `return mine` there returns the C wrapper.
 
 `enum(u8)`, `enum(i8)`, `enum(u16)`, and `enum(i16)` are narrow integers to C, and are extended as `u8`, `i8`, `u16`, and `i16` are.

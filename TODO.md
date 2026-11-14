@@ -18,7 +18,7 @@ These were found by review and have a repro. They are not fixed yet.
 - A fault inside an assignment in a `comptime func`, `d >>= n` or `d = d + 8 / (n - 40)`, is reported as `not supported yet` at the call, not as the fault with its call stack.
 - A failed file-scope `comptime const g = f(0)` still cascades: `const h = g + 1` is `undeclared identifier`, and `var arr [g]i32` is `not supported yet` twice.
 - A function with many held `k := i` locals is still quadratic to check. 1500 of them take about 20 seconds.
-- A C callback cannot be null from tlc. `?func (...)` is `not supported yet`, and `null` is `type mismatch` for a C function pointer parameter.
+- `?func` is not allowed as an array element, `[2]?func (i32) i32`, or behind a pointer, `*?func (i32) i32`. The cast form `?func (i32) i32(x)` is `expected an expression`.
 - A binary chain of more than 1000 links, such as a generated sum of 2000 terms, is `nesting too deep`. Each link of the left-deep tree is one level of recursion in the checker.
 - A type with 2^31 elements, `type Pair [2147483647]i32`, or a `comptime func` called with 2147483647 as a length or loop bound, takes more than 30 seconds to compile. There is no limit on an array's size in bytes.
 

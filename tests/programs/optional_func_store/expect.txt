@@ -1,0 +1,1 @@
+compile-error: type mismatch: expected *func(i32) i32, found ?*func(i32) i32

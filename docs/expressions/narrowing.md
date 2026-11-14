@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: Pointers and null](null.md) · [Next: Conditions](condition.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-This page describes how a `?*T` name becomes `*T` after a `null` check, and how postfix `!` asserts one use.
+This page describes how a `?*T` name becomes `*T` after a `null` check, and how postfix `!` asserts one use. A `?func (...)` name narrows to `func (...)` by the same rules, and `cb!(v)` asserts one call.
 
 ## Where a name becomes `*T`
 
