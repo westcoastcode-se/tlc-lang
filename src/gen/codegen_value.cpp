@@ -691,13 +691,15 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 const int right_bits = value_bits(right);
                 const int common_bits = left_bits > right_bits ? left_bits : right_bits;
                 bool common_unsigned = false;
-                if (left.elem_unsigned == right.elem_unsigned) {
-                    common_unsigned = left.elem_unsigned;
+                const bool left_uns = promoted_unsigned(left);
+                const bool right_uns = promoted_unsigned(right);
+                if (left_uns == right_uns) {
+                    common_unsigned = left_uns;
                 } else if (left_bits == right_bits) {
                     common_unsigned = true;
-                } else if (left.elem_unsigned && left_bits > right_bits) {
+                } else if (left_uns && left_bits > right_bits) {
                     common_unsigned = true;
-                } else if (right.elem_unsigned && right_bits > left_bits) {
+                } else if (right_uns && right_bits > left_bits) {
                     common_unsigned = true;
                 }
                 lhs = resize_int(lhs, bits_type(common_bits), left.elem_unsigned);
@@ -781,10 +783,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         eval_fail(node.loc, 2);
                         builder_.SetInsertPoint(ok);
                     }
-                    if (node.op == TokenKind::LtLt) {
-                        return widened(builder_.CreateShl(lhs, rhs));
-                    }
-                    return widened(uns ? builder_.CreateLShr(lhs, rhs) : builder_.CreateAShr(lhs, rhs));
+                    return widened(emit_shift(node.loc, node.op == TokenKind::LtLt, uns, lhs, rhs));
                 }
                 case TokenKind::EqEq: return compared(llvm::CmpInst::ICMP_EQ);
                 case TokenKind::BangEq: return compared(llvm::CmpInst::ICMP_NE);
@@ -823,11 +822,19 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         return {zero(), 0};
                     }
                     llvm::Value *left_mem = builder_.CreateLoad(mem, slot.value);
+                    // `n op= m` is `n = n op m`. Each side is promoted, the operation is in their usual type,
+                    // and the store keeps the low bits. When that type is the place's, as the checker required
+                    // before narrow places were accepted, this is the place's own operation.
                     const int left_bits = slot.elem_bits == 0 ? 32 : slot.elem_bits;
                     const int right_bits = value_bits(right);
-                    const int common_bits = left_bits > right_bits ? left_bits : right_bits;
-                    // The checker keeps the operation in the place's type.
-                    const bool common_unsigned = slot.elem_unsigned;
+                    const int left_promoted = left_bits < 32 ? 32 : left_bits;
+                    const int right_promoted = right_bits < 32 ? 32 : right_bits;
+                    const bool left_unsigned = left_bits >= 32 && slot.elem_unsigned && !slot.elem_char;
+                    const bool right_unsigned = promoted_unsigned(right);
+                    const int common_bits = left_promoted > right_promoted ? left_promoted : right_promoted;
+                    const bool common_unsigned = left_promoted == right_promoted ? (left_unsigned || right_unsigned)
+                                                 : left_promoted > right_promoted ? left_unsigned
+                                                                                  : right_unsigned;
                     llvm::Type *common = bits_type(common_bits);
                     llvm::Value *lhs = resize_int(left_mem, common, slot.elem_unsigned);
                     llvm::Value *rhs = resize_int(right.value, common, right.elem_unsigned);
@@ -845,9 +852,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     } else if (node.op == TokenKind::CaretEq) {
                         combined = builder_.CreateXor(lhs, rhs);
                     } else if (node.op == TokenKind::LtLtEq) {
-                        combined = builder_.CreateShl(lhs, rhs);
+                        combined = emit_shift(node.loc, true, common_unsigned, lhs, rhs);
                     } else if (node.op == TokenKind::GtGtEq) {
-                        combined = common_unsigned ? builder_.CreateLShr(lhs, rhs) : builder_.CreateAShr(lhs, rhs);
+                        combined = emit_shift(node.loc, false, common_unsigned, lhs, rhs);
                     } else if (node.op == TokenKind::SlashEq || node.op == TokenKind::PercentEq) {
                         // `sdiv` and `srem` of the minimum signed value and -1 are poison.
                         // The quotient wraps. The remainder is 0.

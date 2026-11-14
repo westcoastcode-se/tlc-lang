@@ -1,0 +1,13 @@
+// `*const *const i32` cannot store through either level, so `**i32` converts to it.
+// `*i32` still converts to `*const i32`, and a generic `*const *const T` binds `T` to `i32`.
+func read[T type](value *const *const T) T {
+    return **value;
+}
+
+func main() i32 {
+    var n = 40;
+    var p *i32 = &n;
+    var pp *const *const i32 = &p;
+    var single *const i32 = p;
+    return **pp - *single + read(&p) + 2;
+}

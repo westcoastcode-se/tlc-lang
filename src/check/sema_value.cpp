@@ -918,14 +918,19 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (!is_integer(rhs)) {
                         return type_invalid();
                     }
-                    if (!same_type(usual(place, rhs), place)) {
+                    // `e += 1` with `e u8` is `e = e + 1`: the sum is `i32`, and the store keeps the low bits,
+                    // as `=` does between integer ranks. An alias and `bool` keep their own type.
+                    const bool integer_store = place.alias_id == 0 && rhs.alias_id == 0 &&
+                                               (place.kind == TypeKind::Int || place.kind == TypeKind::Char);
+                    if (!same_type(usual(place, rhs), place) && !integer_store) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
                     }
                     if (node.rhs != nullptr) {
                         if (const std::optional<int> amount = fold_int(*node.rhs)) {
                             const bool div = node.op == TokenKind::SlashEq || node.op == TokenKind::PercentEq;
-                            const int width = integer_width(place);
+                            // The operation is in the promoted type, so `e <<= 8` on a `u8` shifts an `i32`.
+                            const int width = std::max(integer_width(place), integer_width(usual(place, rhs)));
                             const bool shift = node.op == TokenKind::LtLtEq || node.op == TokenKind::GtGtEq;
                             const bool zero = div && *amount == 0;
                             const bool wide = shift && (*amount < 0 || *amount >= width);

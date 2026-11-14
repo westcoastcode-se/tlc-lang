@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "driver/driver.hpp"
 #include "harness.hpp"
 
@@ -278,6 +279,23 @@ int run_cli_tests() {
                "extern(abi=\"c\") func from_so() i32;\n"
                "func main() i32 { return from_a() + from_so(); }\n");
     write_file("pick.tlc", "extern(abi=\"c\") func pick() i32;\nfunc main() i32 { return pick(); }\n");
+    // The command line lists 100 diagnostics. A 101st is replaced by `too many errors`.
+    {
+        std::string exact = "func main() i32 {\n    return 0;\n}\n";
+        for (int n = 0; n < 100; ++n) {
+            exact += "@\n";
+        }
+        write_file("errors_100.tlc", exact);
+        write_file("errors_101.tlc", exact + "@\n");
+        const tlc::test::Proc hundred = tlc::test::spawn({bin, "--check", (dir.path / "errors_100.tlc").string()});
+        EXPECT(check, hundred.code != 0);
+        EXPECT(check, hundred.err.find("too many errors") == std::string::npos);
+        EXPECT(check, std::count(hundred.err.begin(), hundred.err.end(), '\n') == 100);
+        const tlc::test::Proc more = tlc::test::spawn({bin, "--check", (dir.path / "errors_101.tlc").string()});
+        EXPECT(check, more.code != 0);
+        EXPECT(check, more.err.ends_with("error: too many errors\n"));
+        EXPECT(check, std::count(more.err.begin(), more.err.end(), '\n') == 101);
+    }
     // A failed `comptime const` is still declared. Its uses add no `undeclared identifier`, and a length or
     // a `comptime if` that names it adds no `not supported yet`. The fault needs the compile-time JIT.
     write_file("failed_const.tlc",

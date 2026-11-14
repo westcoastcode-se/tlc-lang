@@ -14,15 +14,15 @@ func fill[T type](a T, b T, c T, d T) [2][2]T {
     return g;
 }
 
-func id[T type](value **const T) i32 {
+func id[T type](value *const *const T) i32 {
     return (**value)[0][0] + (**value)[1][1];
 }
 
-func wide[T type](value **const T) i32 {
+func wide[T type](value *const *const T) i32 {
     return (**value)[0][0][0] + (**value)[1][1][1];
 }
 
-func plain[T type](value **const T) i32 {
+func plain[T type](value *const *const T) i32 {
     return (**value)[0] + (**value)[1];
 }
 

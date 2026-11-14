@@ -100,10 +100,19 @@ inline int width_of(const Type &type) {
     }
 }
 
-// A file-scope integer `const` folded to `i32`. An alias is a different type.
+// An integer `const` whose value the folders keep as an `i32`. `i8`, `u8`, `i16`, and `u16` fit exactly,
+// so `const c = 250u8` folds as 250 and keeps its type. An alias is a different type.
 inline bool plain_int_constant(const Type &type) {
-    return type.alias_id == 0 && type.kind == TypeKind::Int && type.rank == 3 && !type.is_unsigned &&
-           !type.plain_char;
+    if (type.alias_id != 0 || type.plain_char) {
+        return false;
+    }
+    if (type.kind == TypeKind::Int && type.rank == 3) {
+        return !type.is_unsigned;
+    }
+    if (type.kind == TypeKind::Char) {
+        return true;
+    }
+    return type.kind == TypeKind::Int && (type.rank == 1 || type.rank == 2);
 }
 
 inline Type promote(const Type &type) {

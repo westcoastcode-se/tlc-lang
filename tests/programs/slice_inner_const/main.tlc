@@ -1,0 +1,7 @@
+// `[]*i32` is not a `[]*const i32`. Storing `&limit` in an element would let the first slice write it.
+func main() i32 {
+    var n = 1;
+    var row [2]*i32 = {&n, &n};
+    var view []*const i32 = row[:];
+    return *view[0];
+}

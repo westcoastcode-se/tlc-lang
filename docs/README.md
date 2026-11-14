@@ -26,6 +26,8 @@ A diagnostic has this form:
 file:line:column: error: message
 ```
 
+The command line lists the first 100 diagnostics. When there are more, the last line is `error: too many errors`. The language server shows every diagnostic.
+
 Each TLC example is followed by the assembly of that example.
 
 Comments in the listing show what runs.

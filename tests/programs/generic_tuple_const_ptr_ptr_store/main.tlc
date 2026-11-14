@@ -1,4 +1,4 @@
-func id[T type](value **const T) i32 {
+func id[T type](value *const *const T) i32 {
     (**value)[0] = 1;
     return (**value)[1];
 }

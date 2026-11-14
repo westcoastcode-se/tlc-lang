@@ -1,4 +1,4 @@
-func id[T type](value ***const T) i32 {
+func id[T type](value *const *const *const T) i32 {
     return (***value)[0] + (***value)[1];
 }
 
@@ -15,15 +15,15 @@ func read[T type](value ?***T) i32 {
 }
 
 type Box[T type] struct {
-    p ***const T;
+    p *const *const *const T;
 };
 
-func through[T type](value ***const T) i32 {
+func through[T type](value *const *const *const T) i32 {
     var box Box[T] = {.p = value};
     return (***box.p)[0] + (***box.p)[1];
 }
 
-func give[T type](value ***const T) ***const T {
+func give[T type](value *const *const *const T) *const *const *const T {
     return value;
 }
 

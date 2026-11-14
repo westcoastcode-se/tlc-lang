@@ -704,6 +704,10 @@ struct VarDecl {
     // `var name const Type` and `const Type name`. The value is constant and the variable has an address.
     bool is_const = false;
     bool has_const = false;
+    // `var g = 250u8` at file scope binds `u8`. The checker sets the width, 8 or 16, and codegen stores
+    // the global at that width. Zero keeps the inferred type.
+    int narrow_bits = 0;
+    bool narrow_unsigned = false;
     int const_value = 0;
     // File-scope `var` whose initializer is a call. The call runs before `main`.
     bool runtime_init = false;

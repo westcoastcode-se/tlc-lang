@@ -843,13 +843,17 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     continue;
                 } else {
                     type = check_expr(*var->init, true);
-                    // `40i8` is `i8`. A use in arithmetic still widens. The binding keeps the suffix.
-                    if (var->is_const_decl && type.kind != TypeKind::Invalid && var->init != nullptr) {
-                        if (const auto *number = std::get_if<Expr::Int>(&var->init->data)) {
-                            if (number->suffix.bits == 8 || number->suffix.bits == 16) {
-                                type = type_rank(number->suffix.bits == 8 ? 1 : 2, number->suffix.is_unsigned);
-                            }
-                        }
+                    // `40i8` is `i8`, and `var g = 250u8` and `g := 250u8` keep `u8`, as a local binding does.
+                    // A use in arithmetic still widens. `a + b` is already `i32`.
+                    const Type raw = last_unpromoted_;
+                    const bool narrow = (raw.kind == TypeKind::Int && rank_of(raw) < 3) ||
+                                        (raw.kind == TypeKind::Char && !raw.plain_char);
+                    const_cast<VarDecl *>(var)->narrow_bits = 0;
+                    if (type.kind == TypeKind::Int && narrow && raw.alias_id == 0 && var->init != nullptr) {
+                        type = raw;
+                        type.is_const = false;
+                        const_cast<VarDecl *>(var)->narrow_bits = rank_of(raw) == 1 ? 8 : 16;
+                        const_cast<VarDecl *>(var)->narrow_unsigned = raw.is_unsigned || raw.kind == TypeKind::Char;
                     }
                     // `null` has no pointee until a pointer type is written around it.
                     if (type.kind == TypeKind::Tuple || type.kind == TypeKind::Void || type.kind == TypeKind::Nullptr) {

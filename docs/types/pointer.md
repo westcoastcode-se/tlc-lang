@@ -20,7 +20,7 @@ The compiler reports a store through it, `*p = 1` or `p[i] = 1`, as `type mismat
 
 Reading `*p` and `p[i]` is allowed.
 
-`*T` may be stored in `*const T`, but `*const T` may not be stored in `*T`. `?` is added only at the top. `**T` may be stored in `?**T` and in `*const ?*T`, and `**T` stored in `*?*T` is `type mismatch`, because a store of `null` through it would empty a `*T`.
+`*T` may be stored in `*const T`, but `*const T` may not be stored in `*T`. Below the top level, `?` and `const` are added only while every level above is const. `**T` may be stored in `?**T`, in `*const ?*T`, and in `*const *const T`. `**T` stored in `*?*T` is `type mismatch`, because a store of `null` through it would empty a `*T`. `**T` stored in `**const T` is `type mismatch` too: `*pp = &limit` would make the `*T` point at a const, and a store through it would write that const. `[]*T` stored in `[]*const T` is `type mismatch` for the same reason.
 
 The address of a place reached through `*const T` or a `const` binding is a pointer to const. `&c.x` when `c` is `*const Point` is `*const i32`, and `var q *i32 = &c.x` is `type mismatch: expected *i32, found *const i32`. `&(*k.p)` takes its const from the type of `k.p`.
 
@@ -39,7 +39,7 @@ func main() i32 {
     var q ?*i32 = null;
     var c *const i32 = p;
     var inner *i32 = &n;
-    var to_const **const i32 = &inner;
+    var to_const *const *const i32 = &inner;
     var to_ptr *const *i32 = &inner;
     q = p;
     return *p + *c + **to_const + **to_ptr;

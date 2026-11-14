@@ -1,0 +1,29 @@
+// `const`, `comptime const`, and a file-scope `var` or `:=` keep `u8`, `i8`, `u16`, and `i16`, as a local
+// `var` does. A constant still folds, and a global is stored at its own width. Arithmetic widens.
+import { shared, limit, bump } from "lib";
+
+var g = 250u8;
+k := 200u8;
+const fc = 7i8;
+
+func main() i32 {
+    const c = 250u8;
+    comptime const n = i8(-3);
+    if (typeof(c) != typeof(u8)) { return 1; }
+    if (typeof(n) != typeof(i8)) { return 1; }
+    if (typeof(g) != typeof(u8)) { return 2; }
+    if (typeof(k) != typeof(u8)) { return 2; }
+    if (typeof(fc) != typeof(i8)) { return 2; }
+    var row [c]i32;
+    if (row.len != 250) { return 3; }
+    comptime if (c + n != 247) { return 4; }
+    if (c + c != 500 || n * 2 != -6) { return 5; }
+    g += 10;
+    if (g != 4) { return 6; }
+    k = 255u8;
+    k++;
+    if (k != 0) { return 7; }
+    bump();
+    if (shared != 4 || limit * 2 != -10) { return 8; }
+    return 42;
+}

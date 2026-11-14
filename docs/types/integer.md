@@ -91,7 +91,7 @@ An unsigned type has the same rank as its signed counterpart.
 
 ## Arithmetic conversions
 
-A value whose rank is below `i32` widens to `i32`, with `i8` sign-extended and `u8` zero-extended.
+A value whose rank is below `i32` widens to `i32`, with `i8` sign-extended and `u8` zero-extended. The widened value is a signed `i32`, so `250u8 > -2` is true and `250u8 / -2` is -125. `60000u16 < -2` is false.
 
 The usual arithmetic conversions apply after that widening.
 

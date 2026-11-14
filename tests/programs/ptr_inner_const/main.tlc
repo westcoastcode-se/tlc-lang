@@ -1,0 +1,8 @@
+// `**i32` is not a `**const i32`. Through it, `*pp = &limit` would make `p` point at a const,
+// and `*p = 42` would then write it. Below the top level `const` is added only under const levels.
+func main() i32 {
+    var n = 1;
+    var p *i32 = &n;
+    var pp **const i32 = &p;
+    return **pp;
+}

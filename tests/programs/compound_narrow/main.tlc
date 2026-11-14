@@ -1,0 +1,21 @@
+// `e op= m` on a `u8` is `e = u8(e op m)`. The operation is in the promoted type, and the store keeps
+// the low bits, as `=` does between integer ranks. `e <<= 8` shifts an `i32`, so it is not out of range.
+func main() i32 {
+    var e u8 = 250u8;
+    e += 10;
+    if (e != 4) { return 1; }
+    var d u8 = 250u8;
+    var m = -2;
+    d /= m;
+    if (d != 131) { return 2; }
+    var s i16 = -300i16;
+    s *= 200;
+    if (s != 5536) { return 3; }
+    var b u8 = 1u8;
+    b <<= 8;
+    if (b != 0) { return 4; }
+    var w = 250u8;
+    w += 1u8;
+    if (w != 251) { return 5; }
+    return 42;
+}

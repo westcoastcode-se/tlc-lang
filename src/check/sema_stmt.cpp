@@ -3394,7 +3394,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                                             (raw.kind == TypeKind::Char && !raw.plain_char);
                         // A `const` stays `i32`. Local constants fold only as `i32` in both folders.
                         node.narrow_bits = 0;
-                        if (rhs.kind == TypeKind::Int && narrow && raw.alias_id == 0 && !node.is_const) {
+                        if (rhs.kind == TypeKind::Int && narrow && raw.alias_id == 0) {
                             rhs = raw;
                             rhs.is_const = false;
                             node.narrow_bits = rank_of(raw) == 1 ? 8 : 16;

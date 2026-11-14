@@ -1,12 +1,12 @@
-func num[T type](value **const T) i32 {
+func num[T type](value *const *const T) i32 {
     return **value;
 }
 
-func id[T type](value **const T) i32 {
+func id[T type](value *const *const T) i32 {
     return (**value)[0] + (**value)[1];
 }
 
-func deep[T type](value **const T) i32 {
+func deep[T type](value *const *const T) i32 {
     return (**value)[0][0] + (**value)[1];
 }
 

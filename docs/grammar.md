@@ -1082,7 +1082,7 @@ The call is `main.read.spec.arr.2.tuple.2.i32.i32`.
 
 `var q ?*i32 = row`, when `row` is `[2]i32`, is `type mismatch: expected ?*i32, found [2]i32`.
 
-`func id[T type](value **const T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+`func id[T type](value *const *const T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 The call is `main.id.spec.tuple.2.i32.i32`.
 
@@ -1090,7 +1090,7 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 
 `(**value)[0] = 1` is `type mismatch`.
 
-`func id[T type](value **const T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
+`func id[T type](value *const *const T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
@@ -1144,7 +1144,7 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(***value)[0][0]` is 40 and `(***value)[1][1]` is 3.
 
-`func id[T type](value ***const T)` of `&pp`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`. Each star is one more pointer. `(***value)[0] = 1` is `type mismatch`. The same form when `row` is `[2](i32, i32)` binds `T` to that array. `(***value)[0][0] = 1` is `type mismatch`.
+`func id[T type](value *const *const *const T)` of `&pp`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`. Each star is one more pointer. `(***value)[0] = 1` is `type mismatch`. The same form when `row` is `[2](i32, i32)` binds `T` to that array. `(***value)[0][0] = 1` is `type mismatch`.
 
 `type Box[T type] struct { p **T; }` of `{.p = value}`, when `T` is `(i32, i32)`, stores that pointer.
 

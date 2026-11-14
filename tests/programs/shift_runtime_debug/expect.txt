@@ -1,0 +1,4 @@
+debug:
+exit: 128
+stderr: panic: shift out of range
+main.tlc:4:14: main

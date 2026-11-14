@@ -5,7 +5,7 @@ func pair[T type](a T, b T) [2]T {
     return row;
 }
 
-func id[T type](value **const T) i32 {
+func id[T type](value *const *const T) i32 {
     (**value)[0][0] = 1;
     return (**value)[1][1];
 }

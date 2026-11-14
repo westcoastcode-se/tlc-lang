@@ -1004,6 +1004,14 @@ class CodeGen {
         }
         return builder_.CreateICmpNE(value, typed_zero(value));
     }
+    // Signedness after the integer promotion. `u8`, `u16`, a plain `char`, and `bool` widen to a signed
+    // `i32`, so `250u8 > -2` is true and `250u8 / -2` is -125, as `docs/types/integer.md` says.
+    bool promoted_unsigned(const TypedValue &slot) const {
+        if (!slot.elem_unsigned || slot.elem_char || slot.elem_bool) {
+            return false;
+        }
+        return slot.elem_bits == 0 || slot.elem_bits >= 32;
+    }
     int value_bits(const TypedValue &slot) const {
         if (slot.elem_bits >= 64) {
             return 64;
@@ -1770,6 +1778,8 @@ class CodeGen {
     // A divisor that is not a constant is checked before `/` or `%`. A zero is `division by zero`.
     // Without the check, `sdiv` by zero is undefined and -O2 returns any value.
     void guard_divisor(SourceLoc loc, llvm::Value *divisor);
+    // `lhs << rhs` or `lhs >> rhs` with a runtime amount. See the definition for an amount past the width.
+    llvm::Value *emit_shift(SourceLoc loc, bool left, bool is_unsigned, llvm::Value *lhs, llvm::Value *rhs);
     // Records `loc` and returns from the function being evaluated.
     void install_eval_fault();
     // `kind` 1 is division by zero. `kind` 2 is a shift past the bit width. 0 is the index fault.

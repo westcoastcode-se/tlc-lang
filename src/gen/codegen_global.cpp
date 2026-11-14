@@ -353,6 +353,12 @@ void CodeGen::declare_globals(const PackageNode &node) {
             if (var->init == nullptr || !infer_global(node.file_id, *var->init, low)) {
                 error(var->loc, "type mismatch");
                 low = lower(node.file_id, "i32", "", false, 0, false, 0, false);
+            } else if (var->narrow_bits != 0 && low.depth == 0 && !low.is_array && low.struct_id < 0 &&
+                       !low.elem_float && !low.elem_bool) {
+                // The checker bound `u8`, `i8`, `u16`, or `i16`. The global has that width.
+                const std::string name =
+                    std::string(var->narrow_unsigned ? "u" : "i") + std::to_string(var->narrow_bits);
+                low = lower(node.file_id, name, "", false, 0, false, 0, false);
             }
         } else {
             low = lower_declared(node.file_id, *var);

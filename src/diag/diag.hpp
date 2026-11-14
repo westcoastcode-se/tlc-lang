@@ -23,6 +23,9 @@ class DiagnosticEngine {
     std::size_t size() const { return items_.size(); }
     const std::vector<Diagnostic> &items() const { return items_; }
     std::string render() const;
+    // The first `limit` diagnostics, then `error: too many errors` when more were reported.
+    // The command line prints this. The language server and the tests read every item.
+    std::string render(std::size_t limit) const;
 
   private:
     SourceSet *sources_ = nullptr;

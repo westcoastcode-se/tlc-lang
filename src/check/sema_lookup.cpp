@@ -1229,9 +1229,9 @@ bool Checker::lookup_field(const Type &object, const std::string &name, Type &ou
 }
 
 bool Checker::accepts_pointer(const Type &got, const Type &want) const {
-    // `*T` may be stored in `?*T`, and `*T` in `*const T`. Below the top level `?` may be added only while
-    // every level above it is const. `**i32` stored in `*?*i32` would let `*q = null` empty a `*i32`.
-    // `const` may still be added at any level, as `docs/types/pointer.md` shows with `**const i32`.
+    // `*T` may be stored in `?*T`, and `*T` in `*const T`. Below the top level `?` and `const` may be added only
+    // while every level above is const. `**i32` stored in `*?*i32` would let `*q = null` empty a `*i32`, and
+    // stored in `**const i32` would let `*q = &limit` and then `*p = 42` write a const. `*const *const i32` is fine.
     const auto accepts = [&](const auto &self, const Type &from, const Type &to, bool loose) -> bool {
         if (same_type(from, to)) {
             return true;
@@ -1244,6 +1244,9 @@ bool Checker::accepts_pointer(const Type &got, const Type &want) const {
             return false;
         }
         if (from.pointee->is_const && !to.pointee->is_const) {
+            return false;
+        }
+        if (!from.pointee->is_const && to.pointee->is_const && !loose) {
             return false;
         }
         Type source = *from.pointee;

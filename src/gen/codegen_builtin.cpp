@@ -392,6 +392,40 @@ void CodeGen::guard_divisor(SourceLoc loc, llvm::Value *divisor) {
     builder_.SetInsertPoint(ok);
 }
 
+llvm::Value *CodeGen::emit_shift(SourceLoc loc, bool left, bool is_unsigned, llvm::Value *lhs, llvm::Value *rhs) {
+    // An amount at or past the width, or a negative amount, has a defined result. `<<` and an unsigned
+    // `>>` give 0. A signed `>>` fills with the sign bit. `--debug` panics with `shift out of range`.
+    // A constant amount was checked by the compiler. A comptime body already faults on a bad amount.
+    const auto plain = [&](llvm::Value *amount) -> llvm::Value * {
+        if (left) {
+            return builder_.CreateShl(lhs, amount);
+        }
+        return is_unsigned ? builder_.CreateLShr(lhs, amount) : builder_.CreateAShr(lhs, amount);
+    };
+    auto *type = llvm::dyn_cast<llvm::IntegerType>(lhs->getType());
+    if (type == nullptr || rhs->getType() != lhs->getType() || llvm::isa<llvm::ConstantInt>(rhs) || eval_ ||
+        function_ == nullptr || terminated()) {
+        return plain(rhs);
+    }
+    const unsigned width = type->getBitWidth();
+    llvm::Value *bad = builder_.CreateICmpUGE(rhs, llvm::ConstantInt::get(type, width));
+    if (checks_) {
+        auto *fail = llvm::BasicBlock::Create(context_, "shift.fail", function_);
+        auto *ok = llvm::BasicBlock::Create(context_, "shift.ok", function_);
+        builder_.CreateCondBr(bad, fail, ok);
+        builder_.SetInsertPoint(fail);
+        abort_panic(loc, "shift out of range");
+        builder_.SetInsertPoint(ok);
+        return plain(rhs);
+    }
+    // The shift itself never sees a bad amount, so it is not poison. The select picks the defined result.
+    llvm::Value *amount = builder_.CreateSelect(bad, llvm::ConstantInt::get(type, 0), rhs);
+    llvm::Value *shifted = plain(amount);
+    llvm::Value *filled = left || is_unsigned ? static_cast<llvm::Value *>(llvm::ConstantInt::get(type, 0))
+                                              : builder_.CreateAShr(lhs, llvm::ConstantInt::get(type, width - 1));
+    return builder_.CreateSelect(bad, filled, shifted);
+}
+
 void CodeGen::abort_out_of_memory(SourceLoc loc) {
     abort_panic(loc, "out of memory");
 }

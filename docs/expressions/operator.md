@@ -20,11 +20,13 @@ Unary `+` and `-` are operators, and so is assignment `=`.
 
 The operand is an integer lvalue. A `const` binding is `type mismatch`. A value that is not a place is `not an lvalue`. The result is not a place.
 
-`n += m`, `n -= m`, `n *= m`, `n /= m`, `n %= m`, `n &= m`, `n |= m`, `n ^= m`, `n <<= m`, and `n >>= m` apply that operation and store the result in `n`. The value is the new `n`. The place is read once.
+`n += m`, `n -= m`, `n *= m`, `n /= m`, `n %= m`, `n &= m`, `n |= m`, `n ^= m`, `n <<= m`, and `n >>= m` apply that operation and store the result in `n`. The value is the new `n`. The place is read once. On a place narrower than `i32`, the operation is in the promoted type and the store keeps the low bits, as `=` does: `e += 10` with `e u8` 250 stores 4, and `e /= -2` stores 131, the low byte of -125. `e <<= 8` shifts an `i32`, so it is not `shift out of range`. A named alias and `bool` keep their own type, and `alias += m` needs that same type.
 
 A signed `>>=` keeps the sign. An unsigned `>>=` shifts in zeros. `(-2147483647 - 1) %= -1` stores 0.
 
-A constant divisor of 0 is `division by zero`, on that `/` or `%`. A constant shift whose amount is negative or past the width is `shift out of range`, on that `<<` or `>>`. `40 / 0`, `const n = 1 << 40`, `n /= 0`, and `n <<= 40` are those errors. The same fault in a `comptime func` is that message, with the call stack under it. A divisor that is not a constant is checked before the division. A zero is `panic: division by zero` at every optimization level, for `/`, `%`, `/=`, and `%=`. `40 / -1` is `-40`.
+A constant divisor of 0 is `division by zero`, on that `/` or `%`. A constant shift whose amount is negative or past the width is `shift out of range`, on that `<<` or `>>`. `40 / 0`, `const n = 1 << 40`, `n /= 0`, and `n <<= 40` are those errors. The same fault in a `comptime func` is that message, with the call stack under it. A shift amount that is not a constant has a defined result when it is negative or at or past the width. `<<` and an unsigned `>>` give 0, and a signed `>>` fills with the sign bit, so `1 << b` is 0 and `-8 >> b` is -1 when `b` is 32. Every `-O` level gives that result. With `--debug`, and in `tlc --test`, the same shift is `panic: shift out of range`.
+
+A divisor that is not a constant is checked before the division. A zero is `panic: division by zero` at every optimization level, for `/`, `%`, `/=`, and `%=`. `40 / -1` is `-40`.
 
 ```c
 func main() i32 {

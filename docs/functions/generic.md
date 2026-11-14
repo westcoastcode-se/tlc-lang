@@ -3143,7 +3143,7 @@ retq                             # return
 
 The program returns 42.
 
-`func id[T type](value **const T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+`func id[T type](value *const *const T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 The call is `main.id.spec.tuple.2.i32.i32`.
 
@@ -3154,7 +3154,7 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 `deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
 ```c
-func id[T type](value **const T) i32 {
+func id[T type](value *const *const T) i32 {
     return (**value)[0] + (**value)[1];
 }
 
@@ -3193,7 +3193,7 @@ retq                             # return
 
 The program returns 42.
 
-`func id[T type](value **const T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
+`func id[T type](value *const *const T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
@@ -3211,7 +3211,7 @@ func pair[T type](a T, b T) [2]T {
     return row;
 }
 
-func id[T type](value **const T) i32 {
+func id[T type](value *const *const T) i32 {
     return (**value)[0][0] + (**value)[1][1];
 }
 
@@ -3610,7 +3610,7 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 
 `deep(&wpp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
-`***const T` is that same depth. `(***value)[0] = 1` is `type mismatch`.
+`*const *const *const T` is that same depth. `(***value)[0] = 1` is `type mismatch`.
 
 ```c
 func id[T type](value ***T) i32 {
@@ -4144,7 +4144,7 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
-`***const T` is that same depth. `(***value)[0] = 1` is `type mismatch`.
+`*const *const *const T` is that same depth. `(***value)[0] = 1` is `type mismatch`.
 
 ```c
 func pair[T type](a T, b T) [2]T {
@@ -4310,7 +4310,7 @@ After `value == null`, `(**value)[0][0]` is 40 and `(**value)[1][1]` is 3.
 
 `wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
-A local `var q ?**T = value` stores that pointer. The outer pointer is optional. `(**q)[0]` before `q == null` is `type mismatch`. `***const T` is that same depth. `(***value)[0] = 1` is `type mismatch`.
+A local `var q ?**T = value` stores that pointer. The outer pointer is optional. `(**q)[0]` before `q == null` is `type mismatch`. `*const *const *const T` is that same depth. `(***value)[0] = 1` is `type mismatch`.
 
 ```c
 func read[T type](value ?**T) i32 {

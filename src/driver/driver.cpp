@@ -22,6 +22,9 @@
 
 namespace tlc {
 
+// The command line stops listing after this many errors and says `too many errors`.
+constexpr std::size_t kMaxShownErrors = 100;
+
 std::string version_text() {
     return std::string("tlc ") + kVersion + "\nLLVM " + LLVM_VERSION_STRING + "\n";
 }
@@ -488,7 +491,7 @@ CompileOutput compile_source(const Options &opt) {
         analyze(graph, diags, allocator);
     }
     if (!diags.ok()) {
-        output.compiler_stderr = diags.render();
+        output.compiler_stderr = diags.render(kMaxShownErrors);
         return output;
     }
     if (opt.mode == Mode::Check) {
@@ -532,7 +535,7 @@ CompileOutput compile_source(const Options &opt) {
                 std::move(allocator));
     output.ir = generated.ir;
     if (!generated.ok || !diags.ok()) {
-        output.compiler_stderr = diags.render();
+        output.compiler_stderr = diags.render(kMaxShownErrors);
         if (output.compiler_stderr.empty()) {
             output.compiler_stderr = generated.error;
         }
@@ -564,7 +567,7 @@ CompileOutput compile_source(const Options &opt) {
     if (uses_c_abi(graph) && !links_c_library(opt.link_args) && !links_c_library(graph.link_args)) {
         SourceLoc loc = first_c_abi(graph);
         diags.error(loc, "extern(abi=\"c\") requires a C library");
-        output.compiler_stderr = diags.render();
+        output.compiler_stderr = diags.render(kMaxShownErrors);
         return output;
     }
     const ProcessOutput linked = run_process(link_cmd);

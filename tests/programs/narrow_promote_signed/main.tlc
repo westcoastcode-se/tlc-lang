@@ -1,0 +1,17 @@
+// `u8` and `u16` widen to a signed `i32` before an operation with an `i32`, as docs/types/integer.md says.
+// `250u8 > -2` is true and `250u8 / -2` is -125, at run time and when folded.
+func main() i32 {
+    var b u8 = 250u8;
+    var m = -2;
+    var r = 0;
+    if (b / m == -125) { r += 1; }
+    if (b % m == 0) { r += 2; }
+    if (b > m) { r += 4; }
+    if ((b >> 1) == 125) { r += 8; }
+    var h u16 = 60000u16;
+    if (h / m == -30000) { r += 16; }
+    if (h < m) { r += 32; }
+    const cb = 250u8;
+    if (cb / -2 == -125) { r += 64; }
+    return r == 95 ? 42 : r;
+}

@@ -14,7 +14,7 @@ When `var` has an initializer, the type may be omitted and is taken from that va
 
 `var value = 1`, `var p = &value`, and `var p = Point{}` are that form.
 
-The value's own type is kept. `var e = 250u8` and `e := 250u8` are `u8`, and `var b = a` with `a u16` is `u16`. Arithmetic widens first, so `var sum = a + a` is `i32`, and so is `var n = -3i8`. A local `const` of a narrow value is still `i32`.
+The value's own type is kept. `var e = 250u8`, `e := 250u8`, `const c = 250u8`, and `comptime const c = 250u8` are `u8`, in a function and at file scope, and `var b = a` with `a u16` is `u16`. A narrow constant still folds, so `var row [c]i32` has 250 elements. A file-scope `var g = 250u8` is stored as one byte. Arithmetic widens first, so `var sum = a + a` is `i32`, and so is `var n = -3i8`. `i8(-3)` is `i8`.
 
 The type can still be written after the name, with a pointer or an array in front of its element type.
 

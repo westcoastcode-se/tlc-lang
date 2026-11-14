@@ -958,6 +958,8 @@ VarDecl clone_var(const VarDecl &var) {
     copy.is_comptime = var.is_comptime;
     copy.is_const = var.is_const;
     copy.has_const = var.has_const;
+    copy.narrow_bits = var.narrow_bits;
+    copy.narrow_unsigned = var.narrow_unsigned;
     copy.const_value = var.const_value;
     copy.runtime_init = var.runtime_init;
     copy.owner = var.owner;

@@ -194,7 +194,12 @@ bool same_type_const(const Type &lhs, bool lhs_const, const Type &rhs, bool rhs_
     return same_type(bare_lhs, bare_rhs);
 }
 
-bool allows_added_const_from(const Type &got, bool got_const, const Type &want, bool want_const) {
+// `level` 0 is a value that is copied. Its own `const` does not matter. Level 1 is what that value
+// points at or views. There `const` may be added. Deeper, `const` may be added only while every level
+// above is const: `**i32` as `**const i32` would let `*pp = &limit` and then `*p = 42` write a const.
+// A sized array is part of its value and keeps the level of its elements.
+bool allows_added_const_from(const Type &got, bool got_const, const Type &want, bool want_const, int level,
+                             bool loose) {
     if (got.alias_id != want.alias_id || got.kind != want.kind) {
         return false;
     }
@@ -202,18 +207,22 @@ bool allows_added_const_from(const Type &got, bool got_const, const Type &want, 
     want_const = want_const || want.is_const;
     if (fixed_array(got) || fixed_array(want)) {
         return fixed_array(got) && fixed_array(want) && got.length == want.length &&
-               allows_added_const_from(*got.element, got_const, *want.element, want_const);
+               allows_added_const_from(*got.element, got_const, *want.element, want_const, level, loose);
     }
-    if (got_const && !want_const) {
+    if (level > 0 && got_const && !want_const) {
         return false;
     }
+    if (level > 0 && !got_const && want_const && !loose) {
+        return false;
+    }
+    const bool inner_loose = level == 0 || (loose && want_const);
     if (got.kind == TypeKind::Array) {
         return got.length == want.length && got.element && want.element &&
-               allows_added_const_from(*got.element, false, *want.element, false);
+               allows_added_const_from(*got.element, false, *want.element, false, level + 1, inner_loose);
     }
     if (got.kind == TypeKind::Pointer) {
         return got.optional == want.optional && got.pointee && want.pointee &&
-               allows_added_const_from(*got.pointee, false, *want.pointee, false);
+               allows_added_const_from(*got.pointee, false, *want.pointee, false, level + 1, inner_loose);
     }
     Type bare_got = got;
     Type bare_want = want;
@@ -393,8 +402,17 @@ bool is_slice(const Type &type) {
 
 // `[]i32` converts to `[]const i32`. `[]const i32` does not convert to `[]i32`.
 bool allows_added_const(const Type &got, const Type &want) {
-    return allows_added_const_from(got, false, want, false);
+    return allows_added_const_from(got, false, want, false, 0, true);
 }
+
+namespace {
+
+// The element of a slice or an array that a slice views. It is level 1, below the view.
+bool allows_added_const_element(const Type &got, const Type &want) {
+    return allows_added_const_from(got, false, want, false, 1, true);
+}
+
+} // namespace
 
 bool accepts_slice(const Type &got, const Type &want) {
     if (!is_slice(want) || want.element == nullptr) {
@@ -403,7 +421,7 @@ bool accepts_slice(const Type &got, const Type &want) {
     // A parameter `[N]T` is a pointer to the element, and `decayed_len` is that `N`.
     // `*[N]T` points at the array. A plain `*T` has no length. `?*[N]T` stays optional.
     if (got.kind == TypeKind::Pointer && !got.optional && got.alias_id == 0 && got.pointee != nullptr) {
-        if (is_decayed_array(got) && allows_added_const(*got.pointee, *want.element)) {
+        if (is_decayed_array(got) && allows_added_const_element(*got.pointee, *want.element)) {
             return true;
         }
         const Type &array = *got.pointee;
@@ -413,7 +431,7 @@ bool accepts_slice(const Type &got, const Type &want) {
             if (array.is_const) {
                 element.is_const = true;
             }
-            if (allows_added_const(element, *want.element)) {
+            if (allows_added_const_element(element, *want.element)) {
                 return true;
             }
         }
@@ -428,7 +446,7 @@ bool accepts_slice(const Type &got, const Type &want) {
     if (got.is_const) {
         element.is_const = true;
     }
-    if (!allows_added_const(element, *want.element)) {
+    if (!allows_added_const_element(element, *want.element)) {
         return false;
     }
     if (is_slice(got)) {

@@ -1,0 +1,8 @@
+package lib;
+
+export var shared = 250u8;
+export const limit = -5i8;
+
+export func bump() void {
+    shared += 10;
+}
