@@ -8,6 +8,7 @@
 #include "pkg/pkg.hpp"
 #include "check/sema.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <charconv>
 #include <cstdint>
@@ -1519,11 +1520,78 @@ Checked check_buffer(const std::string &path, const std::string &text, const std
         }
     }
 
-    if (diags.ok() && !graph.nodes.empty()) {
+    // A syntax error stops the check, since the tree after it is a guess. A closed sibling file that does
+    // not parse is the exception: the open file still gets its type errors. That sibling keeps only its
+    // syntax errors, and a name the open file cannot find is not reported when the broken file spells it,
+    // since its declaration may be the part the parser skipped.
+    const std::size_t parsed = diags.size();
+    std::vector<uint32_t> broken;
+    bool run = diags.ok();
+    if (!run && entry != nullptr) {
+        run = true;
+        for (const Diagnostic &item : diags.items()) {
+            const PackageNode *owner = nullptr;
+            for (const PackageNode &node : graph.nodes) {
+                if (node.file_id == item.loc.file) {
+                    owner = &node;
+                    break;
+                }
+            }
+            if (!item.loc.valid() || owner == nullptr || owner->file_id == entry->file_id ||
+                owner->package_key != entry->package_key) {
+                run = false;
+                break;
+            }
+            if (std::find(broken.begin(), broken.end(), owner->file_id) == broken.end()) {
+                broken.push_back(owner->file_id);
+            }
+        }
+    }
+    if (run && !graph.nodes.empty()) {
         analyze(graph, diags);
     }
+    const auto spelled_in_broken = [&](const Diagnostic &item) {
+        const SourceFile *file = sources.find(item.loc.file);
+        if (file == nullptr || item.loc.offset >= file->text().size()) {
+            return false;
+        }
+        const std::string &text = file->text();
+        std::size_t end = item.loc.offset;
+        while (end < text.size() && ident_char(static_cast<unsigned char>(text[end]))) {
+            ++end;
+        }
+        const std::string name = text.substr(item.loc.offset, end - item.loc.offset);
+        if (name.empty()) {
+            return false;
+        }
+        for (uint32_t id : broken) {
+            const SourceFile *other = sources.find(id);
+            if (other == nullptr) {
+                continue;
+            }
+            const std::string &body = other->text();
+            for (std::size_t at = body.find(name); at != std::string::npos; at = body.find(name, at + 1)) {
+                const bool left = at == 0 || !ident_char(static_cast<unsigned char>(body[at - 1]));
+                const bool right = at + name.size() >= body.size() ||
+                                   !ident_char(static_cast<unsigned char>(body[at + name.size()]));
+                if (left && right) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
 
-    for (const Diagnostic &item : diags.items()) {
+    for (std::size_t index = 0; index < diags.items().size(); ++index) {
+        const Diagnostic &item = diags.items()[index];
+        if (index >= parsed && !broken.empty()) {
+            if (std::find(broken.begin(), broken.end(), item.loc.file) != broken.end()) {
+                continue;
+            }
+            if (item.message.rfind("undeclared identifier", 0) == 0 && spelled_in_broken(item)) {
+                continue;
+            }
+        }
         const SourceFile *file = sources.find(item.loc.file);
         Note note;
         note.message = item.message;

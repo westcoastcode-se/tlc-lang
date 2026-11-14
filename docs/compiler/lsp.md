@@ -28,6 +28,8 @@ A change with no range still replaces the whole buffer.
 
 A file that declares `package` is checked with the other files in its directory that declare the same package, including an open file that is not saved yet. A file of another package in that directory is not part of it. A `_unix.tlc` or `_windows.tlc` file is checked with the files of its own family. A name declared in a sibling file resolves, opens its definition, and completes without a qualifier. The document outline lists only the open file's own declarations. Renaming a package-level name of a package with several files is refused, because the sibling files would keep the old name.
 
+A syntax error stops the type check of that file. A sibling file that does not parse shows its syntax errors, and the open file is still type checked against the declarations the parser kept. A name the open file uses that the broken file spells is not reported as `undeclared identifier`, since its declaration may be in the part that did not parse. A syntax error in the open file, or in an imported package, stops the type check as before.
+
 The text of every open file is what a check reads, saved or not. An edit in one file checks again each open file whose check read it, and each open file of the same package. Closing a file checks those files again against its saved text. Opening a file whose text matches the disk changes nothing they read, so it checks only that file.
 
 The folder from `initialize`, `rootUri` or the first of `workspaceFolders`, is a package search root after the file's own directory. A package checked alone finds its imports from there, as it does when a program at that root imports it.

@@ -1,6 +1,7 @@
 #include "harness.hpp"
 #include "lsp/internal.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <charconv>
 #include <fcntl.h>
@@ -700,6 +701,30 @@ void check_package_buffers(tlc::test::Check &check, const std::string &bin) {
                                uri("a.tlc") + R"("}}})");
     seen = barrier();
     EXPECT_HAS(check, seen, std::string(R"("uri":")") + uri("b.tlc") + R"(","version":2,"diagnostics":[])");
+    // A closed sibling that does not parse keeps its syntax errors, and the open file still gets its type
+    // errors. `later` is spelled in the broken file, so it is not reported. `nowhere` is.
+    std::ofstream(root / "p" / "d.tlc") << "package p;\n\nfunc broken( {\n\nfunc later() i32 {\n    return 2;\n}\n";
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")") +
+                  uri("b.tlc") + R"(","version":3},"contentChanges":[{"text":")" +
+                  json_escape("package p;\n\nexport func f() i32 {\n    var x *i32 = 3;\n    return later() + nowhere;\n}\n") +
+                  R"("}]}})");
+    seen = barrier();
+    EXPECT_HAS(check, seen, "type mismatch: expected *i32, found i32");
+    EXPECT_HAS(check, seen, std::string(R"("uri":")") + uri("d.tlc") + R"(")");
+    EXPECT_HAS(check, seen, "expected ')'");
+    const std::size_t b_at = seen.rfind(std::string(R"("uri":")") + uri("b.tlc"));
+    EXPECT(check, b_at != std::string::npos);
+    if (b_at != std::string::npos) {
+        const std::string b_notes = seen.substr(b_at, seen.find("}]}", b_at) - b_at);
+        EXPECT(check, std::count(b_notes.begin(), b_notes.end(), '{') >= 2);
+        std::size_t undeclared = 0;
+        for (std::size_t at = b_notes.find("undeclared identifier"); at != std::string::npos;
+             at = b_notes.find("undeclared identifier", at + 1)) {
+            ++undeclared;
+        }
+        EXPECT(check, undeclared == 1);
+    }
     ::close(to_child[1]);
     ::close(from_child[0]);
     ::kill(pid, SIGKILL);
