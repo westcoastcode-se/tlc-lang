@@ -128,7 +128,7 @@ class Resolver {
     Resolver(const ResolveRequest &request, SourceSet &sources, DiagnosticEngine &diags, PackageGraph &graph)
         : sources_(sources), diags_(diags), graph_(graph), overlays_(request.overlays),
           vendor_request_(request.vendor_root), std_request_(request.std_root),
-          lib_requests_(request.lib_roots), preload_(request.preload) {
+          lib_requests_(request.lib_roots), preload_(request.preload), entry_package_(request.entry_package) {
         for (const std::string &root : request.package_paths) {
             extra_roots_.emplace_back(root);
         }
@@ -172,6 +172,9 @@ class Resolver {
         if (graph_.nodes[index].qualifier.empty()) {
             graph_.nodes[index].qualifier = canonical.stem().string();
         }
+        if (entry_package_ && graph_.nodes[index].unit.package && !graph_.nodes[index].unit.package->name.empty()) {
+            load_entry_siblings(canonical, index);
+        }
         by_package_.emplace(graph_.nodes[index].package_key, index);
         walk_package(graph_.nodes[index].package_key);
         if (!preload_.empty() && diags_.ok()) {
@@ -200,6 +203,7 @@ class Resolver {
     std::string std_request_;
     std::vector<std::string> lib_requests_;
     std::string preload_;
+    bool entry_package_ = false;
     fs::path vendor_root_;
     fs::path std_root_;
     std::vector<fs::path> lib_roots_;
@@ -500,6 +504,34 @@ class Resolver {
             append_vendor_libraries(dir, import.loc);
         }
         walk_package(key);
+    }
+
+    // The entry's directory is its package. Each other source file there joins it under the directory key.
+    void load_entry_siblings(const fs::path &entry, std::size_t entry_index) {
+        const fs::path dir = entry.parent_path();
+        std::vector<std::size_t> members{entry_index};
+        for (const fs::path &file : source_files(dir)) {
+            std::error_code ec;
+            const fs::path canonical = fs::canonical(file, ec);
+            if (ec || canonical == entry || by_path_.contains(canonical.string())) {
+                continue;
+            }
+            const std::size_t index = load_new(canonical);
+            if (index != kMissing) {
+                members.push_back(index);
+            }
+        }
+        const SourceLoc loc = graph_.nodes[entry_index].unit.package->loc;
+        const std::string qualifier = choose_qualifier(members, dir, loc);
+        const bool compiler_builtin = directory_is_std_builtin(dir);
+        const bool iteration_package = directory_is_std_seq(dir);
+        for (const std::size_t index : members) {
+            PackageNode &node = graph_.nodes[index];
+            node.package_key = dir.string();
+            node.qualifier = qualifier;
+            node.compiler_builtin = compiler_builtin;
+            node.iteration_package = iteration_package;
+        }
     }
 
     void add_vendor_root(const std::string &root) {

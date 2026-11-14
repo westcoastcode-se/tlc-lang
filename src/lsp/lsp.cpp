@@ -1,4 +1,6 @@
 // The language server loop.
+#include <algorithm>
+#include <map>
 #include "lsp/lsp.hpp"
 
 #include "diag/diag.hpp"
@@ -29,6 +31,9 @@ namespace tlc {
 int run_lsp() {
     using namespace lsp_impl;
     std::vector<Doc> docs;
+    std::map<std::string, std::string> sent;
+    // The workspace folder from `initialize`. A package checked alone finds its imports from there too.
+    std::string workspace_root;
     bool shutdown = false;
     auto find_doc = [&](const std::string &uri) -> Doc * {
         for (Doc &doc : docs) {
@@ -39,12 +44,22 @@ int run_lsp() {
         return nullptr;
     };
     while (true) {
-        const std::optional<std::string> body = read_message();
-        if (!body) {
+        std::string body;
+        const ReadStatus status = read_message(body);
+        if (status == ReadStatus::End) {
             return shutdown ? 0 : 1;
         }
-        const std::optional<Json> message = parse_json(*body);
-        if (!message || message->kind != Json::Kind::Object) {
+        if (status == ReadStatus::Skip) {
+            continue;
+        }
+        // JSON-RPC answers a body that is not JSON, and a value that is not a request object, with a null id.
+        const std::optional<Json> message = parse_json(body);
+        if (!message) {
+            send_json(error_response(jnull(), -32700, "parse error"));
+            continue;
+        }
+        if (message->kind != Json::Kind::Object) {
+            send_json(error_response(jnull(), -32600, "invalid request"));
             continue;
         }
         const Json *id = message->find("id");
@@ -59,6 +74,13 @@ int run_lsp() {
             if (!request) {
                 continue;
             }
+            std::string root_uri = params->str("rootUri");
+            if (const Json *folders = params->find("workspaceFolders");
+                root_uri.empty() && folders != nullptr && folders->kind == Json::Kind::Array && !folders->a.empty() &&
+                folders->a.front().kind == Json::Kind::Object) {
+                root_uri = folders->a.front().str("uri");
+            }
+            workspace_root = root_uri.empty() ? params->str("rootPath") : uri_to_path(root_uri);
             send_json(result_response(
                 *id, jobj({{"capabilities",
                             jobj({{"positionEncoding", jstr("utf-16")},
@@ -143,7 +165,25 @@ int run_lsp() {
             doc->path = open_path_for(uri_to_path(uri));
             doc->text = std::move(text);
             doc->version = version;
-            recheck(*doc);
+            recheck(*doc, docs, workspace_root);
+            // The other open files of that package, and files that import it, see the new text too.
+            const std::string changed_dir = std::filesystem::path(doc->path).parent_path().string();
+            const std::string changed_uri = doc->uri;
+            for (Doc &other : docs) {
+                if (other.uri == changed_uri) {
+                    continue;
+                }
+                const bool sibling = std::filesystem::path(other.path).parent_path().string() == changed_dir;
+                const bool importer = std::any_of(other.notes.begin(), other.notes.end(), [&](const Note &note) {
+                    return note.uri == changed_uri;
+                }) || std::any_of(other.syms.begin(), other.syms.end(), [&](const Sym &sym) {
+                    return sym.uri == changed_uri;
+                });
+                if (sibling || importer) {
+                    recheck(other, docs, workspace_root);
+                }
+            }
+            sync_diagnostics(docs, sent);
             continue;
         }
         if (method == "textDocument/didClose") {
@@ -156,8 +196,8 @@ int run_lsp() {
                 if (docs[n].uri != uri) {
                     continue;
                 }
-                publish(docs[n], {});
                 docs.erase(docs.begin() + static_cast<std::ptrdiff_t>(n));
+                sync_diagnostics(docs, sent);
                 break;
             }
             continue;
@@ -179,8 +219,8 @@ int run_lsp() {
                 continue;
             }
             const Json *position = params->find("position");
-            const int line = position == nullptr ? 0 : static_cast<int>(position->integer("line", 0));
-            const int character = position == nullptr ? 0 : static_cast<int>(position->integer("character", 0));
+            const int line = position_part(position, "line");
+            const int character = position_part(position, "character");
             const Cursor cursor = cursor_at(doc->text, line, character);
             if (method == "textDocument/completion") {
                 send_json(result_response(*id, complete(*doc, cursor)));
@@ -257,20 +297,20 @@ int run_lsp() {
                 Pos end;
                 if (range != nullptr) {
                     if (const Json *from = range->find("start"); from != nullptr) {
-                        start.line = static_cast<int>(from->integer("line", 0));
-                        start.character = static_cast<int>(from->integer("character", 0));
+                        start.line = position_part(from, "line");
+                        start.character = position_part(from, "character");
                     }
                     if (const Json *to = range->find("end"); to != nullptr) {
-                        end.line = static_cast<int>(to->integer("line", 0));
-                        end.character = static_cast<int>(to->integer("character", 0));
+                        end.line = position_part(to, "line");
+                        end.character = position_part(to, "character");
                     }
                 }
                 send_json(result_response(*id, code_actions(*doc, start, end)));
                 continue;
             }
             const Json *position = params->find("position");
-            const int line = position == nullptr ? 0 : static_cast<int>(position->integer("line", 0));
-            const int character = position == nullptr ? 0 : static_cast<int>(position->integer("character", 0));
+            const int line = position_part(position, "line");
+            const int character = position_part(position, "character");
             if (method == "textDocument/rename") {
                 const Cursor cursor = cursor_at(doc->text, line, character);
                 send_json(result_response(*id, rename_edits(*doc, cursor, params->str("newName"))));
@@ -294,12 +334,12 @@ int run_lsp() {
                 const Json *range = params->find("range");
                 if (range != nullptr) {
                     if (const Json *from = range->find("start"); from != nullptr) {
-                        start.line = static_cast<int>(from->integer("line", 0));
-                        start.character = static_cast<int>(from->integer("character", 0));
+                        start.line = position_part(from, "line");
+                        start.character = position_part(from, "character");
                     }
                     if (const Json *to = range->find("end"); to != nullptr) {
-                        end.line = static_cast<int>(to->integer("line", 0));
-                        end.character = static_cast<int>(to->integer("character", 0));
+                        end.line = position_part(to, "line");
+                        end.character = position_part(to, "character");
                     }
                 }
             }

@@ -1,4 +1,5 @@
 // JSON and the bytes on stdin and stdout.
+#include <limits>
 #include "lsp/lsp.hpp"
 
 #include "diag/diag.hpp"
@@ -178,7 +179,7 @@ bool read_exact(std::string &out, std::size_t count) {
     return true;
 }
 
-std::optional<std::string> read_message() {
+ReadStatus read_message(std::string &body) {
     std::string header;
     char byte = 0;
     while (header.size() < 4 || header.substr(header.size() - 4) != "\r\n\r\n") {
@@ -187,11 +188,12 @@ std::optional<std::string> read_message() {
             continue;
         }
         if (n <= 0) {
-            return std::nullopt;
+            return ReadStatus::End;
         }
         header.push_back(byte);
+        // A header this long is not one. The stream cannot be followed after it.
         if (header.size() > 1024 * 1024) {
-            return std::nullopt;
+            return ReadStatus::End;
         }
         if (header.size() >= 2 && header.substr(header.size() - 2) == "\n\n") {
             break;
@@ -225,9 +227,13 @@ std::optional<std::string> read_message() {
                 while (!digits.empty() && digits.front() == ' ') {
                     digits.remove_prefix(1);
                 }
+                while (!digits.empty() && (digits.back() == ' ' || digits.back() == '\t')) {
+                    digits.remove_suffix(1);
+                }
+                // `Content-Length: x`, `-1`, and `12abc` are not a length. Every character is a digit.
                 std::size_t value = 0;
                 const auto parsed = std::from_chars(digits.data(), digits.data() + digits.size(), value);
-                if (parsed.ec == std::errc{}) {
+                if (parsed.ec == std::errc{} && parsed.ptr == digits.data() + digits.size() && !digits.empty()) {
                     length = value;
                     saw = true;
                 }
@@ -238,14 +244,37 @@ std::optional<std::string> read_message() {
         }
         line = end + 1;
     }
-    if (!saw || length > 32 * 1024 * 1024) {
-        return std::nullopt;
+    // A header without a length is skipped. The next header is read after it, so one bad message
+    // does not stop the server. A body past 32 MiB is read and dropped.
+    if (!saw) {
+        return ReadStatus::Skip;
     }
-    std::string body;
+    if (length > 32 * 1024 * 1024) {
+        std::string chunk;
+        while (length > 0) {
+            const std::size_t part = std::min<std::size_t>(length, 1024 * 1024);
+            if (!read_exact(chunk, part)) {
+                return ReadStatus::End;
+            }
+            length -= part;
+        }
+        return ReadStatus::Skip;
+    }
     if (!read_exact(body, length)) {
-        return std::nullopt;
+        return ReadStatus::End;
     }
-    return body;
+    return ReadStatus::Message;
+}
+
+int position_part(const Json *position, std::string_view key) {
+    if (position == nullptr) {
+        return 0;
+    }
+    const int64_t value = position->integer(key, 0);
+    if (value < 0) {
+        return 0;
+    }
+    return value > std::numeric_limits<int>::max() ? std::numeric_limits<int>::max() : static_cast<int>(value);
 }
 
 void send_json(const Json &json) {
@@ -561,9 +590,25 @@ std::string uri_to_path(std::string_view uri) {
     if (!uri.starts_with(kFile)) {
         return percent_decode(uri);
     }
+    // `file:///a/b` and `file://localhost/a/b` are the local `/a/b`. Another host is not a local path.
     std::string_view rest = uri.substr(kFile.size());
-    if (rest.starts_with("//")) {
+    const std::size_t slash = rest.find('/');
+    if (slash == std::string_view::npos) {
         return {};
+    }
+    std::string host(rest.substr(0, slash));
+    for (char &c : host) {
+        if (c >= 'A' && c <= 'Z') {
+            c = static_cast<char>(c - 'A' + 'a');
+        }
+    }
+    if (!host.empty() && host != "localhost") {
+        return {};
+    }
+    rest.remove_prefix(slash);
+    // A query or a fragment is not part of the path.
+    if (const std::size_t mark = rest.find_first_of("?#"); mark != std::string_view::npos) {
+        rest = rest.substr(0, mark);
     }
     return percent_decode(rest);
 }

@@ -32,9 +32,6 @@ These were found by review and have a repro. They are not fixed yet.
 ### Driver and language server
 
 - `tlc --run` prints the program's output only after it exits, stdout before stderr.
-- Closing one file clears the published diagnostics of another open file. A file of a package with several files reports `undeclared identifier` for names from its sibling files.
-- A `file://localhost/...` URI breaks every import.
-- A `Content-Length` of `x` or `-1` stops the server. Invalid JSON gets no `-32700` reply. A position of 2^31 wraps to the start of the document.
 - Semantic tokens on a file with thousands of locals that share one name stay slower than linear. `bare_candidates` checks every local of that name for each use.
 
 ## Generics and compile-time

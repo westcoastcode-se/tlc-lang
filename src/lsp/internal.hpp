@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_map>
+#include <map>
 #include "diag/diag.hpp"
 #include "driver/driver.hpp"
 #include "lex/lexer.hpp"
@@ -335,7 +337,11 @@ struct Parse {
 std::optional<Json> parse_json(std::string_view text);
 bool write_all(int fd, std::string_view bytes);
 bool read_exact(std::string &out, std::size_t count);
-std::optional<std::string> read_message();
+// `Skip` is a header without a usable length, or a body too large to keep. The server reads on.
+enum class ReadStatus { Message, End, Skip };
+ReadStatus read_message(std::string &body);
+// `line` and `character` of an LSP position. A negative or out-of-range number is clamped, not wrapped.
+int position_part(const Json *position, std::string_view key);
 void send_json(const Json &json);
 bool ident_char(unsigned char c);
 int utf16_units(std::string_view text);
@@ -488,7 +494,6 @@ struct Doc {
     int version = 0;
     std::vector<Sym> syms;
     std::vector<Note> notes;
-    std::vector<std::string> published;
 };
 
 int completion_kind(Role role);
@@ -553,7 +558,8 @@ void add_function_locals(const FunctionDecl &fn, const std::string &text, const 
 void walk_stmt(const Stmt &stmt, const std::string &text, const std::string &uri, uint32_t scope_end, std::vector<Sym> &out,
                const UnitIndex &index);
 uint32_t body_end(const FunctionDecl &fn, const std::string &text, uint32_t fallback);
-void index_unit(const PackageNode &node, const std::string &text, const std::string &uri, bool entry, std::vector<Sym> &out);
+void index_unit(const PackageNode &node, const std::string &text, const std::string &uri, bool entry, std::vector<Sym> &out,
+                bool sibling = false);
 void index_imports(const PackageGraph &graph, const PackageNode &entry, const std::string &text, const std::string &uri,
                    std::vector<Sym> &out);
 
@@ -562,7 +568,11 @@ struct Checked {
     std::vector<Note> notes;
 };
 
-Checked check_buffer(const std::string &path, const std::string &text, const std::string &client_uri);
+// `overlays` holds the unsaved text of other open files, by path. `roots` are package search roots
+// after the file's own directory, such as the workspace folder.
+Checked check_buffer(const std::string &path, const std::string &text, const std::string &client_uri,
+                     const std::unordered_map<std::string, std::string> &overlays = {},
+                     const std::vector<std::string> &roots = {});
 Cursor cursor_at(const std::string &text, int line, int character);
 bool prefix_ok(const std::string &name, const std::string &prefix);
 const Sym *lookup_bare(const std::vector<Sym> &syms, const std::string &uri, const std::string &name, uint32_t offset);
@@ -615,8 +625,11 @@ Json hover_of(const Sym &sym, Pos start, Pos end);
 std::vector<Json> outline_children(const Doc &doc, const Sym &parent);
 Json document_symbols(const Doc &doc);
 Json publish_params(const std::string &uri, int version, bool with_version, const std::vector<Note> &notes);
-void publish(Doc &doc, const std::vector<Note> &notes);
-void recheck(Doc &doc);
+// Publishes the diagnostics of every file the open documents report on. `sent` is what each URI
+// last received, so only a changed list is sent. Call it after a document is checked or closed.
+void sync_diagnostics(const std::vector<Doc> &docs, std::map<std::string, std::string> &sent);
+// Checks the buffer again with the other open buffers and the workspace root. `sync_diagnostics` publishes it.
+void recheck(Doc &doc, const std::vector<Doc> &docs, const std::string &workspace_root);
 const Json *text_document(const Json &params);
 Json error_response(const Json &id, int code, const std::string &message);
 Json result_response(const Json &id, Json result);

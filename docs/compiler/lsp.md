@@ -24,6 +24,26 @@ A `didChange` applies each range in order.
 
 A change with no range still replaces the whole buffer.
 
+## Packages, files, and diagnostics
+
+A file that declares `package` is checked with the other files of that package in its directory. A name declared in a sibling file resolves, opens its definition, and completes without a qualifier. A `static` function stays in its own file. The document outline lists only the open file's own declarations.
+
+The text of every open file is what a check reads, saved or not. An edit in one file checks again each open file in that directory, and each open file whose check read it.
+
+The folder from `initialize`, `rootUri` or the first of `workspaceFolders`, is a package search root after the file's own directory. A package checked alone finds its imports from there, as it does when a program at that root imports it.
+
+An open file shows the diagnostics of its own check. A file that is not open shows what the open files report about it. Closing one file does not clear another open file.
+
+`file:///a/b.tlc` and `file://localhost/a/b.tlc` are the local file `/a/b.tlc`. A URI with another host is not a local file.
+
+## Malformed input
+
+A header without a whole decimal `Content-Length`, such as `x`, `-1`, or `12abc`, is skipped. The server reads the next header. A body longer than 32 MiB is read and dropped.
+
+A body that is not JSON is answered with error `-32700` and a null `id`. A JSON value that is not an object is answered with `-32600`.
+
+A negative `line` or `character` is 0. A value past the end of the document is the end of that line, or of the document.
+
 In Zed, hold Ctrl and click a function name to open its definition.
 
 That includes a function brought in by `import { name } from "pkg"`.

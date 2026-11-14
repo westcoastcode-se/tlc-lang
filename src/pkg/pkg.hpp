@@ -179,6 +179,10 @@ struct ResolveRequest {
     // Loaded after the entry file, as `import "std/debug"` is loaded. Empty skips it.
     // The entry file does not gain that import in its source.
     std::string preload;
+    // The language server checks one file of a package. When the entry declares `package`, every
+    // source file in its directory is loaded as that one package, as an import of the directory would.
+    // The compiler keeps the entry file alone.
+    bool entry_package = false;
 };
 
 // `import "builtin"` is the compiler package. The copy in `<std_root>/builtin` is that

@@ -154,10 +154,10 @@ std::string apply_content_changes(const std::string &text, const Json &changes) 
         if (start == nullptr || end == nullptr) {
             continue;
         }
-        uint32_t from = offset_at(current, static_cast<int>(start->integer("line", 0)),
-                                  static_cast<int>(start->integer("character", 0)));
-        uint32_t to = offset_at(current, static_cast<int>(end->integer("line", 0)),
-                                static_cast<int>(end->integer("character", 0)));
+        uint32_t from = offset_at(current, position_part(start, "line"),
+                                  position_part(start, "character"));
+        uint32_t to = offset_at(current, position_part(end, "line"),
+                                position_part(end, "character"));
         if (from > current.size()) {
             from = static_cast<uint32_t>(current.size());
         }

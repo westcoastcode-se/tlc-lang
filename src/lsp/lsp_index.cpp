@@ -1069,7 +1069,11 @@ uint32_t body_end(const FunctionDecl &fn, const std::string &text, uint32_t fall
     return fallback;
 }
 
-void index_unit(const PackageNode &node, const std::string &text, const std::string &uri, bool entry, std::vector<Sym> &out) {
+void index_unit(const PackageNode &node, const std::string &text, const std::string &uri, bool entry, std::vector<Sym> &out,
+                bool sibling) {
+    // A sibling file of the entry's package names its declarations without a qualifier, as the entry does.
+    // Only the entry's own declarations are in the outline, and only its function bodies are walked.
+    const bool visible = entry || sibling;
     // Each symbol is placed with `locate`. One index keeps that linear in the file.
     const LineIndex lines(text);
     std::vector<uint32_t> marks;
@@ -1128,7 +1132,8 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.package_key = node.package_key;
             sym.uri = uri;
             sym.exported = fn->exported;
-            sym.bare = entry && fn->method_struct.empty();
+            // A `static` function stays in its own file.
+            sym.bare = (entry || (sibling && !fn->is_static)) && fn->method_struct.empty();
             sym.outline = entry && fn->method_struct.empty();
             sym.role = fn->method_struct.empty() ? Role::Function : Role::Method;
             sym.static_method = !fn->method_struct.empty() && (fn->params.empty() || !fn->params.front().is_receiver);
@@ -1150,7 +1155,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.package_key = node.package_key;
             sym.uri = uri;
             sym.exported = var->exported;
-            sym.bare = entry && var->owner.empty();
+            sym.bare = visible && var->owner.empty();
             sym.outline = entry && var->owner.empty();
             sym.role = var->is_const_decl ? Role::Constant : Role::Variable;
             if (!var->owner.empty()) {
@@ -1193,7 +1198,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 }
             }
             put_loc(sym, text, var->loc, var->name);
-            if (!entry && (var->is_static || !var->exported)) {
+            if (!entry && (var->is_static || (!sibling && !var->exported))) {
                 sym.bare = false;
                 sym.outline = false;
             }
@@ -1210,12 +1215,12 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.package_key = node.package_key;
             sym.uri = uri;
             sym.exported = item->exported;
-            sym.bare = entry;
+            sym.bare = visible;
             sym.outline = entry;
             sym.role = Role::StructType;
             sym.detail = std::string("type ") + item->name + (item->is_union ? " union" : " struct");
             put_loc(sym, text, item->loc, item->name);
-            if (!entry && !item->exported) {
+            if (!visible && !item->exported) {
                 sym.bare = false;
                 sym.outline = false;
             }
@@ -1246,12 +1251,12 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.package_key = node.package_key;
             sym.uri = uri;
             sym.exported = item->exported;
-            sym.bare = entry;
+            sym.bare = visible;
             sym.outline = entry;
             sym.role = Role::EnumType;
             sym.detail = "type " + item->name + " enum";
             put_loc(sym, text, item->loc, item->name);
-            if (!entry && !item->exported) {
+            if (!visible && !item->exported) {
                 sym.bare = false;
                 sym.outline = false;
             }
@@ -1276,7 +1281,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.package_key = node.package_key;
             sym.uri = uri;
             sym.exported = item->exported;
-            sym.bare = entry;
+            sym.bare = visible;
             sym.outline = entry;
             sym.role = Role::Alias;
             if (item->is_tuple) {
@@ -1305,7 +1310,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                 sym.detail = "type " + item->name + " " + item->type_name;
             }
             put_loc(sym, text, item->loc, item->name);
-            if (!entry && !item->exported) {
+            if (!visible && !item->exported) {
                 sym.bare = false;
                 sym.outline = false;
             }
@@ -1335,7 +1340,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.package_key = node.package_key;
             sym.uri = uri;
             sym.exported = item->exported;
-            sym.bare = entry;
+            sym.bare = visible;
             sym.outline = entry;
             sym.role = Role::Trait;
             sym.detail = "type " + item->name + " trait";
@@ -1443,7 +1448,9 @@ void index_imports(const PackageGraph &graph, const PackageNode &entry, const st
     }
 }
 
-Checked check_buffer(const std::string &path, const std::string &text, const std::string &client_uri) {
+Checked check_buffer(const std::string &path, const std::string &text, const std::string &client_uri,
+                     const std::unordered_map<std::string, std::string> &overlays,
+                     const std::vector<std::string> &roots) {
     Checked checked;
     SourceSet sources;
     DiagnosticEngine diags(sources);
@@ -1457,7 +1464,11 @@ Checked check_buffer(const std::string &path, const std::string &text, const std
         request.lib_roots = library_paths();
         request.vendor_root = vendor_library_root();
         request.std_root = std_library_root();
-        request.overlays.emplace(path, text);
+        request.overlays = overlays;
+        request.overlays.insert_or_assign(path, text);
+        request.package_paths = roots;
+        // A file that declares `package` is checked with the other files of that package.
+        request.entry_package = true;
         resolve_packages(request, sources, diags, graph);
     } else {
         SourceFile &file = sources.add(path.empty() ? "untitled.tlc" : path, text);
@@ -1500,7 +1511,8 @@ Checked check_buffer(const std::string &path, const std::string &text, const std
                 continue;
             }
             const std::string uri = uri_for(node);
-            index_unit(node, file->text(), uri, node.file_id == entry->file_id, checked.syms);
+            index_unit(node, file->text(), uri, node.file_id == entry->file_id, checked.syms,
+                       node.file_id != entry->file_id && node.package_key == entry->package_key);
         }
         if (const SourceFile *file = file_of(sources, entry->file_id)) {
             index_imports(graph, *entry, file->text(), client_uri, checked.syms);

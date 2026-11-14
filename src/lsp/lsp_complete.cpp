@@ -1,4 +1,5 @@
 // Completion, hover, diagnostics, and semantic tokens.
+#include <map>
 #include "lsp/lsp.hpp"
 
 #include "diag/diag.hpp"
@@ -1434,9 +1435,7 @@ Json complete(const Doc &doc, const Cursor &cursor) {
             if (sym.local && (sym.uri != doc.uri || cursor.offset < sym.scope_begin || cursor.offset > sym.scope_end)) {
                 continue;
             }
-            if (!sym.local && sym.uri != doc.uri) {
-                continue;
-            }
+            // A declaration from another file is bare only in a sibling file of this package.
             push(sym.name, sym.completion_kind, sym.detail);
         }
         for (const char *word : kKeywords) {
@@ -1520,35 +1519,79 @@ Json publish_params(const std::string &uri, int version, bool with_version, cons
     return jobj(std::move(fields));
 }
 
-void publish(Doc &doc, const std::vector<Note> &notes) {
-    std::vector<std::string> uris = doc.published;
-    auto remember = [&](const std::string &uri) {
-        for (const std::string &have : uris) {
-            if (have == uri) {
-                return;
+void sync_diagnostics(const std::vector<Doc> &docs, std::map<std::string, std::string> &sent) {
+    // An open file shows what its own check found. Another file's check read that file from disk,
+    // so its positions may be stale. A file that is not open shows what every open file reports about it.
+    std::map<std::string, std::vector<const Note *>> wanted;
+    std::map<std::string, const Doc *> open;
+    for (const Doc &doc : docs) {
+        open[doc.uri] = &doc;
+        wanted[doc.uri];
+    }
+    for (const Doc &doc : docs) {
+        for (const Note &note : doc.notes) {
+            if (note.uri.empty()) {
+                continue;
+            }
+            const auto owner = open.find(note.uri);
+            if (owner != open.end() && owner->second != &doc) {
+                continue;
+            }
+            std::vector<const Note *> &list = wanted[note.uri];
+            const bool repeated = std::any_of(list.begin(), list.end(), [&](const Note *have) {
+                return have->message == note.message && have->start.line == note.start.line &&
+                       have->start.character == note.start.character && have->end.line == note.end.line &&
+                       have->end.character == note.end.character;
+            });
+            if (!repeated) {
+                list.push_back(&note);
             }
         }
-        uris.push_back(uri);
-    };
-    remember(doc.uri);
-    for (const Note &note : notes) {
-        if (!note.uri.empty()) {
-            remember(note.uri);
+    }
+    // A file that had diagnostics and now has none is cleared once.
+    for (const auto &[uri, body] : sent) {
+        (void)body;
+        wanted[uri];
+    }
+    std::map<std::string, std::string> next;
+    for (const auto &[uri, list] : wanted) {
+        std::vector<Note> notes;
+        notes.reserve(list.size());
+        for (const Note *note : list) {
+            notes.push_back(*note);
+        }
+        const auto owner = open.find(uri);
+        const bool is_open = owner != open.end();
+        const Json params = publish_params(uri, is_open ? owner->second->version : 0, is_open, notes);
+        std::string body;
+        dump(body, params);
+        const auto before = sent.find(uri);
+        if (before == sent.end() || before->second != body) {
+            send_json(jobj({{"jsonrpc", jstr("2.0")}, {"method", jstr("textDocument/publishDiagnostics")}, {"params", params}}));
+        }
+        // An empty list for a closed file is not kept. Nothing more needs clearing there.
+        if (is_open || !notes.empty()) {
+            next[uri] = std::move(body);
         }
     }
-    for (const std::string &uri : uris) {
-        send_json(jobj({{"jsonrpc", jstr("2.0")},
-                        {"method", jstr("textDocument/publishDiagnostics")},
-                        {"params", publish_params(uri, doc.version, uri == doc.uri, notes)}}));
-    }
-    doc.published = std::move(uris);
+    sent = std::move(next);
 }
 
-void recheck(Doc &doc) {
-    Checked checked = check_buffer(doc.path, doc.text, doc.uri);
+void recheck(Doc &doc, const std::vector<Doc> &docs, const std::string &workspace_root) {
+    // A sibling file of the package, or an imported file, is read from its editor buffer when it is open.
+    std::unordered_map<std::string, std::string> overlays;
+    for (const Doc &other : docs) {
+        if (&other != &doc && !other.path.empty()) {
+            overlays.emplace(other.path, other.text);
+        }
+    }
+    std::vector<std::string> roots;
+    if (!workspace_root.empty()) {
+        roots.push_back(workspace_root);
+    }
+    Checked checked = check_buffer(doc.path, doc.text, doc.uri, overlays, roots);
     doc.syms = std::move(checked.syms);
     doc.notes = checked.notes;
-    publish(doc, doc.notes);
 }
 
 const Json *text_document(const Json &params) {
