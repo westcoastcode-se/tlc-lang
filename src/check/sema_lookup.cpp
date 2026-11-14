@@ -1224,28 +1224,32 @@ bool Checker::lookup_field(const Type &object, const std::string &name, Type &ou
 }
 
 bool Checker::accepts_pointer(const Type &got, const Type &want) const {
-    if (same_type(got, want)) {
-        return true;
-    }
-    if (got.kind != TypeKind::Pointer || want.kind != TypeKind::Pointer || got.pointee == nullptr ||
-        want.pointee == nullptr) {
-        return false;
-    }
-    // `*T` may be stored in `?*T`. `?*T` is not stored in `*T`.
-    // `*T` may be stored in `*const T`. Dropping `const` is rejected.
-    if (got.optional && !want.optional) {
-        return false;
-    }
-    if (got.pointee->is_const && !want.pointee->is_const) {
-        return false;
-    }
-    Type source = *got.pointee;
-    Type target = *want.pointee;
-    source.is_const = target.is_const;
-    if (same_type(source, target)) {
-        return true;
-    }
-    return accepts_pointer(source, target);
+    // `*T` may be stored in `?*T`, and `*T` in `*const T`. Below the top level `?` may be added only while
+    // every level above it is const. `**i32` stored in `*?*i32` would let `*q = null` empty a `*i32`.
+    // `const` may still be added at any level, as `docs/types/pointer.md` shows with `**const i32`.
+    const auto accepts = [&](const auto &self, const Type &from, const Type &to, bool loose) -> bool {
+        if (same_type(from, to)) {
+            return true;
+        }
+        if (from.kind != TypeKind::Pointer || to.kind != TypeKind::Pointer || from.pointee == nullptr ||
+            to.pointee == nullptr) {
+            return false;
+        }
+        if (from.optional != to.optional && !(loose && !from.optional && to.optional)) {
+            return false;
+        }
+        if (from.pointee->is_const && !to.pointee->is_const) {
+            return false;
+        }
+        Type source = *from.pointee;
+        Type target = *to.pointee;
+        source.is_const = target.is_const;
+        if (same_type(source, target)) {
+            return true;
+        }
+        return self(self, source, target, loose && to.pointee->is_const);
+    };
+    return accepts(accepts, got, want, true);
 }
 
 bool Checker::needs_nonnull_pointer(const Type &type) const {

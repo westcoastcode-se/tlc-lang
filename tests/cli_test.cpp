@@ -68,6 +68,17 @@ int run_cli_tests() {
         EXPECT_HAS(check, kept, "return 3;");
     }
 
+    // A directory named `x.so.d` holds a source. Only a file name like `libfoo.so.1` is a library.
+    {
+        const std::filesystem::path dir = std::filesystem::temp_directory_path() / "tlc-proj.so.d";
+        std::filesystem::create_directories(dir);
+        std::ofstream out(dir / "main.tlc");
+        out << "func main() i32 {\n    return 3;\n}\n";
+    }
+    const std::string so_dir = (std::filesystem::temp_directory_path() / "tlc-proj.so.d" / "main.tlc").string();
+    const tlc::test::Proc so_named = tlc::test::spawn({bin, "--run", so_dir});
+    EXPECT(check, so_named.code == 3);
+
     const std::string opt_zero = "/tmp/tlc-opt-zero.tlc";
     {
         std::ofstream out(opt_zero);

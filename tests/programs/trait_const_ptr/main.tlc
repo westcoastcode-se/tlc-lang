@@ -1,0 +1,7 @@
+// `*const Rect` is not passed as `*Shape`. `grow` takes `*this` and would write the const value.
+type Shape trait { func grow(n i32) void; };
+type Rect struct { w i32; };
+func Rect::grow(self *this, n i32) void { self.w = self.w + n; }
+func use2(s *Shape) void { s.grow(41); }
+func bump(c *const Rect) void { use2(c); }
+func main() i32 { var r = Rect{.w = 1}; bump(&r); return r.w; }

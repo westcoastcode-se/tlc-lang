@@ -1,0 +1,38 @@
+// A slice of a local array escapes through `?:`, a nested field, a tuple, and a struct literal.
+type Cells struct {
+    c [2]i32;
+};
+
+type Grid struct {
+    g Cells;
+};
+
+type Holder struct {
+    s []i32;
+};
+
+func pick() []i32 {
+    var row = [_]i32{1, 2};
+    return true ? row[:] : row[1:];
+}
+
+func nested() []i32 {
+    var h Grid;
+    h.g.c[0] = 1;
+    h.g.c[1] = 2;
+    return h.g.c[:];
+}
+
+func pair() ((i32, []i32)) {
+    var row = [_]i32{1, 2};
+    return (1, row[:]);
+}
+
+func held() Holder {
+    var row = [_]i32{1, 2};
+    return {.s = row[:]};
+}
+
+func main() i32 {
+    return pick()[0] + nested()[0] + pair()[0] + held().s[0];
+}

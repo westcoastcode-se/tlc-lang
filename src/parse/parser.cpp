@@ -44,6 +44,21 @@ void Parser::error_at(const Token &token, const std::string &message) { diags_.e
 
 void Parser::error_here(const std::string &message) { error_at(peek(), message); }
 
+void Parser::deepen() {
+    ++nest_;
+    if (nest_ <= kMaxNest) {
+        return;
+    }
+    if (!nest_failed_) {
+        error_here("nesting too deep");
+        nest_failed_ = true;
+    }
+    // Every caller then sees the end of the file and unwinds without going deeper.
+    if (!tokens_.empty()) {
+        pos_ = tokens_.size() - 1;
+    }
+}
+
 bool Parser::expect(TokenKind kind, const std::string &message) {
     if (eat(kind)) {
         return true;

@@ -975,6 +975,7 @@ std::unique_ptr<Stmt> Parser::parse_bind(bool is_var) {
 }
 
 std::unique_ptr<Stmt> Parser::parse_statement() {
+    const Nest nest(*this);
     // `unsafe { ... }` is a block. `unsafe name(...)` stays an expression.
     if (check(TokenKind::KwUnsafe) && peek(1).kind == TokenKind::LBrace) {
         return parse_unsafe_block();

@@ -284,7 +284,9 @@ void Checker::check_for_each(const Stmt::For &node) {
     Type element;
     if (got.kind == TypeKind::Array && got.element != nullptr && got.alias_id == 0) {
         element = *got.element;
-        if (got.is_const) {
+        // `check_expr` copies the value and drops `const`. `ptr_of(row)` on a `const row` addresses that
+        // const array, so the element pointer is `*const E`.
+        if (got.is_const || (want_ref && const_path(*collection))) {
             element.is_const = true;
         }
     } else if (is_decayed_array(got) && !got.optional && got.pointee != nullptr && got.alias_id == 0) {
@@ -646,6 +648,60 @@ bool Checker::comptime_func_body() const {
            !checking_.back()->is_macro;
 }
 
+std::optional<Type> Checker::frame_place(const Expr &expr) {
+    const int here = scopes_.empty() ? 0 : scopes_.back().function_id;
+    if (here == 0) {
+        return std::nullopt;
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        const Symbol *symbol = lookup(named->text);
+        if (symbol == nullptr || symbol->function_id != here || symbol->is_function || symbol->is_type ||
+            symbol->is_package || symbol->is_constant) {
+            return std::nullopt;
+        }
+        const Type &type = symbol->type;
+        // A parameter `[N]T` is a pointer to the caller's array.
+        if (is_decayed_array(type) || type.kind == TypeKind::Pointer || is_slice(type)) {
+            return std::nullopt;
+        }
+        return type;
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        if (selector->base == nullptr || selector->field.empty()) {
+            return std::nullopt;
+        }
+        const std::optional<Type> base = frame_place(*selector->base);
+        if (!base || base->kind != TypeKind::Struct) {
+            return std::nullopt;
+        }
+        Type field;
+        if (!lookup_field(*base, selector->field, field)) {
+            return std::nullopt;
+        }
+        return field;
+    }
+    if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+        if (index->is_range || index->base == nullptr) {
+            return std::nullopt;
+        }
+        const std::optional<Type> base = frame_place(*index->base);
+        if (!base) {
+            return std::nullopt;
+        }
+        if (base->kind == TypeKind::Array && base->length >= 0 && base->element != nullptr) {
+            return *base->element;
+        }
+        if (base->kind == TypeKind::Tuple) {
+            const std::optional<int> at = fold_int(*index->index);
+            if (at && *at >= 0 && static_cast<std::size_t>(*at) < base->results.size()) {
+                return base->results[static_cast<std::size_t>(*at)];
+            }
+        }
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
 bool Checker::slice_refers_to_local(const Expr &expr) {
     return std::visit(
         [&](const auto &node) -> bool {
@@ -658,32 +714,29 @@ bool Checker::slice_refers_to_local(const Expr &expr) {
                 if (symbol->local_slice) {
                     return true;
                 }
-                // A parameter `[N]T` is a pointer. A file-scope array is not in this function.
-                const int here = scopes_.empty() ? 0 : scopes_.back().function_id;
-                return here != 0 && symbol->function_id == here && symbol->type.kind == TypeKind::Array &&
-                       symbol->type.length >= 0 && !is_slice(symbol->type);
+                const std::optional<Type> place = frame_place(expr);
+                return place && place->kind == TypeKind::Array && place->length >= 0 && !is_slice(*place);
             } else if constexpr (std::is_same_v<T, Expr::Index>) {
-                return node.is_range && node.base != nullptr && slice_refers_to_local(*node.base);
+                if (!node.is_range || node.base == nullptr) {
+                    return false;
+                }
+                // `row[:]`, `h.g.c[:]`, and a range of a slice that already names this frame.
+                const std::optional<Type> place = frame_place(*node.base);
+                if (place && place->kind == TypeKind::Array && place->length >= 0) {
+                    return true;
+                }
+                return slice_refers_to_local(*node.base);
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
                 // `grid.cells` is the array inside this frame. A slice field points elsewhere.
-                if (node.base == nullptr) {
+                const std::optional<Type> place = frame_place(expr);
+                return place && place->kind == TypeKind::Array && place->length >= 0 && !is_slice(*place);
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                // `cond ? row[:] : other` returns either arm.
+                if (node.op != TokenKind::Question) {
                     return false;
                 }
-                const auto *named = std::get_if<Expr::Name>(&node.base->data);
-                if (named == nullptr) {
-                    return false;
-                }
-                const Symbol *symbol = lookup(named->text);
-                const int here = scopes_.empty() ? 0 : scopes_.back().function_id;
-                if (symbol == nullptr || here == 0 || symbol->function_id != here ||
-                    symbol->type.kind != TypeKind::Struct) {
-                    return false;
-                }
-                Type field;
-                if (!lookup_field(symbol->type, node.field, field)) {
-                    return false;
-                }
-                return field.kind == TypeKind::Array && field.length >= 0 && !is_slice(field);
+                return (node.mid != nullptr && slice_refers_to_local(*node.mid)) ||
+                       (node.rhs != nullptr && slice_refers_to_local(*node.rhs));
             } else if constexpr (std::is_same_v<T, Expr::Init>) {
                 // `[_]i32{40, 2}` and `{40, 2}` allocate a temporary. A struct literal names fields.
                 return !node.is_tuple && node.fields.empty() && (node.array_literal || !node.elements.empty());
@@ -695,7 +748,30 @@ bool Checker::slice_refers_to_local(const Expr &expr) {
 }
 
 void Checker::reject_escaping_slice(const Expr &expr, const Type &want) {
-    if (comptime_func_body() || !is_slice(want)) {
+    if (comptime_func_body()) {
+        return;
+    }
+    // `return (1, row[:])` and `return {.s = row[:]}` carry the slice inside the result.
+    if (const auto *init = std::get_if<Expr::Init>(&expr.data); init != nullptr && !is_slice(want)) {
+        if (init->is_tuple && want.kind == TypeKind::Tuple) {
+            for (std::size_t i = 0; i < init->elements.size() && i < want.results.size(); ++i) {
+                if (init->elements[i] != nullptr) {
+                    reject_escaping_slice(*init->elements[i], want.results[i]);
+                }
+            }
+            return;
+        }
+        if (want.kind == TypeKind::Struct) {
+            for (const Expr::FieldInit &field : init->fields) {
+                Type slot;
+                if (field.value != nullptr && !field.field.empty() && lookup_field(want, field.field, slot)) {
+                    reject_escaping_slice(*field.value, slot);
+                }
+            }
+            return;
+        }
+    }
+    if (!is_slice(want)) {
         return;
     }
     if (slice_refers_to_local(expr)) {
@@ -2762,6 +2838,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                         got = check_raw(*exprs.front(), true);
                     }
                     if (got.kind == TypeKind::Tuple && same_type(got, return_type_)) {
+                        reject_escaping_slice(*exprs.front(), return_type_);
                         return;
                     }
                     if (got.kind == TypeKind::Tuple) {
@@ -3302,6 +3379,18 @@ void Checker::check_stmt(const Stmt &stmt) {
                         rhs = check_array_literal(*init);
                     } else {
                         rhs = check_expr(*node.value, true);
+                        // `var e = 250u8` and `var b = a` with `a u8` bind `u8`. `a + b` is already `i32`.
+                        const Type &raw = last_unpromoted_;
+                        const bool narrow = (raw.kind == TypeKind::Int && rank_of(raw) < 3) ||
+                                            (raw.kind == TypeKind::Char && !raw.plain_char);
+                        // A `const` stays `i32`. Local constants fold only as `i32` in both folders.
+                        node.narrow_bits = 0;
+                        if (rhs.kind == TypeKind::Int && narrow && raw.alias_id == 0 && !node.is_const) {
+                            rhs = raw;
+                            rhs.is_const = false;
+                            node.narrow_bits = rank_of(raw) == 1 ? 8 : 16;
+                            node.narrow_unsigned = raw.is_unsigned;
+                        }
                     }
                 } else {
                     rhs = check_expr(*node.value, true);

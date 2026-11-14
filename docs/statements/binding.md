@@ -14,6 +14,8 @@ When `var` has an initializer, the type may be omitted and is taken from that va
 
 `var value = 1`, `var p = &value`, and `var p = Point{}` are that form.
 
+The value's own type is kept. `var e = 250u8` and `e := 250u8` are `u8`, and `var b = a` with `a u16` is `u16`. Arithmetic widens first, so `var sum = a + a` is `i32`, and so is `var n = -3i8`. A local `const` of a narrow value is still `i32`.
+
 The type can still be written after the name, with a pointer or an array in front of its element type.
 
 `var value i32 = 1`, `var p *i32`, `var buf [32]u8`, and `var ps [2]*i32` write the type.

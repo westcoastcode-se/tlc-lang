@@ -1,0 +1,9 @@
+// The type doubles each level. The checker used to hang before the 32-level limit.
+func deep[T type](v T) i32 {
+    var b = (v, v);
+    return deep(b);
+}
+
+func main() i32 {
+    return deep(1);
+}

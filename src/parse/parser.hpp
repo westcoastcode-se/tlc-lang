@@ -70,6 +70,30 @@ class Parser {
     std::vector<Token> tokens_;
     DiagnosticEngine &diags_;
     std::size_t pos_ = 0;
+    // Each level of the tree costs stack in the parser, the checker, and codegen, and 2000 nested `(`
+    // overflowed it. A parenthesis, a unary operator, a statement, a type, a brace list, and each link of a
+    // `a + b + ...` or `a.b.c` chain is one level. Past the limit the parse stops at the end of the file.
+    static constexpr int kMaxNest = 1000;
+    int nest_ = 0;
+    bool nest_failed_ = false;
+    void deepen();
+    struct Nest {
+        Parser &parser;
+        int saved;
+        explicit Nest(Parser &p) : parser(p), saved(p.nest_) { parser.deepen(); }
+        Nest(const Nest &) = delete;
+        Nest &operator=(const Nest &) = delete;
+        ~Nest() { parser.nest_ = saved; }
+    };
+    // Gives the levels a chain took back on return, without costing one itself.
+    struct KeepNest {
+        Parser &parser;
+        int saved;
+        explicit KeepNest(Parser &p) : parser(p), saved(p.nest_) {}
+        KeepNest(const KeepNest &) = delete;
+        KeepNest &operator=(const KeepNest &) = delete;
+        ~KeepNest() { parser.nest_ = saved; }
+    };
     bool saw_decl_ = false;
     // `var s struct { ... }` is a struct with no written name. The name is not a type spelling.
     std::vector<StructDecl> anonymous_structs_;

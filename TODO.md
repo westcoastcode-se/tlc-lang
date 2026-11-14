@@ -12,11 +12,8 @@ These were found by review and have a repro. They are not fixed yet.
 
 ### Checker
 
-- `accepts_pointer` lets an inner pointer level gain `?` or `const`. `clear(&a)` with `func clear(q *?*i32)` and `a *i32` is accepted, and `*q = null` makes `*a` crash. `var pp **const i32 = &p` with `p *i32` lets `*pp = &limit` and then `*p = 42` write a `const`. Below the top level the pointee must match exactly.
-- A trait pointer drops `const`. `func use(s *const Shape) void { s.grow(41); }` calls a `*this` method, and `use2(c)` with `c *const Rect` passes it as `*Shape`. Both are accepted.
-- `for (var slot : ptr_of(row))` on a `const row` binds `*E`, not `*const E`, and `*slot = 42` is accepted. `docs/statements/for.md` says that store is `type mismatch`.
-- `return true ? row[:] : row[1:]`, `return h.g.c[:]` (a nested field), `return (1, row[:])`, and `return {.s = row[:]}` return a slice of a local. `address escapes the function` is reported only for the forms `docs/types/slice.md` lists.
-- `func deep[T type](v T) i32 { var b = (v, v); return deep(b); }` hangs the checker. The type doubles each level, so the limit of 32 nested specializations is never reached.
+- `**i32` is stored in `**const i32`. `var pp **const i32 = &p` with `p *i32` lets `*pp = &limit` and then `*p = 42` write a `const`. `docs/types/pointer.md` shows that store as valid, and four generic tests use `**const T` that way. Below the top level `const` may be added only while every level above is const, as `?` already is. This is a change to the language and waits for a decision.
+- A `*this` method is called through `*const Shape`. `func use(s *const Shape) void { s.grow(41); }` is accepted when `Rect::grow` takes `self *this`. A trait method has no receiver in the trait, and the body is checked once, not per struct. The spelling of a const trait method is not decided.
 - `id(c)` with `func id[T type](p T) T` and `c *const i32` is `type mismatch: expected *i32, found *const i32`. `func first[T type](s []T) T` called with `[]const i32` is the same error. The type argument drops the pointee's `const`.
 - `p = p.next` inside `while (p != null)` is `type mismatch: expected *Node, found ?*Node`. A store into a narrowed name is checked against the narrowed type, not the declared `?*Node`.
 - `var t = (s, 1)` with `s [][2]i32`, then `t[0][1][1]`, passes `--check`, and the build reports `not an lvalue`.
@@ -24,23 +21,20 @@ These were found by review and have a repro. They are not fixed yet.
 
 ### Codegen
 
-- `var e = 250u8` is an `i32`. `e = e + 10u8` gives 260, and `var p *u8 = &e` is `type mismatch`. An inferred binding takes the promoted type, not the narrow type of the value.
-- `z.A.n += 5`, `z.A.n++`, and `z.A.n--` on a tagged union do not store `A` as the tag. `z.A.n = z.A.n + 5` does.
+- `const c = 250u8`, a file-scope `var g = 250u8`, and `var a, b = f()` with `u8` results still bind `i32`. A local `var` and `:=` keep the narrow type. Local constants fold only as `i32` in both folders.
 - A runtime shift amount at or past the width, `a << b` with `b` 32, is poison. The result differs between `-O0` and `-O2`.
 - A function pointer from `extern(abi="c")`, `func getFI() func (FI) i32`, is called with the tlc convention for a struct argument. A tlc function passed where C expects a callback is accepted.
 - Constant folding treats a `u32` that fits in `i32` as signed. `1u32 < -1` and `(0u32 - 1u32) >> 28u32` at file scope fold wrong in both folders.
 
 ### Front end
 
-- Deep nesting, such as 100000 `(` or a long `a.b.c...` chain, overflows the parser's stack. There is no depth limit.
 - A multibyte UTF-8 character in a character literal, `'å'`, is rejected. `'\x100'` wraps without an error.
 - After an unexpected character, the following whitespace, newline, or comment is lexed as code. A top-level error is reported once per token. Rendering many diagnostics is quadratic, and there is no limit on them.
 - A line or file that ends in `\` reports `unterminated` twice. CRLF is not handled the same way everywhere.
 
 ### Driver and language server
 
-- `tlc --run` reports a program killed by a signal as 128, not 128 plus the signal. The program's output is printed only after it exits, stdout before stderr.
-- A path that contains `.so.`, such as `proj.so.d/main.tlc`, is taken as a linker argument.
+- `tlc --run` prints the program's output only after it exits, stdout before stderr.
 - Closing one file clears the published diagnostics of another open file. A file of a package with several files reports `undeclared identifier` for names from its sibling files.
 - A `file://localhost/...` URI breaks every import.
 - A `Content-Length` of `x` or `-1` stops the server. Invalid JSON gets no `-32700` reply. A position of 2^31 wraps to the start of the document.

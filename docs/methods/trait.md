@@ -227,7 +227,7 @@ A trait names a field that the struct already has.
 
 `s.w` reads it, and `s.w = 1` writes it, for both `s Shape` and `s *Shape`.
 
-Writing through `*const Shape` is reported as `type mismatch`.
+Writing through `*const Shape` is reported as `type mismatch`. A `*const Rect` passed where `*Shape` is required is `type mismatch: expected *Shape, found *const Rect`.
 
 ## Choosing one parameter list
 

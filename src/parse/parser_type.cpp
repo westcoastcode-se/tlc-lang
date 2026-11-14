@@ -7,6 +7,7 @@
 namespace tlc {
 
 Parser::Specifiers Parser::parse_specifiers(bool file_scope, bool allow_const, bool type_only) {
+    const Nest nest(*this);
     Specifiers specs;
     specs.loc = peek().loc;
     bool reported_unsupported = false;

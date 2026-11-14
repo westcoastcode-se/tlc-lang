@@ -9,6 +9,7 @@ namespace tlc {
 std::unique_ptr<Expr> Parser::parse_expr() { return parse_assignment(); }
 
 std::unique_ptr<Expr> Parser::parse_assignment() {
+    const Nest nest(*this);
     auto lhs = parse_conditional();
     const TokenKind kind = peek().kind;
     if (kind == TokenKind::Eq || kind == TokenKind::PlusEq || kind == TokenKind::MinusEq ||
@@ -28,6 +29,7 @@ std::unique_ptr<Expr> Parser::parse_assignment() {
 }
 
 std::unique_ptr<Expr> Parser::parse_conditional() {
+    const Nest nest(*this);
     auto cond = parse_coalesce();
     // `?:` is right-associative and looser than `??`.
     if (!eat(TokenKind::Question)) {
@@ -46,6 +48,7 @@ std::unique_ptr<Expr> Parser::parse_conditional() {
 }
 
 std::unique_ptr<Expr> Parser::parse_coalesce() {
+    const Nest nest(*this);
     auto lhs = parse_or();
     // `??` is right-associative and looser than `||`, and tighter than `?:`.
     if (!check(TokenKind::QuestionQuestion)) {
@@ -82,6 +85,8 @@ std::unique_ptr<Expr> Parser::parse_binary(int level) {
         {{TokenKind::Star, TokenKind::Slash, TokenKind::Percent}, 3},
     };
     constexpr int last = static_cast<int>(sizeof(levels) / sizeof(levels[0])) - 1;
+    // A chain is a left-deep tree. Each operator below is one more level, given back on return.
+    const KeepNest chain(*this);
     auto lhs = level == last ? parse_unary() : parse_binary(level + 1);
     const Level &row = levels[level];
     while (true) {
@@ -98,6 +103,7 @@ std::unique_ptr<Expr> Parser::parse_binary(int level) {
         }
         const SourceLoc loc = peek().loc;
         ++pos_;
+        deepen();
         auto rhs = level == last ? parse_unary() : parse_binary(level + 1);
         Expr::Binary node;
         node.loc = loc;
@@ -589,6 +595,7 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
 }
 
 std::unique_ptr<Expr> Parser::parse_unary() {
+    const Nest nest(*this);
     const TokenKind kind = peek().kind;
     if (kind == TokenKind::KwUnsafe) {
         const SourceLoc loc = peek().loc;
@@ -744,7 +751,9 @@ std::unique_ptr<Expr> Parser::parse_postfix() {
 }
 
 std::unique_ptr<Expr> Parser::finish_postfix(std::unique_ptr<Expr> expr) {
+    const KeepNest chain(*this);
     while (true) {
+        deepen();
         if (eat(TokenKind::LParen)) {
             Expr::Call call;
             call.loc = expr_loc(*expr);
@@ -1098,6 +1107,7 @@ bool Parser::zero_rest_token() {
 }
 
 std::unique_ptr<Expr> Parser::parse_init() {
+    const Nest nest(*this);
     Expr::Init init;
     init.loc = peek().loc;
     expect(TokenKind::LBrace, "expected '{'");

@@ -2104,6 +2104,8 @@ The string is the diagnostic when the condition is false.
 
 An `i32` add of two locals is a load, an `addl`, and a store.
 
+Nesting is limited to 1000 levels. A parenthesis costs about five, and a unary operator, a statement, a type, a brace list, and each link of an `a + b + ...` or `a.b.c` chain cost one. Deeper source is `nesting too deep`, and the parse stops there.
+
 A comparison yields `bool`.
 
 A traced call pushes the frame on [Assembly](cost.md), then `callq`.

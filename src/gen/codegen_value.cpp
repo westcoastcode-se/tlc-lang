@@ -223,7 +223,10 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         return {zero(), 0};
                     }
                     // One address. Prefix yields the stored result. Postfix yields the loaded value.
+                    // `u.A.n++` stores into arm `A`, so it sets that tag, the same as `u.A.n = v`.
+                    arm_union_tag_ = true;
                     const TypedValue slot = emit_addr(*node.expr);
+                    arm_union_tag_ = false;
                     // A plain `i32` keeps `elem_bits` at 0. `leaf_type` still yields `i32`.
                     llvm::Type *mem = nullptr;
                     if (slot.value != nullptr && slot.depth == 0 && slot.struct_id < 0 && !slot.elem_float &&
@@ -781,7 +784,10 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         error(node.loc, "type mismatch");
                         return {zero(), 0};
                     }
+                    // `u.A.n += 5` stores into arm `A`, so it sets that tag, the same as `u.A.n = v`.
+                    arm_union_tag_ = true;
                     const TypedValue slot = emit_addr(*node.lhs);
+                    arm_union_tag_ = false;
                     llvm::Type *mem = nullptr;
                     if (slot.value != nullptr && slot.depth == 0 && slot.struct_id < 0 && !slot.elem_float &&
                         !slot.elem_bool) {

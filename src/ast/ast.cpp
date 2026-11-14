@@ -1319,6 +1319,8 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.is_define = node.is_define;
                 copy.is_const = node.is_const;
                 copy.is_comptime = node.is_comptime;
+                copy.narrow_bits = node.narrow_bits;
+                copy.narrow_unsigned = node.narrow_unsigned;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
                 Stmt::Assert copy;

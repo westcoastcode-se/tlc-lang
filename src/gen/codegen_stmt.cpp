@@ -844,6 +844,11 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
             ty = i64();
             binding.elem_bits = 64;
             binding.elem_unsigned = got.elem_unsigned;
+        } else if (node.narrow_bits == 8 || node.narrow_bits == 16) {
+            // `var e = 250u8` is the `u8` the checker bound. Arithmetic results stay `i32`.
+            ty = llvm::IntegerType::get(context_, static_cast<unsigned>(node.narrow_bits));
+            binding.elem_bits = node.narrow_bits;
+            binding.elem_unsigned = node.narrow_unsigned;
         } else if (got.elem_unsigned) {
             binding.elem_bits = 32;
             binding.elem_unsigned = true;

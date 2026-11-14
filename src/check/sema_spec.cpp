@@ -2852,6 +2852,12 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         spec_name.push_back('.');
         spec_name += generic_list_suffix(*templ);
     }
+    // `deep(b)` with `var b = (v, v)` doubles the type each level, so the 32-level limit below is reached only
+    // after 2^32 elements. A specialization whose name passes 4096 bytes is that same limit.
+    if (spec_name.size() > 4096) {
+        error(call.loc, "not supported yet");
+        return type_invalid();
+    }
     const std::string key = std::to_string(owner) + "\n" + spec_name;
     auto rewrite = [&]() {
         call.type_args.clear();

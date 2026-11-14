@@ -1,0 +1,9 @@
+// `ptr_of(row)` on a `const row` binds `*const E`. A store through it would write the const array.
+const row = [_]i32{1, 2};
+
+func main() i32 {
+    for (var slot : ptr_of(row)) {
+        *slot = 42;
+    }
+    return row[0];
+}

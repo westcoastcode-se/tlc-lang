@@ -1,0 +1,35 @@
+// `var e = 250u8` binds a `u8`. It used to be `i32`, so `e + 10u8` did not wrap and `&e` was `*i32`.
+func id(x u8) u8 {
+    return x;
+}
+
+func main() i32 {
+    var e = 250u8;
+    e = e + 10u8;
+    if (e != 4u8 || sizeof(e) != 1) {
+        return 1;
+    }
+    var p *u8 = &e;
+    *p = 255u8;
+    var copy = e;
+    copy = copy + 1u8;
+    if (copy != 0u8) {
+        return 2;
+    }
+    var c = id(200u8);
+    c = c + 100u8;
+    if (i32(c) != 44) {
+        return 3;
+    }
+    s := 65535u16;
+    s = s + 1u16;
+    if (s != 0u16 || sizeof(s) != 2) {
+        return 4;
+    }
+    var a u8 = 250u8;
+    var sum = a + a;
+    if (sum != 500 || sizeof(sum) != 4) {
+        return 5;
+    }
+    return 42;
+}

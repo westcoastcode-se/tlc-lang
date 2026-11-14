@@ -302,6 +302,8 @@ class Checker {
     void ensure_allocator_trait();
     // `lib/tlc/builtin` must match the signatures this compiler implements.
     void validate_builtin(const TranslationUnit &unit);
+    // The type of the last `check_expr` before integer promotion. `var e = 250u8` binds that `u8`.
+    Type last_unpromoted_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, std::unordered_map<std::string, MethodInfo>>> methods_;
     // file, owner, field. The owner is the struct name or a specialization such as `Box.spec.i32`.
     std::unordered_map<uint32_t, std::unordered_map<std::string, std::unordered_map<std::string, AssocVar>>> assoc_vars_;
@@ -787,6 +789,9 @@ class Checker {
     bool comptime_func_body() const;
     // The slice data is an array in this function, or a slice already marked that way.
     bool slice_refers_to_local(const Expr &expr);
+    // The type of a by-value place in this function's frame: a local, a field of one, or an element of one.
+    // A place reached through a pointer or a slice is not in the frame.
+    std::optional<Type> frame_place(const Expr &expr);
     void reject_escaping_slice(const Expr &expr, const Type &want);
     void note_local_slice(Symbol &symbol, const Expr *init);
     // `malloc`, `realloc`, or `free`, including `Malloc`'s methods.

@@ -161,6 +161,11 @@ void Checker::expect_value(const Type &got, const Type &want, const Expr &, Sour
             mismatch(loc, want, got);
             return;
         }
+        // `*const Rect` passed as `*Shape` would let a `*this` method write the const value.
+        if (got.kind == TypeKind::Pointer && got.pointee && got.pointee->is_const && !want.pointee->is_const) {
+            mismatch(loc, want, got);
+            return;
+        }
         if (got.kind == TypeKind::Pointer && got.pointee && got.pointee->kind == TypeKind::Trait) {
             if (trait_is(got.pointee->trait_id, want.pointee->trait_id)) {
                 return;
@@ -1493,7 +1498,8 @@ Type Checker::value_type(Type type) {
 
 Type Checker::check_expr(const Expr &expr, bool used) {
     cond_split_ = false;
-    const Type type = value_type(check_raw(expr, used));
+    const Type raw = check_raw(expr, used);
+    const Type type = value_type(raw);
     if (!cond_split_) {
         cond_true_ = assign_;
         cond_false_ = assign_;
@@ -1506,6 +1512,9 @@ Type Checker::check_expr(const Expr &expr, bool used) {
             cond_true_.unreachable = true;
         }
     }
+    // An inferred binding keeps `u8`, `i8`, `u16`, and `i16`. Only arithmetic promotes them.
+    // Set last, after the fold above, which can check nested expressions.
+    last_unpromoted_ = raw;
     return type;
 }
 

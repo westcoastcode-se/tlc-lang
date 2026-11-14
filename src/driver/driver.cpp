@@ -129,7 +129,10 @@ bool is_library_file(const std::string &path) {
     if (ends_with(".a") || ends_with(".so") || ends_with(".dylib")) {
         return true;
     }
-    return path.find(".so.") != std::string::npos;
+    // `libfoo.so.1` is a versioned library. Only the file name counts, so `proj.so.d/main.tlc` is a source.
+    const std::size_t slash = path.find_last_of('/');
+    const std::string_view name = slash == std::string::npos ? std::string_view(path) : std::string_view(path).substr(slash + 1);
+    return name.find(".so.") != std::string_view::npos;
 }
 
 bool links_c_library(const std::vector<std::string> &args) {

@@ -1,0 +1,11 @@
+// `**i32` is not stored in `*?*i32`. `*q = null` would empty `a`, and `*a` would read null.
+func clear(q *?*i32) void {
+    *q = null;
+}
+
+func main() i32 {
+    var n i32 = 4;
+    var a *i32 = &n;
+    clear(&a);
+    return *a;
+}

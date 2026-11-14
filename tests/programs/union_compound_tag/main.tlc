@@ -1,0 +1,26 @@
+// `+=`, `++`, and `--` on a field of an arm store that arm's tag, the same as `=`.
+type K enum { A, B };
+
+type U union(K) {
+    A struct { n i32; };
+    B struct { x f64; };
+};
+
+func main() i32 {
+    var z U = {.B = {.x = 1.0}};
+    z.A.n += 5;
+    if (K(z) != K.A) {
+        return 1;
+    }
+    var y U = {.B = {.x = 1.0}};
+    y.A.n++;
+    if (K(y) != K.A) {
+        return 2;
+    }
+    var v U = {.B = {.x = 1.0}};
+    --v.A.n;
+    if (K(v) != K.A) {
+        return 3;
+    }
+    return 42;
+}
