@@ -58,14 +58,21 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
         slot.is_slice = binding->is_slice;
         slot.elem_slice = binding->elem_slice;
         slot.shells = binding->shells;
-        if (binding->is_tuple) {
-            slot.is_tuple = true;
-            slot.tuple_parts = binding->tuple_parts;
-        }
+        // `[]Duo` and `*Duo` are not tuples, but their element is. The parts describe that element.
+        slot.is_tuple = binding->is_tuple;
+        slot.tuple_parts = binding->tuple_parts;
         return slot;
     }
     if (const auto *star = std::get_if<Expr::Unary>(&expr.data); star != nullptr && star->op == TokenKind::Star) {
-        const TypedValue inner = emit_rvalue(*star->expr);
+        TypedValue inner = emit_rvalue(*star->expr);
+        // A lone `*` shell over the leaf is one more level of `depth`, the same as on the value path.
+        if (inner.shells.size() == 1 && inner.shells.front().kind == TypeShell::Kind::Pointer &&
+            !inner.shells.front().decay) {
+            inner.shells.clear();
+            inner.depth += 1;
+            inner.ptr_to_array = false;
+            inner.ptr_array_len = 0;
+        }
         // `*Adder` passed a function is that function pointer. `*a` does not load through it.
         if (inner.value != nullptr && trait_fn_argument(inner)) {
             TypedValue fn = inner;
@@ -1185,12 +1192,6 @@ void adopt_pointer_array(TypedValue &base) {
         base.shells.clear();
         return;
     }
-    if (element.size() == 1 && element[0].kind == TypeShell::Kind::Array) {
-        base.inner_array_len = element[0].length;
-        base.elem_slice = false;
-        base.shells.clear();
-        return;
-    }
     if (!element.empty() && element[0].kind == TypeShell::Kind::Slice) {
         // Same shape as a parameter `[N][]T`: a pointer to headers, with the length in `array_len`.
         TypeShell pointer;
@@ -1202,9 +1203,11 @@ void adopt_pointer_array(TypedValue &base) {
         base.elem_slice = false;
         return;
     }
-    base.inner_array_len = 0;
+    // The same shape as a local decayed array: the shells are the element, `[M]...`, `*[2]T`, or a tuple's
+    // shells, at any depth. `inner_array_len` is the first row for the paths that still read it.
+    base.inner_array_len = !element.empty() && element[0].kind == TypeShell::Kind::Array ? element[0].length : 0;
     base.elem_slice = false;
-    base.shells.clear();
+    base.shells = std::move(element);
 }
 
 TypedValue CodeGen::emit_range(const Expr::Index &node) {
@@ -1360,13 +1363,20 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
         llvm::Value *end_index = nullptr;
         // A header element steps by `tlc.slice`. A row `[M]T` steps by that row.
         // A parameter `[N][]T` is a pointer. The range steps by the element after that pointer.
+        // A tuple leaf is that aggregate, not the scalar flags. `[N][M]Duo` steps by `[M]Duo`.
+        const auto element_of = [&](const std::vector<TypeShell> &shells) -> llvm::Type * {
+            if (!base.tuple_parts.empty()) {
+                if (llvm::Type *tuple = tuple_shell_type(base.tuple_parts, shells)) {
+                    return tuple;
+                }
+            }
+            return shell_type(shells, elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
+                              base.elem_float);
+        };
         if (decayed_slice_elems || decayed_rows) {
-            element = shell_type(base.shells, elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
-                                 base.elem_float);
+            element = element_of(base.shells);
         } else if (!base.shells.empty() && base.shells.front().kind == TypeShell::Kind::Slice) {
-            std::vector<TypeShell> rest(base.shells.begin() + 1, base.shells.end());
-            element = shell_type(rest, elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
-                                 base.elem_float);
+            element = element_of(std::vector<TypeShell>(base.shells.begin() + 1, base.shells.end()));
         } else if (decayed_headers) {
             std::vector<TypeShell> rest(base.shells.begin() + 1, base.shells.end());
             element = shell_type(rest, elem_depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits,
@@ -1452,7 +1462,8 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
     result.fn_ret_bool = base.fn_ret_bool;
     result.fn_ret_struct = base.fn_ret_struct;
     result.fn_results = base.fn_results;
-    if (!base.tuple_parts.empty() && base.shells.empty() && !base.elem_slice && base.inner_array_len <= 0) {
+    // `[N]Duo`, `[N][M]Duo`, and `[][M]Duo`: the leaf is that tuple, whatever shells are around it.
+    if (!base.tuple_parts.empty()) {
         result.tuple_parts = base.tuple_parts;
     }
     result.local_array = base.local_array || local_array_address(base.value);

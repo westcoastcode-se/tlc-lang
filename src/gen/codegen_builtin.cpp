@@ -844,6 +844,10 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
     }
     result.value = raw;
     result.depth = low.depth + 1;
+    // `new Duo` points at that tuple. `(*p)[0]` reads one element.
+    if (!low.tuple_parts.empty()) {
+        result.tuple_parts = low.tuple_parts;
+    }
     // `new ?*[2]i32` is `*?*[2]i32`. One more pointer goes in front of the element's shells.
     if (!node.shells.empty() && !node.count_inferred) {
         copy_element(result, low);

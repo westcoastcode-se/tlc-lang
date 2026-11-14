@@ -1,0 +1,17 @@
+// `*Duo`, `[2]*Duo`, and `?*[]Duo`: a pointer to a tuple keeps the tuple, written with its alias name.
+type Duo (i32, f64);
+
+func main() i32 {
+    var a Duo = Duo((40, 0.5));
+    var p *Duo = &a;
+    var many [2]*Duo = [_]*Duo{p, p};
+    var row [2]Duo = [_]Duo{a, a};
+    var s []Duo = row[:];
+    var maybe ?*[]Duo = &s;
+    var pp = &p;
+    (*many[1])[0] = 41;
+    if ((*p)[0] != 41 || (*(*pp))[0] != 41 || (*maybe!)[1][0] != 40) {
+        return 1;
+    }
+    return (*many[0])[0] + 1;
+}

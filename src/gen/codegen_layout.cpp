@@ -13,7 +13,15 @@ bool CodeGen::addressable(const Expr &expr) const {
         return star->op == TokenKind::Star && star->expr != nullptr;
     }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
-        return !index->is_range && index->base != nullptr && index->index != nullptr;
+        if (index->is_range || index->base == nullptr || index->index == nullptr) {
+            return false;
+        }
+        // A tuple element is in memory only when its tuple is. `pair()[0]` is part of a value.
+        // An array or slice element always is: a returned array is already stored, and a slice points at data.
+        if (index->tuple_index >= 0) {
+            return addressable(*index->base);
+        }
+        return true;
     }
     if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
         if (selector->base == nullptr) {
@@ -254,7 +262,38 @@ void CodeGen::prepare_structs() {
     prepare_aliases();
     // `value Pair` cannot be lowered until that tuple alias exists. The alias may name a struct
     // whose body is set in this loop, so the two passes alternate.
+    // A name that is a tuple alias not built yet. `value Pair`, and `value ([2]Pair, f64)` at any depth.
+    auto names_pending_alias = [&](uint32_t file, const std::string &type_name, const std::string &type_package) {
+        if (!type_package.empty() || type_name.empty() || find_alias(file, type_name) != nullptr) {
+            return false;
+        }
+        for (const uint32_t id : package_files(file)) {
+            const PackageNode *node = find_node(id);
+            if (node == nullptr) {
+                continue;
+            }
+            for (const TopDecl &decl : node->unit.decls) {
+                const auto *alias = std::get_if<TypedefDecl>(&decl.data);
+                if (alias != nullptr && alias->is_tuple && alias->name == type_name) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    const auto parts_pending = [&](const auto &self, uint32_t file, const std::vector<ResultSlot> &parts) -> bool {
+        for (const ResultSlot &slot : parts) {
+            if (slot.is_tuple ? self(self, file, slot.tuple_parts)
+                              : slot.indirections == 0 && names_pending_alias(file, slot.type_name, slot.type_package)) {
+                return true;
+            }
+        }
+        return false;
+    };
     auto tuple_alias_pending = [&](uint32_t file, const FieldDecl &field) {
+        if (field.is_tuple && field.indirections == 0 && parts_pending(parts_pending, file, field.tuple_parts)) {
+            return true;
+        }
         if (field.indirections > 0 || !field.type_package.empty() || field.type_name.empty()) {
             return false;
         }
@@ -368,39 +407,10 @@ void CodeGen::prepare_structs() {
             bool union_took_init = false;
             for (const FieldDecl &field : item->fields) {
                 Lowered low;
-                if (field.is_tuple && field.is_array && field.array_len > 0 && field.indirections == 0) {
-                    // `[2]T` when `T` is a tuple. One element is that tuple.
-                    std::vector<TypeShell> shells = field.shells;
-                    if (shells.empty()) {
-                        TypeShell shell;
-                        shell.kind = TypeShell::Kind::Array;
-                        shell.length = field.array_len;
-                        shells.push_back(shell);
-                    }
-                    low.tuple_parts = field.tuple_parts;
-                    low.shells = std::move(shells);
-                    low.is_array = true;
-                    low.array_len = field.array_len;
-                    low.type = tuple_shell_type(field.tuple_parts, low.shells);
-                    if (low.type == nullptr) {
-                        low.type = i32();
-                    }
-                } else if (field.is_tuple && field.indirections == 0 && !field.shells.empty() &&
-                           field.shells.front().kind == TypeShell::Kind::Pointer) {
-                    // `p *T` when `T` is `[2](i32, i32)`. The field stores that pointer.
-                    ResultSlot slot;
-                    slot.is_tuple = true;
-                    slot.tuple_parts = field.tuple_parts;
-                    slot.shells = field.shells;
-                    low = lower_result(file, slot);
-                } else if (field.is_tuple) {
-                    low = lower_tuple_parts(file, field.tuple_parts);
-                    // `p *T`, `p **T`, and `p ***T` when `T` is a tuple. The field stores that pointer.
-                    if (field.indirections > 0) {
-                        low.depth = field.indirections;
-                        low.type = ptr_type();
-                        low.is_tuple = false;
-                    }
+                if (field.is_tuple) {
+                    // A tuple field at any depth: `[2]Duo`, `?*[2]Duo`, `*Duo`, `[][2]Duo`, or the tuple itself.
+                    low = lower_tuple_shaped(file, field.tuple_parts, field.shells, field.indirections, field.optional,
+                                             field.is_array, field.array_len, false);
                 } else if (field.is_fn_ptr) {
                     low = lower_fnptr(file, field.type_name, field.type_package, field.is_struct, field.is_enum,
                                       field.ret_indirections, field.indirections, field.fn_params, field.fn_variadic,
@@ -596,6 +606,32 @@ void CodeGen::prepare_structs() {
         }
     }
     finish_tuple_aliases();
+    // `p *Duo` was laid out as a pointer before `Duo` existed. The size is right; the parts are filled in now,
+    // so `(*h.p)[0]` reads one element. A field whose layout does not change is the only one touched.
+    for (int id = 0; id < static_cast<int>(structs_.size()); ++id) {
+        const StructDecl *item = decls[static_cast<std::size_t>(id)];
+        if (item == nullptr) {
+            continue;
+        }
+        const uint32_t file = owners[static_cast<std::size_t>(id)];
+        for (const FieldDecl &field : item->fields) {
+            if (field.is_tuple || field.is_fn_ptr || field.indirections == 0) {
+                continue;
+            }
+            int field_index = -1;
+            FieldLayout *slot = const_cast<FieldLayout *>(find_field(id, field.name, field_index));
+            if (slot == nullptr || !slot->tuple_parts.empty()) {
+                continue;
+            }
+            const Lowered low = lower(file, field.type_name, field.type_package, field.is_struct, field.indirections,
+                                      field.is_array, field.array_len, false, field.elem_slice, field.shells);
+            if (!low.tuple_parts.empty() && low.type != nullptr && low.type == slot->type) {
+                slot->tuple_parts = low.tuple_parts;
+                slot->depth = low.depth;
+                slot->shells = low.shells;
+            }
+        }
+    }
     publish_spec_types();
     // `builtin.Field` is the slice element `Type.fields()` returns. The struct at index 0
     // stays, so every other struct id still matches the checker.
@@ -899,7 +935,9 @@ void CodeGen::prepare_aliases() {
         pending = std::move(later);
     }
     for (const Pending &item : pending) {
-        if (item.item == nullptr || aliases_[item.file].contains(item.item->name)) {
+        // A tuple alias waits for its structs. `register_tuple_aliases` builds it once they are sized,
+        // and a placeholder here would hide it as an `i32`.
+        if (item.item == nullptr || item.item->is_tuple || aliases_[item.file].contains(item.item->name)) {
             continue;
         }
         aliases_[item.file].emplace(item.item->name, Alias{});

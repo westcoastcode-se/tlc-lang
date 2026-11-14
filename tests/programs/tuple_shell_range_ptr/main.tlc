@@ -1,0 +1,14 @@
+// A range of a pointer to nested arrays keeps every row, a tuple leaf included.
+type Duo (i32, f64);
+
+func main() i32 {
+    var a Duo = Duo((1, 0.5));
+    var b Duo = Duo((40, 1.5));
+    var g [2][2]Duo = [_][2]Duo{[_]Duo{a, b}, [_]Duo{b, b}};
+    var p = &g;
+    var s = p[1:2];
+    var cube [2][2][2]i32 = [_][2][2]i32{{{1, 2}, {3, 4}}, {{5, 6}, {7, 2}}};
+    var q = &cube;
+    var t = q[1:2];
+    return s[0][1][0] + t[0][1][1];
+}

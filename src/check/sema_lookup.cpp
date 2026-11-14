@@ -268,7 +268,7 @@ Type Checker::type_of_tuple_field(const FieldDecl &field) {
 
 Type Checker::type_of_written_tuple(const std::vector<ResultSlot> &parts, int indirections, bool is_array,
                                     const std::vector<TypeShell> &shells, SourceLoc loc, uint32_t optional,
-                                    uint32_t const_pointee) {
+                                    uint32_t const_pointee, bool allow_incomplete) {
     // A shell around `(i32, i32)` is not this form. `[2]Duo` wraps the name.
     // A star is `*T` when `T` is that tuple.
     if (is_array || !shells.empty()) {
@@ -277,8 +277,9 @@ Type Checker::type_of_written_tuple(const std::vector<ResultSlot> &parts, int in
     }
     std::vector<Type> typed;
     typed.reserve(parts.size());
+    // A nested tuple takes the same rule as its parent. `((Point, f64), f64)` is the same as `(Point, f64)`.
     for (const ResultSlot &slot : parts) {
-        typed.push_back(type_of_result(slot, loc));
+        typed.push_back(type_of_result(slot, loc, allow_incomplete));
     }
     Type type = type_tuple(std::move(typed));
     if (indirections != 0) {
@@ -505,7 +506,7 @@ Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_i
     }
     if (slot.is_tuple) {
         // The written tuple has no star. `*T` when `T` is a tuple adds the pointer after.
-        Type type = type_of_written_tuple(slot.tuple_parts, 0, slot.is_array, slot.shells, loc);
+        Type type = type_of_written_tuple(slot.tuple_parts, 0, slot.is_array, slot.shells, loc, 0, 0, allow_incomplete);
         if (type.kind == TypeKind::Tuple) {
             for (const Type &part : type.results) {
                 if (part.kind == TypeKind::Void) {

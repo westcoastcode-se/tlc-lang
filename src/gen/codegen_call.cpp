@@ -1123,6 +1123,8 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
             if (low.is_slice && !low.shells.empty()) {
                 result.shells = low.shells;
                 result.inner_array_len = low.inner_array_len;
+                // Every pointer is in the shells now. The depth is the leaf's own.
+                result.depth = low.depth;
                 if (result.tuple_parts.empty()) {
                     result.tuple_parts = low.tuple_parts;
                 }
@@ -1186,11 +1188,23 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         llvm::Value *first = builder_.CreateInBoundsGEP(array_ty, slot, {const_i32(0), const_i32(0)});
         TypedValue result = tagged({first, call.depth + 1, call.elem_char, call.struct_id, false, call.elem_void,
                                     call.elem_bool, call.elem_bits, call.elem_unsigned, -1, call.elem_float});
+        // A decayed array, as a local one is: the length is the outer dimension.
+        result.array_len = static_cast<int>(array_ty->getNumElements());
         // The address is the first row. Shells after the outer array are that row, as on a local.
         if (call.decl != nullptr && call.decl->results.size() == 1) {
             const std::vector<TypeShell> &shells = call.decl->results.front().shells;
             if (!shells.empty() && shells.front().kind == TypeShell::Kind::Array) {
                 result.shells.assign(shells.begin() + 1, shells.end());
+            }
+            // `[2]Duo` written with the alias name: each element is that tuple.
+            const Lowered low = lower_result(current_file_, call.decl->results.front());
+            if (!low.tuple_parts.empty()) {
+                result.tuple_parts = low.tuple_parts;
+                if (!low.shells.empty() && low.shells.front().kind == TypeShell::Kind::Array) {
+                    result.shells.assign(low.shells.begin() + 1, low.shells.end());
+                }
+                // The shells hold every pointer, so the depth is the leaf's, one above for the decayed array.
+                result.depth = low.depth + 1;
             }
         }
         result.array_type = array_ty;
@@ -1282,14 +1296,28 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         call.decl->results.front().is_tuple && call.decl->results.front().indirections == 0) {
         result.is_tuple = true;
         result.tuple_parts = call.decl->results.front().tuple_parts;
+    } else if (inst->getType()->isStructTy() && call.decl != nullptr && call.decl->results.size() == 1 &&
+               !result.is_tuple) {
+        // `func one() Duo` when `Duo` names a tuple. The result is that tuple, the same as written out.
+        const Lowered low = lower_result(current_file_, call.decl->results.front());
+        if (low.is_tuple && !low.tuple_parts.empty()) {
+            result.is_tuple = true;
+            result.tuple_parts = low.tuple_parts;
+        }
     }
-    // `id(&row)` returns `*T`. The pointer addresses that tuple.
+    // `id(&row)` returns `*T`. The pointer addresses that tuple, spelled out or named by an alias.
     if (call.decl != nullptr && call.decl->results.size() == 1 && result.value != nullptr &&
         result.value->getType()->isPointerTy()) {
         const ResultSlot &slot = call.decl->results.front();
         if (slot.is_tuple && slot.indirections > 0) {
             result.depth = slot.indirections;
             result.tuple_parts = slot.tuple_parts;
+        } else if (result.tuple_parts.empty() && result.shells.empty()) {
+            const Lowered low = lower_result(current_file_, slot);
+            if (low.depth > 0 && !low.tuple_parts.empty() && low.shells.empty()) {
+                result.depth = low.depth;
+                result.tuple_parts = low.tuple_parts;
+            }
         }
     }
     // An indirect call has no declaration. One tuple result is that one entry.

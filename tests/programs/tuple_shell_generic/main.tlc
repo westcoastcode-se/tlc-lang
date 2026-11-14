@@ -1,0 +1,24 @@
+// A tuple alias bound to `T` keeps its name inside any shells. A struct element is an ordinary name there.
+type Point struct {
+    x i32;
+    y f64;
+};
+
+type Duo (i32, f64);
+
+func id[Q type](v Q) Q {
+    return v;
+}
+
+func main() i32 {
+    var a Duo = Duo((20, 0.5));
+    var p *Duo = &a;
+    var row [2]*Duo = [_]*Duo{p, p};
+    var s []*Duo = row[:];
+    var got = id(s);
+    var q = id(p);
+    var pt Point = Point{.x = 2, .y = 1.0};
+    var mixed = id((pt, 0.5));
+    var nested = id(([_]i32{1, 2}, ([_][2]i32{{3, 4}, {5, 20}}, 1.0)));
+    return (*got[1])[0] + (*q)[0] + mixed[0].x - nested[0][0] + nested[1][0][1][1] - 19;
+}

@@ -1,0 +1,16 @@
+// A tuple alias whose nested tuple holds a struct by value. The struct is sized before the alias is built.
+type Point struct {
+    x i32;
+    y f64;
+};
+
+type Inner (Point, f64);
+type Outer ((Point, f64), f64);
+
+func main() i32 {
+    var p Point = Point{.x = 40, .y = 1.0};
+    var inner Inner = Inner((p, 0.5));
+    var outer Outer = Outer(((p, 0.5), 1.5));
+    var nested ((Point, f64), f64) = ((p, 0.25), 2.0);
+    return inner[0].x + outer[0][0].x - nested[0][0].x + i32(outer[1] + 0.5);
+}

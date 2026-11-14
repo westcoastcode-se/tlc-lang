@@ -176,15 +176,6 @@ inline bool nested_slice(const Type &type) {
     return is_slice(type) && type.element != nullptr && type.element->kind == TypeKind::Array;
 }
 
-// `[N]Duo` and `[N][M]Duo`. A slice, a pointer, and a struct stop the walk.
-inline bool array_of_tuple(const Type &type) {
-    const Type *cursor = &type;
-    while (cursor->kind == TypeKind::Array && cursor->length >= 0 && cursor->element != nullptr) {
-        cursor = cursor->element.get();
-    }
-    return cursor->kind == TypeKind::Tuple;
-}
-
 // Wrap `type` in `shells`. `shells.front()` is the outermost constructor.
 // A sized array that is the outermost shell decays to a pointer when `parameter` is set.
 // A slice does not decay. `rejected` is set when a shell cannot wrap this leaf.
@@ -223,11 +214,6 @@ inline Type apply_shells(Type type, const std::vector<TypeShell> &shells, bool p
         // `[]Row` where `Row` is `[]i32` is the plain slice `[][]i32`.
         if (is_slice(type)) {
             type.alias_id = 0;
-        }
-        // `[][N]Duo` would store an array of tuples in a slice. `[]Duo` is that slice.
-        if (shell.kind == TypeShell::Kind::Slice && type.kind != TypeKind::Tuple && array_of_tuple(type)) {
-            rejected = true;
-            return type_invalid();
         }
         if (shell.kind == TypeShell::Kind::Slice) {
             type = type_array(std::move(type), -1);

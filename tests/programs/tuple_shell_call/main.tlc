@@ -1,0 +1,22 @@
+// A call result that is a tuple, an array of tuples, or an array of pointers to them, read without a local.
+type Point struct {
+    x i32;
+    y f64;
+};
+
+type Duo (Point, f64);
+
+func one(d Duo) Duo {
+    return d;
+}
+
+func rows(r [2]*Duo) [2]*Duo {
+    return r;
+}
+
+func main() i32 {
+    var pt Point = Point{.x = 40, .y = 1.0};
+    var d Duo = Duo((pt, 2.0));
+    var r [2]*Duo = [_]*Duo{&d, &d};
+    return one(d)[0].x + i32((*rows(r)[1])[1]);
+}

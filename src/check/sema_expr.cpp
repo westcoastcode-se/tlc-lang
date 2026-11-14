@@ -571,8 +571,9 @@ Type Checker::check_array_literal(Expr::Init &init) {
             check_loose();
             return type_invalid();
         }
+        // `[_]Duo{a, b}` when `type Duo (i32, f64)`: each element is that tuple, at any depth inside it.
         if (elem.kind == TypeKind::Array || elem.kind == TypeKind::Function || elem.kind == TypeKind::Void ||
-            elem.kind == TypeKind::Tuple || elem.kind == TypeKind::Meta) {
+            (elem.kind == TypeKind::Tuple && elem.alias_id == 0) || elem.kind == TypeKind::Meta) {
             error(init.loc, "not supported yet");
             check_loose();
             return type_invalid();

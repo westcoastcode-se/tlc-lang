@@ -70,7 +70,16 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return emit_rvalue(*node.expr);
                 }
                 if (node.op == TokenKind::Star) {
-                    const TypedValue inner = emit_rvalue(*node.expr);
+                    TypedValue inner = emit_rvalue(*node.expr);
+                    // A lone `*` shell over the leaf is the same pointer as one more level of `depth`.
+                    // `*Duo` and `**i32` then take the same paths whichever way they were spelled.
+                    if (inner.shells.size() == 1 && inner.shells.front().kind == TypeShell::Kind::Pointer &&
+                        !inner.shells.front().decay) {
+                        inner.shells.clear();
+                        inner.depth += 1;
+                        inner.ptr_to_array = false;
+                        inner.ptr_array_len = 0;
+                    }
                     const bool pointer_shell =
                         !inner.shells.empty() && inner.shells.front().kind == TypeShell::Kind::Pointer;
                     if ((!pointer_shell && inner.depth <= 0) || inner.value == nullptr) {
@@ -123,21 +132,16 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         return decayed;
                     }
                     if (pointer_shell && inner.shells.size() >= 2 && inner.shells[1].kind == TypeShell::Kind::Slice) {
+                        // `*p` on `*[]T` is that header. The element, a tuple included, is the rest of the shells.
                         TypedValue loaded;
+                        copy_element(loaded, inner);
                         loaded.value = builder_.CreateLoad(slice_type(), inner.value);
                         loaded.is_slice = true;
                         loaded.array_len = -1;
                         loaded.depth = inner.depth;
                         loaded.shells.assign(inner.shells.begin() + 1, inner.shells.end());
                         loaded.elem_slice = loaded.shells.size() >= 2 && loaded.shells[1].kind == TypeShell::Kind::Slice;
-                        loaded.elem_char = inner.elem_char;
-                        loaded.struct_id = inner.struct_id;
-                        loaded.elem_void = inner.elem_void;
-                        loaded.elem_bool = inner.elem_bool;
-                        loaded.elem_bits = inner.elem_bits;
-                        loaded.elem_unsigned = inner.elem_unsigned;
-                        loaded.elem_float = inner.elem_float;
-                        loaded.enum_id = inner.enum_id;
+                        loaded.inner_array_len = 0;
                         return loaded;
                     }
                     // `*p` on `**T` when `T` is a tuple. The load is the pointer to that tuple.
@@ -345,8 +349,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     }
                     TypedValue pointer{addr.value, addr.depth + 1, addr.elem_char, addr.struct_id, false, addr.elem_void,
                                        addr.elem_bool, addr.elem_bits, addr.elem_unsigned, addr.trait_id, addr.elem_float};
-                    // `&row` keeps the tuple so `*p` can load it.
-                    if (addr.is_tuple) {
+                    // `&row` keeps the tuple so `*p` can load it, and `&p` when `p` already points at one.
+                    if (!addr.tuple_parts.empty()) {
                         pointer.tuple_parts = addr.tuple_parts;
                     }
                     return pointer;
@@ -1493,9 +1497,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         loaded.depth = low.depth;
                         return loaded;
                     }
-                    // A bare tuple element. An array of tuples is the array branch below.
-                    if (slot != nullptr && slot->is_tuple && slot->indirections == 0 &&
-                        !(slot->is_array && slot->array_len > 0)) {
+                    // A bare tuple element. An array, a slice, or a pointer around a tuple is the general branch below.
+                    if (slot != nullptr && slot->is_tuple && slot->indirections == 0 && slot->shells.empty() &&
+                        !(slot->is_array && slot->array_len != 0)) {
                         TypedValue loaded;
                         loaded.value = extracted;
                         loaded.is_tuple = true;
@@ -1512,27 +1516,44 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     }
                     if (slot != nullptr) {
                         // `p[0]` when the element is `[2](i32, i32)`. The field is that array.
-                        const bool tuple_array =
-                            slot->is_tuple && slot->is_array && slot->array_len > 0 && slot->indirections == 0;
+                        // A tuple in any shells lowers the way a variable of that slot does.
                         const Lowered part =
-                            tuple_array ? lower_tuple_array(slot->tuple_parts, slot->array_len, slot->shells)
-                                        : lower(current_file_, slot->type_name, slot->type_package, slot->is_struct,
-                                                slot->indirections, slot->is_array, slot->array_len, false,
-                                                slot->elem_slice, slot->shells);
+                            slot->is_tuple ? lower_result(current_file_, *slot)
+                                           : lower(current_file_, slot->type_name, slot->type_package, slot->is_struct,
+                                                   slot->indirections, slot->is_array, slot->array_len, false,
+                                                   slot->elem_slice, slot->shells);
                         // An array name is the address of the array. The element keeps that address
                         // when the tuple is stored, including `nested[0][0]`. A temporary is copied.
                         if (part.is_array && !part.is_slice && part.array_len > 0) {
+                            // The tuple has an address when the path to it does: a variable reached through
+                            // tuple elements, array or slice elements, fields, and `*`. `rows[1][0]` and `(*p)[0]`
+                            // keep that address, so a store lands in the tuple. A call result is copied.
                             const auto stored_tuple = [&](const Expr *cursor) {
                                 while (cursor != nullptr) {
                                     if (const auto *name = std::get_if<Expr::Name>(&cursor->data)) {
                                         const Binding *binding = lookup(name->text);
-                                        return binding != nullptr && binding->is_tuple && binding->value != nullptr;
+                                        return binding != nullptr && binding->value != nullptr && !binding->immediate &&
+                                               !binding->is_function && binding->tuple_elems.empty() &&
+                                               (binding->is_tuple || binding->is_array || binding->is_slice ||
+                                                binding->depth > 0 || !binding->shells.empty() ||
+                                                binding->struct_id >= 0);
                                     }
-                                    const auto *index = std::get_if<Expr::Index>(&cursor->data);
-                                    if (index == nullptr || index->is_range || index->tuple_index < 0) {
-                                        return false;
+                                    if (const auto *index = std::get_if<Expr::Index>(&cursor->data)) {
+                                        if (index->is_range) {
+                                            return false;
+                                        }
+                                        cursor = index->base.get();
+                                        continue;
                                     }
-                                    cursor = index->base.get();
+                                    if (const auto *field = std::get_if<Expr::Selector>(&cursor->data)) {
+                                        cursor = field->base.get();
+                                        continue;
+                                    }
+                                    if (const auto *star = std::get_if<Expr::Unary>(&cursor->data);
+                                        star != nullptr && star->op == TokenKind::Star && !star->postfix) {
+                                        return true;
+                                    }
+                                    return false;
                                 }
                                 return false;
                             };
@@ -1555,7 +1576,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                                     builder_.CreateStore(extracted, slot_value);
                                 }
                                 address = slot_value;
-                                addr.depth = 0;
+                                // The copy is the array. Its element keeps the leaf's own pointers.
+                                addr.depth = part.depth;
                                 addr.elem_char = part.elem_char;
                                 addr.struct_id = part.struct_id;
                                 addr.elem_void = part.elem_void;
@@ -1597,6 +1619,14 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         // `t[0]` when the element is `*[2]T` or `**[]T`.
                         if (pointer_shell(part.shells)) {
                             return pointer_value(extracted, part);
+                        }
+                        // `t[0]` when the element is `*Duo`. `*t[0]` loads that tuple, so the parts stay.
+                        if (part.depth > 0 && !part.tuple_parts.empty()) {
+                            TypedValue loaded;
+                            loaded.value = extracted;
+                            loaded.depth = part.depth;
+                            loaded.tuple_parts = part.tuple_parts;
+                            return loaded;
                         }
                         if (part.depth == 0 && part.elem_bool) {
                             return {builder_.CreateZExt(extracted, i32()), 0, false, -1, false, part.elem_void, true};
@@ -2143,6 +2173,12 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             !(element.value != nullptr && element.value->getType()->isArrayTy())) {
                             slot.shells = element.shells;
                             slot.indirections = element.depth;
+                            // `*[2]Duo`: the leaf behind those shells is a tuple.
+                            if (!element.tuple_parts.empty()) {
+                                slot.is_tuple = true;
+                                slot.tuple_parts = element.tuple_parts;
+                                return slot;
+                            }
                             if (element.struct_id >= 0 && element.struct_id < static_cast<int>(structs_.size())) {
                                 slot.is_struct = true;
                                 slot.type_name = structs_[static_cast<std::size_t>(element.struct_id)].name;
@@ -2176,6 +2212,18 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             }
                             slot.is_array = true;
                             slot.array_len = slot.shells.empty() ? 0 : slot.shells.front().length;
+                            // `([2]Duo, 5)`: the leaf of that array is a tuple, not a scalar.
+                            if (!element.tuple_parts.empty()) {
+                                slot.is_tuple = true;
+                                slot.tuple_parts = element.tuple_parts;
+                                // The walk above stops at the tuple's aggregate. Only the arrays are shells.
+                                if (element.shells.empty()) {
+                                    while (!slot.shells.empty() && slot.shells.back().kind != TypeShell::Kind::Array) {
+                                        slot.shells.pop_back();
+                                    }
+                                }
+                                return slot;
+                            }
                             if (element.struct_id >= 0 && element.struct_id < static_cast<int>(structs_.size())) {
                                 slot.is_struct = true;
                                 slot.type_name = structs_[static_cast<std::size_t>(element.struct_id)].name;
@@ -2195,6 +2243,17 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             if (!element.shells.empty()) {
                                 slot.shells = element.shells;
                             }
+                            // `([]Duo, 5)`: each element of that slice is a tuple.
+                            if (!element.tuple_parts.empty()) {
+                                slot.is_tuple = true;
+                                slot.tuple_parts = element.tuple_parts;
+                                if (slot.shells.empty()) {
+                                    TypeShell header;
+                                    header.kind = TypeShell::Kind::Slice;
+                                    slot.shells.push_back(header);
+                                }
+                                return slot;
+                            }
                             if (element.struct_id >= 0 && element.struct_id < static_cast<int>(structs_.size())) {
                                 slot.is_struct = true;
                                 slot.type_name = structs_[static_cast<std::size_t>(element.struct_id)].name;
@@ -2203,6 +2262,13 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             } else {
                                 slot.type_name = scalar();
                             }
+                            return slot;
+                        }
+                        // `(&pair, 5)`: the element points at a tuple. The slot keeps that tuple, not `*i32`.
+                        if (element.depth > 0 && !element.tuple_parts.empty() && element.shells.empty()) {
+                            slot.is_tuple = true;
+                            slot.tuple_parts = element.tuple_parts;
+                            slot.indirections = element.depth;
                             return slot;
                         }
                         if (element.depth > 0) {

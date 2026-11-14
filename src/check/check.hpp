@@ -529,7 +529,7 @@ class Checker {
     Type type_of_tuple_field(const FieldDecl &field);
     Type type_of_written_tuple(const std::vector<ResultSlot> &parts, int indirections, bool is_array,
                                const std::vector<TypeShell> &shells, SourceLoc loc, uint32_t optional = 0,
-                               uint32_t const_pointee = 0);
+                               uint32_t const_pointee = 0, bool allow_incomplete = false);
     // `[2]T` and `[2][2]T` when `T` is a tuple. Every array shell stays around that tuple.
     // A parameter decays the outermost array to a pointer and keeps the length.
     Type type_of_tuple_arrays(const std::vector<ResultSlot> &parts, int array_len, const std::vector<TypeShell> &shells,

@@ -116,25 +116,10 @@ bool CodeGen::is_struct_value(const Lowered &low) const {
 }
 
 CodeGen::Lowered CodeGen::lower_result(uint32_t file, const ResultSlot &slot) const {
-    if (slot.is_tuple && slot.indirections == 0 && !slot.shells.empty() &&
-        slot.shells.front().kind == TypeShell::Kind::Pointer) {
-        // `*T` when `T` is `[2](i32, i32)`. The result is a pointer to that array.
-        Lowered leaf = lower_tuple_parts(file, slot.tuple_parts);
-        return compose_shells(std::move(leaf), slot.shells, false);
-    }
-    // `(T, i32)` when `T` is `[2](i32, i32)`. The element is that array. `[2][2]` keeps both shells.
-    if (slot.is_tuple && slot.is_array && slot.array_len > 0 && slot.indirections == 0) {
-        return lower_tuple_array(slot.tuple_parts, slot.array_len, slot.shells);
-    }
+    // A tuple at any depth: the same rule a declared variable uses.
     if (slot.is_tuple) {
-        Lowered low = lower_tuple_parts(file, slot.tuple_parts);
-        // `*T` when `T` is a tuple. The slot holds the address, and the parts are the tuple.
-        if (slot.indirections > 0) {
-            low.depth = slot.indirections;
-            low.type = ptr_type();
-            low.is_tuple = false;
-        }
-        return low;
+        return lower_tuple_shaped(file, slot.tuple_parts, slot.shells, slot.indirections, slot.optional, slot.is_array,
+                                  slot.array_len, false);
     }
     // A slice is `array_len < 0`. A sized array keeps its length. Zero is not an array.
     const bool array = slot.is_array && !slot.is_fn_ptr && slot.array_len != 0;
@@ -463,13 +448,23 @@ bool CodeGen::alias_base_ready(uint32_t file, const TypedefDecl &item) const {
         return true;
     };
     if (item.is_tuple) {
-        for (const ResultSlot &slot : item.tuple_parts) {
-            const bool self = slot.type_package.empty() && slot.type_name == item.name;
-            if (!name_ready(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, self)) {
-                return false;
+        // `([2]Duo, f64)` and `((Duo, f64), f64)` wait on `Duo` however deep it is written.
+        const auto parts_ready = [&](const auto &walk, const std::vector<ResultSlot> &parts) -> bool {
+            for (const ResultSlot &slot : parts) {
+                if (slot.is_tuple) {
+                    if (!walk(walk, slot.tuple_parts)) {
+                        return false;
+                    }
+                    continue;
+                }
+                const bool self = slot.type_package.empty() && slot.type_name == item.name;
+                if (!name_ready(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, self)) {
+                    return false;
+                }
             }
-        }
-        return true;
+            return true;
+        };
+        return parts_ready(parts_ready, item.tuple_parts);
     }
     return name_ready(item.type_name, item.type_package, item.is_struct, item.is_enum,
                       item.type_package.empty() && item.name == item.type_name);
@@ -479,15 +474,20 @@ bool CodeGen::make_tuple_alias(uint32_t file, const TypedefDecl &item, Alias &ou
     if (!item.is_tuple || item.tuple_parts.empty()) {
         return false;
     }
+    // A part that names an alias not built yet would lower to a placeholder of the wrong size. Try again later.
+    if (!alias_base_ready(file, item)) {
+        return false;
+    }
     std::vector<llvm::Type *> fields;
     fields.reserve(item.tuple_parts.size());
     for (const ResultSlot &slot : item.tuple_parts) {
+        // A part may itself be a tuple, an array of one, or a pointer to one. `lower_result` lowers each
+        // the same way a variable of that part does, so the alias and `var x ((i32, f64), f64)` agree.
         const Lowered part =
             slot.is_fn_ptr ? lower_fnptr(file, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum,
                                          slot.ret_indirections, slot.indirections, slot.fn_params, slot.fn_variadic,
                                          slot.fn_results)
-                           : lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections,
-                                   slot.is_array, slot.array_len, false, slot.elem_slice, slot.shells);
+                           : lower_result(file, slot);
         llvm::Type *type = stored_type(part);
         if (type == nullptr || !type->isSized()) {
             return false;
@@ -592,23 +592,7 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
     peel(leaf, shells);
     // `[2]Duo` stores the tuple. The array itself is not a tuple. `tuple_parts` describes one element.
     if (leaf.is_tuple && leaf.type != nullptr && leaf.type->isStructTy() && leaf.type->isSized()) {
-        // `[]Duo` is a slice whose element is the tuple. `[][N]Duo` stays rejected.
-        if (shells.size() == 1 && shells.front().kind == TypeShell::Kind::Slice) {
-            Lowered out;
-            out.is_slice = true;
-            out.array_len = -1;
-            out.tuple_parts = leaf.tuple_parts;
-            out.shells = shells;
-            out.type = slice_type();
-            return out;
-        }
-        for (const TypeShell &shell : shells) {
-            if (shell.kind == TypeShell::Kind::Slice) {
-                Lowered bad;
-                bad.type = i32();
-                return bad;
-            }
-        }
+        // `[]Duo`, `[][2]Duo`, `*[]Duo`, and `[2]*Duo`: the tuple is the leaf and every shell wraps it.
         const std::vector<ResultSlot> parts = leaf.tuple_parts;
         llvm::Type *element = leaf.type;
         int decayed_len = 0;
@@ -643,12 +627,14 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
                 type = llvm::ArrayType::get(type, static_cast<uint64_t>(shell.length));
                 continue;
             }
-            type = ptr_type();
+            type = shell.kind == TypeShell::Kind::Slice ? static_cast<llvm::Type *>(slice_type()) : ptr_type();
         }
         Lowered out;
         out.type = type;
         out.tuple_parts = parts;
         out.shells = shells;
+        out.elem_slice = shells.size() >= 2 && shells[1].kind == TypeShell::Kind::Slice &&
+                         (shells.front().kind == TypeShell::Kind::Slice || shells.front().kind == TypeShell::Kind::Array);
         out.is_slice = !shells.empty() && shells.front().kind == TypeShell::Kind::Slice;
         out.is_array = !shells.empty() && shells.front().kind == TypeShell::Kind::Array;
         out.array_len = out.is_slice ? -1 : out.is_array ? shells.front().length : 0;
@@ -706,6 +692,10 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
                                  int indirections, bool is_array, int array_len, bool parameter, bool elem_slice,
                                  const std::vector<TypeShell> &shells) const {
     if (!shells.empty()) {
+        // `[2]*Duo` and `[][2]Duo` when `Duo` names a tuple: the leaf's stars go inside the written shells.
+        if (Lowered bare = lower(file, name, package, is_struct, 0, false, 0, false, false); bare.is_tuple) {
+            return lower_tuple_shaped(file, bare.tuple_parts, shells, indirections, 0, false, 0, parameter);
+        }
         Lowered leaf = lower(file, name, package, is_struct, indirections, false, 0, false, false);
         return compose_shells(std::move(leaf), shells, parameter);
     }
@@ -829,6 +819,10 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     const bool base_slice = have && base.is_slice;
     const bool base_headers = have && base.elem_slice;
     // `type Pair (i32, i32)` is that aggregate. A pointer to the name is still a pointer.
+    // `[2]Duo`, `[]Duo`, and `[N]*Duo` written with the alias name: the same shapes as the tuple spelled out.
+    if (have && base.is_tuple && base.tuple_ty != nullptr && is_array) {
+        return lower_tuple_shaped(file, base.tuple_parts, {}, indirections, 0, true, array_len, parameter);
+    }
     if (have && base.is_tuple && base.tuple_ty != nullptr && !is_array) {
         if (indirections == 0) {
             out.is_tuple = true;
@@ -836,8 +830,10 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
             out.type = base.tuple_ty;
             return out;
         }
+        // `*Pair` points at that tuple. A load of `*p` needs the parts to read one element.
         out.depth = indirections;
         out.type = ptr_type();
+        out.tuple_parts = base.tuple_parts;
         return out;
     }
     // `type Ref *[2]i32` and `type Rows []*[]T`: the alias holds a pointer shell, which the flat
@@ -1038,7 +1034,8 @@ llvm::Type *CodeGen::tuple_shell_type(const std::vector<ResultSlot> &parts, cons
     for (int index = static_cast<int>(shells.size()) - 1; index >= 0; --index) {
         const TypeShell &shell = shells[static_cast<std::size_t>(index)];
         if (shell.kind == TypeShell::Kind::Slice) {
-            return nullptr;
+            type = slice_type();
+            continue;
         }
         if (shell.kind == TypeShell::Kind::Array) {
             if (shell.length < 0 || !shell.length_name.empty() || !type->isSized()) {
@@ -1073,28 +1070,40 @@ CodeGen::Lowered CodeGen::lower_tuple_array(const std::vector<ResultSlot> &parts
     return low;
 }
 
-CodeGen::Lowered CodeGen::lower_declared(uint32_t file, const VarDecl &var) const {
-    if (var.is_tuple && var.is_array && var.array_len > 0 && var.indirections == 0) {
-        return lower_tuple_array(var.tuple_parts, var.array_len, var.shells);
+CodeGen::Lowered CodeGen::lower_tuple_shaped(uint32_t file, const std::vector<ResultSlot> &parts,
+                                              std::vector<TypeShell> shells, int indirections, uint32_t optional,
+                                              bool is_array, int array_len, bool parameter) const {
+    if (shells.empty() && is_array && array_len != 0) {
+        TypeShell array;
+        array.kind = array_len < 0 ? TypeShell::Kind::Slice : TypeShell::Kind::Array;
+        array.length = array_len < 0 ? 0 : array_len;
+        shells.push_back(array);
     }
-    if (var.is_tuple && var.indirections == 0 && !var.shells.empty() &&
-        var.shells.front().kind == TypeShell::Kind::Pointer) {
-        // `var q ?*T` when `T` is `[2](i32, i32)`. The slot holds that pointer.
-        ResultSlot slot;
-        slot.is_tuple = true;
-        slot.tuple_parts = var.tuple_parts;
-        slot.shells = var.shells;
-        return lower_result(file, slot);
-    }
-    if (var.is_tuple) {
-        Lowered low = lower_tuple_parts(file, var.tuple_parts);
-        // `var q ?*T` when `T` is a tuple. The slot holds that pointer.
-        if (var.indirections > 0) {
-            low.depth = var.indirections;
-            low.type = ptr_type();
-            low.is_tuple = false;
+    Lowered leaf = lower_tuple_parts(file, parts);
+    // The tuple itself, or `*Duo` and `**Duo`: the pointer count is the leaf's own depth.
+    if (shells.empty()) {
+        if (indirections > 0) {
+            leaf.depth = indirections;
+            leaf.type = ptr_type();
+            leaf.is_tuple = false;
         }
-        return low;
+        return leaf;
+    }
+    // `[2]*Duo`: the leaf's stars sit inside every written shell.
+    for (int star = 0; star < indirections; ++star) {
+        TypeShell pointer;
+        pointer.kind = TypeShell::Kind::Pointer;
+        pointer.optional = (optional & (1u << star)) != 0;
+        shells.push_back(pointer);
+    }
+    return compose_shells(std::move(leaf), std::move(shells), parameter);
+}
+
+CodeGen::Lowered CodeGen::lower_declared(uint32_t file, const VarDecl &var) const {
+    // `[N]Duo`, `[][2]Duo`, `?*[2]Duo`, `[2]*Duo`, and a bare tuple or `*Duo`. One rule for every shape.
+    if (var.is_tuple) {
+        return lower_tuple_shaped(file, var.tuple_parts, var.shells, var.indirections, var.optional, var.is_array,
+                                  var.array_len, false);
     }
     if (var.is_fn_ptr) {
         return lower_fnptr(file, var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,

@@ -214,9 +214,11 @@ A field may be written `value (i32, i32)`.
 
 A tuple value does not convert to a slice.
 
-`row[0:2]`, `row[:]`, the same range of a parameter `[N]Duo`, and `p[0:2]` on `*[N]Duo` are `[]Duo`. The same range of `[N][M]Duo` is `type mismatch`.
+`row[0:2]`, `row[:]`, the same range of a parameter `[N]Duo`, and `p[0:2]` on `*[N]Duo` are `[]Duo`. The same range of `[N][M]Duo` is `[][M]Duo`.
 
-`[]Duo` is that slice. `s[0] = Duo((40, 2))` stores one element. `s[0][0]` reads one field. `[][N]Duo` is `not supported yet`. `[](i32, i32)` is `expected a type`.
+`[]Duo` is that slice. `s[0] = Duo((40, 2))` stores one element. `s[0][0]` reads one field. `[][N]Duo` is a slice of those rows, and `view[1][0][0]` reads one element. `[](i32, i32)` is `expected a type`: a shell around a tuple names it with an alias.
+
+`[_]Duo{a, b}` is an array of that tuple. `[2]*Duo`, `?*[]Duo`, and `[][2]Duo` are the same tuple inside other shells, at any depth.
 
 ## Binding and indexing
 

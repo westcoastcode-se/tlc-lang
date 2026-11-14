@@ -1,0 +1,21 @@
+// An alias and the same tuple written out have one layout, however the parts nest.
+type Point struct {
+    x i32;
+    y f64;
+};
+
+type One (i32, f64);
+type Two ((i32, f64), f64);
+type Rows ([2]One, f64);
+type Pair (Point, f64);
+type Deep ([2]Pair, f64);
+
+func main() i32 {
+    var two ((i32, f64), f64);
+    var rows ([2]One, f64);
+    var deep ([2]Pair, f64);
+    if (sizeof(Two) != sizeof(two) || sizeof(Rows) != sizeof(rows) || sizeof(Deep) != sizeof(deep)) {
+        return 1;
+    }
+    return sizeof(Two) + sizeof(Rows) - 22;
+}

@@ -1,6 +1,18 @@
-type Duo (i32, i32);
+// A slice of rows of tuples, `[][2]Duo`, indexes one row, then one tuple, then one element.
+type Duo (i32, f64);
+
+func last(view [][2]Duo) i32 {
+    return view[1][1][0];
+}
 
 func main() i32 {
-    var view [][2]Duo;
-    return 0;
+    var a Duo = Duo((40, 0.5));
+    var b Duo = Duo((2, 1.5));
+    var grid [2][2]Duo = [_][2]Duo{[_]Duo{a, b}, [_]Duo{b, a}};
+    var view [][2]Duo = grid[:];
+    view[0][1] = Duo((1, 2.5));
+    if (view.len != 2 || grid[0][1][0] != 1 || view[1][0][1] != 1.5) {
+        return 1;
+    }
+    return last(view) + view[1][0][0];
 }

@@ -56,40 +56,79 @@ bool same_spec(const SpecArg &lhs, const SpecArg &rhs) {
         }
         return true;
     }
+    // `[2][2]i32` and `[2][3]i32` share the outer length. Every shell is part of the type.
+    if (lhs.shells.size() != rhs.shells.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < lhs.shells.size(); ++i) {
+        const TypeShell &left = lhs.shells[i];
+        const TypeShell &right = rhs.shells[i];
+        if (left.kind != right.kind || left.length != right.length || left.optional != right.optional ||
+            left.const_pointee != right.const_pointee) {
+            return false;
+        }
+    }
     return lhs.type_name == rhs.type_name && lhs.type_package == rhs.type_package && lhs.is_struct == rhs.is_struct &&
            lhs.is_enum == rhs.is_enum && lhs.indirections == rhs.indirections && lhs.optional == rhs.optional &&
            lhs.const_pointee == rhs.const_pointee && lhs.is_array == rhs.is_array && lhs.elem_const == rhs.elem_const &&
-           lhs.array_len == rhs.array_len;
+           lhs.elem_slice == rhs.elem_slice && lhs.array_len == rhs.array_len;
 }
 
 void apply_spec(ResultSlot &slot, const SpecArg &arg) {
     slot.type_name = arg.type_name;
     slot.type_package = arg.type_package;
-    slot.is_struct = arg.is_struct;
+    // `is_struct` means the source wrote `struct Name`. A specialized name is an ordinary type.
+    slot.is_struct = false;
     slot.is_enum = arg.is_enum;
     slot.indirections = arg.indirections;
     slot.optional = arg.optional;
     slot.const_pointee = arg.const_pointee;
     slot.is_array = arg.is_array;
     slot.elem_const = arg.elem_const;
+    slot.elem_slice = arg.elem_slice;
     slot.array_len = arg.array_len;
+    // `[2][2]i32` and `*[]i32` keep every constructor. The flat fields above name only the outer one.
+    slot.shells = arg.shells;
 }
 
-// `T` bound to `[2](i32, i32)` or `[2][2](i32, i32)`. Every shell is one array.
-// A pointer shell is `*T`. A slice stays out of this form.
+// `T` bound to a tuple inside shells: `[2](i32, i32)`, `[][2]Duo`, `*Duo`, `?*[]Duo`, at any depth.
+// A bare tuple has no shell and is a pack of its parts instead.
 bool tuple_array_pack(const SpecArg &pack) {
     if (!pack.is_pack || pack.parts.empty()) {
         return false;
     }
     if (pack.shells.empty()) {
-        return pack.is_array && pack.array_len > 0;
+        return pack.is_array && pack.array_len != 0;
     }
     for (const TypeShell &shell : pack.shells) {
-        if (shell.kind != TypeShell::Kind::Array || shell.length <= 0 || !shell.length_name.empty()) {
+        if (shell.kind == TypeShell::Kind::Array && (shell.length <= 0 || !shell.length_name.empty())) {
             return false;
         }
     }
     return true;
+}
+
+// The shells of a shaped pack, outermost first. A pack written only as `is_array` gets that one shell.
+std::vector<TypeShell> pack_shells(const SpecArg &pack) {
+    if (!pack.shells.empty()) {
+        return pack.shells;
+    }
+    std::vector<TypeShell> shells;
+    TypeShell shell;
+    shell.kind = pack.array_len < 0 ? TypeShell::Kind::Slice : TypeShell::Kind::Array;
+    shell.length = pack.array_len < 0 ? 0 : pack.array_len;
+    shells.push_back(shell);
+    return shells;
+}
+
+// The flat fields older paths read, from the outermost shell.
+template <class Slot>
+void project_shells(Slot &slot) {
+    slot.is_array = !slot.shells.empty() && (slot.shells.front().kind == TypeShell::Kind::Array ||
+                                             slot.shells.front().kind == TypeShell::Kind::Slice);
+    slot.array_len = !slot.is_array ? 0
+                     : slot.shells.front().kind == TypeShell::Kind::Slice ? -1
+                                                                          : slot.shells.front().length;
 }
 
 ResultSlot slot_from_spec(const SpecArg &arg) {
@@ -100,26 +139,10 @@ ResultSlot slot_from_spec(const SpecArg &arg) {
         for (const SpecArg &part : arg.parts) {
             slot.tuple_parts.push_back(slot_from_spec(part));
         }
-        // The leaf is the tuple. `[2]T` and `[2][2]T` keep every array shell around it.
+        // The leaf is the tuple. Every shell around it stays: arrays, slices, and pointers.
         if (tuple_array_pack(arg)) {
-            slot.is_array = true;
-            slot.array_len = arg.array_len;
-            if (!arg.shells.empty()) {
-                slot.shells = arg.shells;
-            } else {
-                TypeShell shell;
-                shell.kind = TypeShell::Kind::Array;
-                shell.length = arg.array_len;
-                slot.shells.push_back(shell);
-            }
-            if (slot.array_len <= 0) {
-                for (const TypeShell &shell : slot.shells) {
-                    if (shell.kind == TypeShell::Kind::Array && shell.length > 0) {
-                        slot.array_len = shell.length;
-                        break;
-                    }
-                }
-            }
+            slot.shells = pack_shells(arg);
+            project_shells(slot);
         }
         return slot;
     }
@@ -153,16 +176,10 @@ bool stamp_outer_tuple_arrays(ResultSlot &slot, const SpecArg &pack) {
         outer.length = slot.array_len;
         shells.push_back(outer);
     }
-    if (!pack.shells.empty()) {
-        shells.insert(shells.end(), pack.shells.begin(), pack.shells.end());
-    } else {
-        TypeShell inner;
-        inner.kind = TypeShell::Kind::Array;
-        inner.length = pack.array_len;
-        shells.push_back(inner);
-    }
+    const std::vector<TypeShell> inner = pack_shells(pack);
+    shells.insert(shells.end(), inner.begin(), inner.end());
     for (const TypeShell &shell : shells) {
-        if (shell.kind != TypeShell::Kind::Array || shell.length <= 0 || !shell.length_name.empty()) {
+        if (shell.kind == TypeShell::Kind::Array && (shell.length <= 0 || !shell.length_name.empty())) {
             return false;
         }
     }
@@ -187,11 +204,6 @@ bool stamp_outer_tuple_arrays(ResultSlot &slot, const SpecArg &pack) {
 bool stamp_tuple_stars(ResultSlot &slot, const SpecArg &pack) {
     if (!pack.is_pack || pack.parts.empty() || slot.indirections < 1) {
         return false;
-    }
-    for (const TypeShell &shell : pack.shells) {
-        if (shell.kind == TypeShell::Kind::Slice) {
-            return false;
-        }
     }
     if ((pack.is_array || !pack.shells.empty()) && !tuple_array_pack(pack)) {
         return false;
@@ -221,14 +233,8 @@ bool stamp_tuple_stars(ResultSlot &slot, const SpecArg &pack) {
         shell.const_pointee = (const_bits & (1u << static_cast<unsigned>(star))) != 0;
         slot.shells.push_back(shell);
     }
-    if (!pack.shells.empty()) {
-        slot.shells.insert(slot.shells.end(), pack.shells.begin(), pack.shells.end());
-    } else {
-        TypeShell shell;
-        shell.kind = TypeShell::Kind::Array;
-        shell.length = pack.array_len;
-        slot.shells.push_back(shell);
-    }
+    const std::vector<TypeShell> inner = pack_shells(pack);
+    slot.shells.insert(slot.shells.end(), inner.begin(), inner.end());
     return true;
 }
 
@@ -253,14 +259,8 @@ bool stamp_star_tuple_array(ResultSlot &slot, const SpecArg &pack) {
     TypeShell star;
     star.kind = TypeShell::Kind::Pointer;
     slot.shells.push_back(star);
-    if (!pack.shells.empty()) {
-        slot.shells.insert(slot.shells.end(), pack.shells.begin(), pack.shells.end());
-    } else {
-        TypeShell shell;
-        shell.kind = TypeShell::Kind::Array;
-        shell.length = pack.array_len;
-        slot.shells.push_back(shell);
-    }
+    const std::vector<TypeShell> inner = pack_shells(pack);
+    slot.shells.insert(slot.shells.end(), inner.begin(), inner.end());
     return true;
 }
 
@@ -296,26 +296,10 @@ TypeArg type_arg_from_spec(const SpecArg &arg) {
         for (const SpecArg &part : arg.parts) {
             out.tuple_parts.push_back(type_arg_from_spec(part));
         }
-        // `Box[T]` when `T` is `[2](i32, i32)`. The field keeps every array shell.
+        // `Box[T]` when `T` is a shaped tuple. The field keeps every shell.
         if (tuple_array_pack(arg)) {
-            out.is_array = true;
-            out.array_len = arg.array_len;
-            if (!arg.shells.empty()) {
-                out.shells = arg.shells;
-            } else {
-                TypeShell shell;
-                shell.kind = TypeShell::Kind::Array;
-                shell.length = arg.array_len;
-                out.shells.push_back(shell);
-            }
-            if (out.array_len <= 0) {
-                for (const TypeShell &shell : out.shells) {
-                    if (shell.kind == TypeShell::Kind::Array && shell.length > 0) {
-                        out.array_len = shell.length;
-                        break;
-                    }
-                }
-            }
+            out.shells = pack_shells(arg);
+            project_shells(out);
         }
         return out;
     }
@@ -1774,15 +1758,27 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
         out.enum_id = cursor->enum_id;
         return true;
     case TypeKind::Tuple: {
+        // `type Duo (i32, f64)` is a distinct type. `*Duo` and `[2]Duo` keep that name, not the parts.
+        if (cursor->alias_id != 0) {
+            out.type_name = type_desc(*cursor);
+            return !out.type_name.empty() && out.type_name != "invalid";
+        }
         // `T` is the whole tuple. A pointer to a tuple stays rejected. An element may itself be a tuple.
         // `[2](i32, i32)` keeps the array shells. The leaf is that tuple. A slice stays rejected.
-        if (depth != 0 || cursor->results.empty()) {
+        // `*Duo`, `[]Duo`, and `[2]?*Duo`: the stars next to the tuple are shells too, innermost.
+        if (cursor->results.empty()) {
             return false;
         }
-        for (const TypeShell &shell : out.shells) {
-            if (shell.kind == TypeShell::Kind::Slice) {
-                return false;
-            }
+        for (int star = 0; star < depth; ++star) {
+            TypeShell shell;
+            shell.kind = TypeShell::Kind::Pointer;
+            shell.optional = (optional & (1u << static_cast<unsigned>(star))) != 0;
+            shell.const_pointee = (const_pointee & (1u << static_cast<unsigned>(star))) != 0;
+            out.shells.push_back(shell);
+        }
+        if (depth != 0 && !out.is_array) {
+            out.is_array = false;
+            out.array_len = 0;
         }
         std::vector<SpecArg> parts;
         parts.reserve(cursor->results.size());
@@ -1794,8 +1790,8 @@ bool Checker::spell_type(const Type &type, SpecArg &out) const {
             parts.push_back(std::move(spelled));
         }
         SpecArg packed = pack_bound(std::move(parts));
-        if (out.is_array) {
-            packed.is_array = true;
+        if (!out.shells.empty()) {
+            packed.is_array = out.is_array;
             packed.array_len = out.array_len;
             packed.elem_const = out.elem_const;
             packed.elem_slice = out.elem_slice;

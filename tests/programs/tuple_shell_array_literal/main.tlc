@@ -1,0 +1,15 @@
+// `[_]Duo{a, b}` is an array of that tuple, and `[][2]Duo` a slice of rows of it.
+type Duo (i32, f64);
+
+func main() i32 {
+    var a Duo = Duo((40, 0.5));
+    var b Duo = Duo((2, 1.5));
+    var row = [_]Duo{a, b};
+    var grid [2][2]Duo = [_][2]Duo{row, [_]Duo{b, a}};
+    var view [][2]Duo = grid[:];
+    var tail = grid[1:];
+    if (view.len != 2 || tail.len != 1 || tail[0][1][0] != 40) {
+        return 1;
+    }
+    return row[0][0] + view[1][0][0];
+}

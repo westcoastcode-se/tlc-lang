@@ -18,7 +18,7 @@ A constant index of the literal is that byte while compiling, so `"hi"[1]` is 10
 
 The literal, and any other `[]const u8`, converts to `*const u8` when that pointer is written or expected. That pointer is what a C library takes. The length is dropped.
 
-`[N]T` converts to `[]T` and to `[]const T`. A tuple does not: `row[:]` on `[N]Duo` or `[N][M]Duo` is `type mismatch`.
+`[N]T` converts to `[]T` and to `[]const T`. `row[:]` on `[N]Duo` is `[]Duo`, and on `[N][M]Duo` is `[][M]Duo`. A tuple value itself does not convert to a slice.
 
 A const array converts to `[]const T`, and `row[:]` is that slice. `[]const T` does not convert to `[]T`. `[]i32` does not convert to `*i32`.
 
@@ -180,7 +180,7 @@ The result is not an lvalue. `row[0:2] = row`, `row[1:] = row`, and `&row[0:2]` 
 
 `*p` is the array, so `var s []i32 = *p` is `[]i32`.
 
-A range of `[N]Duo`, of a parameter `[N]Duo`, and of `*[N]Duo` is `[]Duo`. A range of `[N][M]Duo` is `type mismatch`. `[][N]Duo` is `not supported yet`. `[](i32, i32)` is `expected a type`.
+A range of `[N]Duo`, of a parameter `[N]Duo`, and of `*[N]Duo` is `[]Duo`. A range of `[N][M]Duo` is `[][M]Duo`, and `[][N]Duo` is that slice. `[](i32, i32)` is `expected a type`: a shell around a tuple names it with an alias.
 
 `*i32` and a still-optional `?*[N]T` are reported as `type mismatch`.
 

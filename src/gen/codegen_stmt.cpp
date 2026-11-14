@@ -1387,6 +1387,18 @@ void CodeGen::emit_for_each(const Stmt::For &node) {
                 if (const std::optional<Binding> row = bind_array_copy(node.each_name, address, node.loc)) {
                     scopes_.back()[node.each_name] = *row;
                 }
+            } else if (address.is_tuple && !address.tuple_parts.empty()) {
+                // An element that is a tuple is copied whole. `r[0]` then reads one part.
+                llvm::Type *aggregate = tuple_aggregate(address.tuple_parts);
+                if (aggregate != nullptr) {
+                    llvm::AllocaInst *held = alloca_typed(aggregate, node.each_name);
+                    builder_.CreateStore(builder_.CreateLoad(aggregate, address.value), held);
+                    Binding item_tuple;
+                    item_tuple.value = held;
+                    item_tuple.is_tuple = true;
+                    item_tuple.tuple_parts = address.tuple_parts;
+                    scopes_.back()[node.each_name] = item_tuple;
+                }
             } else if (pointer_shell(address.shells)) {
                 // An element `*[2]T` or `**[]T`. The pointer keeps its shells, at any depth.
                 llvm::AllocaInst *held = alloca_typed(ptr_type(), node.each_name);

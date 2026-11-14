@@ -1,0 +1,19 @@
+// A field `*Duo` declared before `Duo` can be built keeps the tuple, so `(*h.p)[0]` reads one element.
+type Holder struct {
+    p *Duo;
+    rows [2]*Duo;
+};
+
+type Point struct {
+    x i32;
+    y f64;
+};
+
+type Duo (Point, f64);
+
+func main() i32 {
+    var pt Point = Point{.x = 40, .y = 1.0};
+    var d Duo = Duo((pt, 2.0));
+    var h Holder = Holder{.p = &d, .rows = [_]*Duo{&d, &d}};
+    return (*h.p)[0].x + i32((*h.rows[1])[1]);
+}

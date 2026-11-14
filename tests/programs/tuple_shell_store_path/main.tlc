@@ -1,0 +1,11 @@
+// A store through array, tuple, and array elements lands in the variable, not in a copy.
+type Rowed ([2]i32, f64);
+
+func main() i32 {
+    var a Rowed = Rowed(([_]i32{1, 2}, 0.5));
+    var grid [2]Rowed = [_]Rowed{a, a};
+    grid[1][0][1] = 40;
+    var s []Rowed = grid[:];
+    s[0][0][0] = 2;
+    return grid[1][0][1] + grid[0][0][0];
+}

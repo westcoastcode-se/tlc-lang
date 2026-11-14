@@ -1,0 +1,21 @@
+// `for` over tuples binds each tuple.
+type Duo (i32, f64);
+
+func main() i32 {
+    var a Duo = Duo((20, 0.5));
+    var b Duo = Duo((22, 1.5));
+    var row [2]Duo = [_]Duo{a, b};
+    var sum = 0;
+    var weight = 0.0;
+    for (var d : row) {
+        sum = sum + d[0];
+    }
+    var s []Duo = row[:];
+    for (var d : s) {
+        weight = weight + d[1];
+    }
+    if (weight != 2.0) {
+        return 1;
+    }
+    return sum;
+}

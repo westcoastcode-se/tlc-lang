@@ -1960,9 +1960,9 @@ A field may be written `value (i32, i32)`.
 
 `[N]Duo` is an array of it.
 
-A tuple value does not convert to a slice. `row[0:2]` on `[N]Duo` is `[]Duo`. The same range of `[N][M]Duo` is `type mismatch`.
+A tuple value does not convert to a slice. `row[0:2]` on `[N]Duo` is `[]Duo`, and the same range of `[N][M]Duo` is `[][M]Duo`.
 
-`[]Duo` is that slice. `[][N]Duo` is `not supported yet`.
+`[]Duo` is that slice, and `[][N]Duo` is a slice of rows of that tuple, at any depth.
 
 `type Something[K type, V type] (K, V)` is an alias of that tuple.
 
@@ -2232,7 +2232,7 @@ A missing high bound is the length.
 
 `a[i:]`, `a[:j]`, and `a[:]` are those slices.
 
-A range of an array of tuples, including `[N][M]Duo`, is `type mismatch`.
+A range of an array of tuples, including `[N][M]Duo`, is a slice of its rows.
 
 `a[]` is reported as `expected an expression`.
 

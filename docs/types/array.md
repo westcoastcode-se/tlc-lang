@@ -114,7 +114,7 @@ The index has type `i32`.
 
 `row[i:]`, `row[:j]`, and `row[:]` are those slices.
 
-A range of `[N]Duo` or `[N][M]Duo` is `type mismatch`. A range of `[_][2]i32` is a slice of `[2]i32`. The length counts rows.
+A range of `[N]Duo` is `[]Duo`, and of `[N][M]Duo` is `[][M]Duo`. A range of `[_][2]i32` is a slice of `[2]i32`. The length counts rows.
 
 `v[i]` reads an element. `v.len` is `i32`.
 

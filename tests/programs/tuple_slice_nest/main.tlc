@@ -1,7 +1,10 @@
+// A range of `[N][M]Duo` is `[][M]Duo`. A store through the slice lands in the array.
 type Duo (i32, i32);
 
 func main() i32 {
-    var grid [2][2]Duo;
+    var zero Duo = Duo((0, 0));
+    var grid [2][2]Duo = [_][2]Duo{[_]Duo{zero, zero}, [_]Duo{zero, zero}};
     var view = grid[:];
-    return 0;
+    view[1][1] = Duo((40, 2));
+    return grid[1][1][0] + view[1][1][1];
 }

@@ -2449,14 +2449,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (base.kind == TypeKind::Invalid) {
                         return type_invalid();
                     }
-                    // `[N][M]Duo` is not a slice. A range of `[N]Duo` is `[]Duo`.
-                    auto tuple_element = [&](const Type &element) -> bool {
-                        if (element.kind == TypeKind::Tuple || !array_of_tuple(element)) {
-                            return false;
-                        }
-                        error(node.loc, "type mismatch");
-                        return true;
-                    };
+                    // A range of `[N]Duo` is `[]Duo`, and of `[N][M]Duo` is `[][M]Duo`. Every element shape slices.
+                    auto tuple_element = [](const Type &) -> bool { return false; };
                     // `row[0:2]` on `func open(row [4]i32)`. The pointer keeps the written length.
                     if (is_decayed_array(base) && base.pointee != nullptr && !base.optional) {
                         if (tuple_element(*base.pointee)) {

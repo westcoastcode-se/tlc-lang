@@ -1,0 +1,14 @@
+// A tuple literal keeps an element that is an array, a slice, or a pointer of tuples.
+type Duo (i32, f64);
+
+func main() i32 {
+    var a Duo = Duo((40, 0.5));
+    var row [2]Duo = [_]Duo{a, a};
+    var s []Duo = row[:];
+    var p *[2]Duo = &row;
+    var t = (row, s, p, &a, 2);
+    if (t[0][1][0] != 40 || t[1][0][0] != 40 || (*t[2])[1][0] != 40 || (*t[3])[0] != 40) {
+        return 1;
+    }
+    return t[0][0][0] + t[4];
+}

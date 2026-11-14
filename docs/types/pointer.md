@@ -90,7 +90,7 @@ A sized array converts to `*T` when `T` is the element and that pointer is writt
 
 `*[2][]i32` gives `[][]i32`.
 
-The compiler reports a range of `*[N]Duo` or `*[N][M]Duo` as `type mismatch`.
+A range of `*[N]Duo` is `[]Duo`, and of `*[N][M]Duo` is `[][M]Duo`.
 
 The compiler reports a range of `*i32`, or of a still-optional `?*[4]i32`, as `type mismatch`.
 
