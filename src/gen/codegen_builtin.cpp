@@ -353,7 +353,8 @@ llvm::Function *CodeGen::panic_function() {
 void CodeGen::abort_panic(SourceLoc loc, const char *message) {
     // Comptime evaluation has no `tlc.panic` body. Record the fault and leave the call.
     if (eval_) {
-        eval_fail(loc);
+        install_eval_fault();
+        eval_fail(loc, std::string_view(message == nullptr ? "" : message) == "null pointer" ? kEvalNull : 0);
         return;
     }
     llvm::Function *panic = panic_function();
@@ -366,6 +367,27 @@ void CodeGen::abort_panic(SourceLoc loc, const char *message) {
     llvm::CallInst *call = builder_.CreateCall(panic, {builder_.CreateGlobalString(message)});
     call->setCallingConv(llvm::CallingConv::C);
     builder_.CreateUnreachable();
+}
+
+void CodeGen::guard_divisor(SourceLoc loc, llvm::Value *divisor) {
+    if (divisor == nullptr || !divisor->getType()->isIntegerTy() || function_ == nullptr || terminated()) {
+        return;
+    }
+    if (eval_) {
+        install_eval_fault();
+    }
+    llvm::Value *bad = builder_.CreateICmpEQ(divisor, llvm::ConstantInt::get(divisor->getType(), 0));
+    auto *fail = llvm::BasicBlock::Create(context_, "div.fail", function_);
+    auto *ok = llvm::BasicBlock::Create(context_, "div.ok", function_);
+    builder_.CreateCondBr(bad, fail, ok);
+    builder_.SetInsertPoint(fail);
+    if (eval_) {
+        // Kind 1 is reported as `division by zero` with the comptime call stack.
+        eval_fail(loc, 1);
+    } else {
+        abort_panic(loc, "division by zero");
+    }
+    builder_.SetInsertPoint(ok);
 }
 
 void CodeGen::abort_out_of_memory(SourceLoc loc) {
@@ -384,15 +406,66 @@ void CodeGen::install_eval_fault() {
                                                "tlc.comptime.fail_kind");
 }
 
+void CodeGen::eval_guard(SourceLoc loc, bool entry) {
+    if (!eval_ || terminated() || function_ == nullptr) {
+        return;
+    }
+    install_eval_fault();
+    if (eval_fuel_ == nullptr) {
+        // About half a billion loop steps and calls. A loop that has not ended by then does not end.
+        eval_fuel_ = new llvm::GlobalVariable(module_, i64(), false, llvm::GlobalValue::InternalLinkage,
+                                              llvm::ConstantInt::get(i64(), 500000000), "tlc.comptime.fuel");
+        eval_floor_ = new llvm::GlobalVariable(module_, i64(), false, llvm::GlobalValue::InternalLinkage,
+                                               llvm::ConstantInt::get(i64(), 0), "tlc.comptime.floor");
+    }
+    llvm::Value *fuel = builder_.CreateSub(builder_.CreateLoad(i64(), eval_fuel_), llvm::ConstantInt::get(i64(), 1));
+    builder_.CreateStore(fuel, eval_fuel_);
+    llvm::Value *spent = builder_.CreateICmpSLE(fuel, llvm::ConstantInt::get(i64(), 0));
+    auto *spent_bb = llvm::BasicBlock::Create(context_, "eval.spent", function_);
+    auto *more_bb = llvm::BasicBlock::Create(context_, "eval.more", function_);
+    builder_.CreateCondBr(spent, spent_bb, more_bb);
+    builder_.SetInsertPoint(spent_bb);
+    eval_fail(loc, kEvalSteps);
+    builder_.SetInsertPoint(more_bb);
+    if (!entry) {
+        return;
+    }
+    // The evaluator runs on the compiler's own stack. The first comptime frame sets a floor 2 MiB below it.
+    // A frame under that floor is a recursion that would overflow the stack and kill the compiler.
+    llvm::Function *frame = llvm::Intrinsic::getOrInsertDeclaration(&module_, llvm::Intrinsic::frameaddress,
+                                                                    {ptr_type()});
+    llvm::Value *here = builder_.CreatePtrToInt(builder_.CreateCall(frame, {const_i32(0)}), i64());
+    llvm::Value *floor = builder_.CreateLoad(i64(), eval_floor_);
+    llvm::Value *unset = builder_.CreateICmpEQ(floor, llvm::ConstantInt::get(i64(), 0));
+    llvm::Value *fresh = builder_.CreateSub(here, llvm::ConstantInt::get(i64(), 2 * 1024 * 1024));
+    floor = builder_.CreateSelect(unset, fresh, floor);
+    builder_.CreateStore(floor, eval_floor_);
+    auto *deep_bb = llvm::BasicBlock::Create(context_, "eval.deep", function_);
+    auto *room_bb = llvm::BasicBlock::Create(context_, "eval.room", function_);
+    builder_.CreateCondBr(builder_.CreateICmpULT(here, floor), deep_bb, room_bb);
+    builder_.SetInsertPoint(deep_bb);
+    eval_fail(loc, kEvalDepth);
+    builder_.SetInsertPoint(room_bb);
+}
+
 void CodeGen::eval_fail(SourceLoc loc, int kind) {
     if (terminated() || function_ == nullptr) {
         return;
     }
-    if (eval_fail_file_ != nullptr && eval_fail_off_ != nullptr) {
-        builder_.CreateStore(const_i32(static_cast<int>(loc.file)), eval_fail_file_);
-        builder_.CreateStore(const_i32(static_cast<int>(loc.offset)), eval_fail_off_);
-    }
-    if (eval_fail_kind_ != nullptr) {
+    // The first fault wins. A caller that continues after a failed call can fault again, and the
+    // spent step budget fails every later loop, so a later store would report the wrong place.
+    if (eval_fail_file_ != nullptr && eval_fail_off_ != nullptr && eval_fail_kind_ != nullptr) {
+        llvm::Value *old_file = builder_.CreateLoad(i32(), eval_fail_file_);
+        llvm::Value *first = builder_.CreateICmpEQ(old_file, const_i32(0));
+        auto keep = [&](llvm::GlobalVariable *slot, int value) {
+            llvm::Value *old = builder_.CreateLoad(i32(), slot);
+            builder_.CreateStore(builder_.CreateSelect(first, const_i32(value), old), slot);
+        };
+        keep(eval_fail_off_, static_cast<int>(loc.offset));
+        keep(eval_fail_kind_, kind);
+        builder_.CreateStore(builder_.CreateSelect(first, const_i32(static_cast<int>(loc.file)), old_file),
+                             eval_fail_file_);
+    } else if (eval_fail_kind_ != nullptr) {
         builder_.CreateStore(const_i32(kind), eval_fail_kind_);
     }
     llvm::Type *ret = function_->getReturnType();

@@ -1,0 +1,27 @@
+// A tuple alias as a result is one value of that alias, not one result per element.
+type Duo (i32, f64);
+type Pair[K type, V type] (K, V);
+
+func make(n i32) Duo {
+    if (n > 0) {
+        var d = Duo((n, 1.0));
+        return d;
+    }
+    return Duo((0, 0.0));
+}
+
+func pair() Pair[i32, i32] {
+    return Pair[i32, i32]((1, 1));
+}
+
+func both() (Duo, i32) {
+    return Duo((0, 0.0)), 0;
+}
+
+func main() i32 {
+    var d = make(40);
+    var p = pair();
+    var e, n = both();
+    var a, b = make(0);
+    return d[0] + i32(d[1]) + p[0] + e[0] + n + a + i32(b);
+}

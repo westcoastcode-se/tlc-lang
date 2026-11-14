@@ -1,0 +1,10 @@
+// A null `!` in a comptime func is reported. The evaluator used to dereference it and crash the compiler.
+comptime func first(n i32) i32 {
+    var p ?*i32 = null;
+    return *p! + n;
+}
+
+func main() i32 {
+    comptime const k = first(10);
+    return 0;
+}

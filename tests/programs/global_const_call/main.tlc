@@ -1,0 +1,14 @@
+// A file-scope `const` does not run a call before `main`. `--check` reports it, the same as the build.
+type Point struct {
+    x i32;
+};
+
+func give() i32 {
+    return 1;
+}
+
+const pt Point = {.x = give()};
+
+func main() i32 {
+    return pt.x;
+}

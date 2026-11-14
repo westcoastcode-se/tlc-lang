@@ -493,6 +493,21 @@ CompileOutput compile_source(const Options &opt) {
         output.status = 0;
         return output;
     }
+    // `-o main.tlc` would replace a source with the object or the executable. Every loaded file counts,
+    // not only the entry, so `-o` naming an imported package file is refused too.
+    if (!opt.output.empty()) {
+        std::error_code ec;
+        const std::filesystem::path target(opt.output);
+        if (std::filesystem::exists(target, ec)) {
+            for (uint32_t id = 1; const SourceFile *file = sources.find(id); ++id) {
+                std::error_code same_ec;
+                if (std::filesystem::equivalent(target, file->path(), same_ec) && !same_ec) {
+                    output.compiler_stderr = "error: output " + opt.output + " is the source file " + file->path() + "\n";
+                    return output;
+                }
+            }
+        }
+    }
 
     TempPath object;
     TempPath executable;

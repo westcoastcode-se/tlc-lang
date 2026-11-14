@@ -57,6 +57,10 @@ int run_abi_tests() {
                "struct Pair make_from_tlc(int a, int b);\n"
                "int call_add(void) { struct Pair p; p.a = 20; p.b = 22; return add_pair(p); }\n"
                "int call_make(void) { struct Pair p = make_from_tlc(20, 22); return p.a + p.b; }\n"
+               "int widen8(signed char c) { return c; }\n"
+               "int widen16(short c) { return c; }\n"
+               "unsigned wideu8(unsigned char c) { return c; }\n"
+               "signed char narrow8(int x) { return (signed char)x; }\n"
                "struct F2 { float a; float b; };\n"
                "struct F2 make_f2(float a, float b) { struct F2 f; f.a = a; f.b = b; return f; }\n"
                "float sum_f2(struct F2 f) { return f.a + f.b; }\n"
@@ -98,6 +102,10 @@ int run_abi_tests() {
                "extern(abi=\"c\") func sum_tri(t Tri) i32;\n"
                "extern(abi=\"c\") func make_big(n i32) Big;\n"
                "extern(abi=\"c\") func sum_big(b Big) i32;\n"
+               "extern(abi=\"c\") func widen8(c i8) i32;\n"
+               "extern(abi=\"c\") func widen16(c i16) i32;\n"
+               "extern(abi=\"c\") func wideu8(c u8) u32;\n"
+               "extern(abi=\"c\") func narrow8(x i32) i8;\n"
                "extern(abi=\"c\") func make_mix(a f32, b i32) Mix;\n"
                "extern(abi=\"c\") func mix_b(m Mix) i32;\n"
                "extern(abi=\"c\") func make_one(a i32) One;\n"
@@ -169,6 +177,9 @@ int run_abi_tests() {
                "    hold.p.b = 22;\n"
                "    if (hold.n != 20 || hold_a(hold) != 20) { return 14; }\n"
                "    if (add(6, 9) != 15 || last_error != 7 || call_renamed() != 15) { return 15; }\n"
+               "    var wide = 511;\n"
+               "    if (widen8(i8(wide)) != -1 || widen16(i16(wide * 256 + 255)) != -1) { return 16; }\n"
+               "    if (wideu8(u8(wide)) != 255u32 || i32(narrow8(255)) != -1) { return 17; }\n"
                "    return 42;\n"
                "}\n");
 
@@ -183,5 +194,13 @@ int run_abi_tests() {
         tlc::test::spawn({bin, "--run", dir_text + "/main.tlc", dir_text + "/libabi.a"});
     EXPECT(check, ran.code == 42);
     EXPECT(check, ran.err.empty());
+    // A narrow integer crosses the C boundary extended, the way clang's callee reads it.
+    const tlc::test::Proc optimized =
+        tlc::test::spawn({bin, "-O2", "--run", dir_text + "/main.tlc", dir_text + "/libabi.a"});
+    EXPECT(check, optimized.code == 42);
+    const tlc::test::Proc ir = tlc::test::spawn({bin, "--emit-llvm", dir_text + "/main.tlc"});
+    EXPECT_HAS(check, ir.out, "@widen8(i8 signext)");
+    EXPECT_HAS(check, ir.out, "@wideu8(i8 zeroext)");
+    EXPECT_HAS(check, ir.out, "signext i8 @narrow8(i32)");
     return check.failed;
 }

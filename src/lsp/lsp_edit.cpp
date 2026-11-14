@@ -205,6 +205,12 @@ Json rename_edits(const Doc &doc, const Cursor &cursor, const std::string &new_n
     if (target == nullptr || target->name.empty()) {
         return jnull();
     }
+    // A name declared in another file, such as an imported `f`, would be renamed only in this buffer. The
+    // declaration and every other importer keep the old name, and the declaration's position names text in
+    // that other file, not this one. The server has no text for those files, so it refuses the rename.
+    if (!target->uri.empty() && target->uri != doc.uri) {
+        return jnull();
+    }
     std::vector<std::pair<uint32_t, uint32_t>> spans;
     auto add_span = [&](uint32_t begin, uint32_t end) {
         if (begin >= end) {

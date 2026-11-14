@@ -549,12 +549,9 @@ llvm::Constant *CodeGen::const_struct_into(const Expr::Init *overlay, int struct
             return leave(nullptr);
         }
         if (value == nullptr) {
-            // `0...` writes a zero. A hole that was not requested stays unset.
-            if (overlay != nullptr && overlay->zero_rest) {
-                elements[index] = llvm::Constant::getNullValue(expected);
-            } else {
-                elements[index] = llvm::UndefValue::get(expected);
-            }
+            // A field with no value is zero in a constant. A file-scope value has no store that could
+            // fill an `undef` hole later, and a local read of that field is already `uninitialized`.
+            elements[index] = llvm::Constant::getNullValue(expected);
             continue;
         }
         if (value->getType() != expected) {
@@ -859,9 +856,9 @@ llvm::Constant *CodeGen::fill_array(const Expr::Init &init, llvm::ArrayType *arr
     if (array_ty == nullptr || !init.fields.empty() || init.elements.size() > array_ty->getNumElements()) {
         return nullptr;
     }
-    // `{4, 0...}` zero-fills the elements the list does not name.
-    // A short list without `0...` stays uninitialized.
-    const bool pad = zero_pad && init.zero_rest;
+    // `zero_pad` is a file-scope value. A short list there zero-fills the elements it does not name,
+    // with or without `0...`, because a file-scope value with no value is zero.
+    const bool pad = zero_pad;
     if (init.elements.size() != array_ty->getNumElements() && !pad) {
         return nullptr;
     }

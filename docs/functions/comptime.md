@@ -362,6 +362,8 @@ func main() i32 {
 
 `at(5)` emits nothing. The error is `index out of range`, then `main.tlc:2:12: at` and `main.tlc:6:12: main`.
 
+A null `!` while the body runs is `null pointer`. A call deeper than 2 MiB of the compiler's stack is `comptime recursion too deep`. A body that runs more than 500 million loop steps and calls is `comptime loop does not end`. Each error is followed by the same call stack. The first fault is the one reported.
+
 A tuple result is that tuple. `pair(40)[0] + pair(40)[1]` is 82. `comptime const got = pair(40)` names it. `var got = pair(40)` copies that folded tuple.
 
 ```c

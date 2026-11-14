@@ -24,7 +24,7 @@ The operand is an integer lvalue. A `const` binding is `type mismatch`. A value 
 
 A signed `>>=` keeps the sign. An unsigned `>>=` shifts in zeros. `(-2147483647 - 1) %= -1` stores 0.
 
-A constant divisor of 0 is `division by zero`, on that `/` or `%`. A constant shift whose amount is negative or past the width is `shift out of range`, on that `<<` or `>>`. `40 / 0`, `const n = 1 << 40`, `n /= 0`, and `n <<= 40` are those errors. The same fault in a `comptime func` is that message, with the call stack under it. A runtime divisor that is not a constant still traps. `40 / -1` is `-40`.
+A constant divisor of 0 is `division by zero`, on that `/` or `%`. A constant shift whose amount is negative or past the width is `shift out of range`, on that `<<` or `>>`. `40 / 0`, `const n = 1 << 40`, `n /= 0`, and `n <<= 40` are those errors. The same fault in a `comptime func` is that message, with the call stack under it. A divisor that is not a constant is checked before the division. A zero is `panic: division by zero` at every optimization level, for `/`, `%`, `/=`, and `%=`. `40 / -1` is `-40`.
 
 ```c
 func main() i32 {

@@ -1,0 +1,11 @@
+// `return 40, 2` does not spread into a tuple alias result. The alias is one value.
+type Duo (i32, i32);
+
+func pair() Duo {
+    return 40, 2;
+}
+
+func main() i32 {
+    var d = pair();
+    return d[0] + d[1];
+}

@@ -130,6 +130,8 @@ struct ComptimeStructImage {
 
 // Kind stored by the last comptime fault. 1 is division by zero, 2 is a shift past the width.
 int comptime_fault_kind();
+// The message for the last fault an evaluation stored. Index out of range is kind 0.
+const char *comptime_fault_text();
 
 // What running a struct-returning comptime func produced.
 struct ComptimeStructValue {

@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -51,6 +52,21 @@ int run_cli_tests() {
     const tlc::test::Proc bad_opt = tlc::test::spawn({bin, "-O4"});
     EXPECT(check, bad_opt.code != 0);
     EXPECT_HAS(check, bad_opt.err, "unknown option");
+
+    // `-o` naming the source is refused, and the source keeps its text.
+    const std::string self_out = "/tmp/tlc-self-out.tlc";
+    {
+        std::ofstream out(self_out);
+        out << "func main() i32 {\n    return 3;\n}\n";
+    }
+    const tlc::test::Proc same = tlc::test::spawn({bin, self_out, "-o", self_out});
+    EXPECT(check, same.code != 0);
+    EXPECT_HAS(check, same.err, "is the source file");
+    {
+        std::ifstream in(self_out);
+        const std::string kept((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        EXPECT_HAS(check, kept, "return 3;");
+    }
 
     const std::string opt_zero = "/tmp/tlc-opt-zero.tlc";
     {

@@ -1,4 +1,5 @@
 #include "harness.hpp"
+#include "lsp/internal.hpp"
 
 #include <cerrno>
 #include <charconv>
@@ -298,12 +299,85 @@ void check_lib_server(tlc::test::Check &check, const std::string &bin) {
     fs::remove_all(root, ec);
 }
 
+// A JSON message nested 100000 deep overflowed the parser's stack. A `\\u` surrogate pair is one code point.
+void check_json_parse(tlc::test::Check &check) {
+    const std::string deep = std::string(100000, '[') + std::string(100000, ']');
+    EXPECT(check, !tlc::lsp_impl::parse_json(deep).has_value());
+    const std::string shallow = std::string(100, '[') + std::string(100, ']');
+    EXPECT(check, tlc::lsp_impl::parse_json(shallow).has_value());
+    const auto pair = tlc::lsp_impl::parse_json(R"({"t":"\ud83d\ude00"})");
+    EXPECT(check, pair.has_value());
+    if (pair) {
+        const tlc::lsp_impl::Json *text = pair->find("t");
+        EXPECT(check, text != nullptr && text->s == "\xF0\x9F\x98\x80");
+    }
+    const auto lone = tlc::lsp_impl::parse_json(R"({"t":"\ud83dx"})");
+    EXPECT(check, lone.has_value() && lone->find("t") != nullptr && lone->find("t")->s == "\xEF\xBF\xBDx");
+}
+
+// Renaming an imported name would edit only this buffer, at the declaration's position in the other file.
+void check_rename_import(tlc::test::Check &check, const std::string &bin) {
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / ("tlc-lsp-rename-" + std::to_string(getpid()));
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    fs::create_directories(root / "lib", ec);
+    {
+        std::ofstream out(root / "lib" / "a.tlc");
+        out << "package lib;\n\nexport func f() i32 {\n    return 1;\n}\n";
+    }
+    const std::string source = "import { f } from \"lib\";\nfunc main() i32 {\n    var xyz = 0;\n    return xyz + f();\n}\n";
+    const fs::path file = root / "main.tlc";
+    {
+        std::ofstream out(file);
+        out << source;
+    }
+    int to_child[2] = {-1, -1};
+    int from_child[2] = {-1, -1};
+    EXPECT(check, ::pipe(to_child) == 0);
+    EXPECT(check, ::pipe(from_child) == 0);
+    const pid_t pid = ::fork();
+    EXPECT(check, pid >= 0);
+    if (pid == 0) {
+        ::dup2(to_child[0], STDIN_FILENO);
+        ::dup2(from_child[1], STDOUT_FILENO);
+        ::close(to_child[0]);
+        ::close(to_child[1]);
+        ::close(from_child[0]);
+        ::close(from_child[1]);
+        ::execl(bin.c_str(), bin.c_str(), "lsp", nullptr);
+        _exit(127);
+    }
+    ::close(to_child[0]);
+    ::close(from_child[1]);
+    const std::string uri = std::string("file://") + file.string();
+    send_json(to_child[1],
+              R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"capabilities":{},"rootUri":null}})");
+    EXPECT_HAS(check, read_message(from_child[0], 3000), "completionProvider");
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") + uri +
+                  R"(","languageId":"tlc","version":1,"text":")" + json_escape(source) + R"("}}})");
+    send_json(to_child[1], std::string(R"({"jsonrpc":"2.0","id":7,"method":"textDocument/rename","params":{"textDocument":{"uri":")") +
+                               uri + R"("},"position":{"line":3,"character":17},"newName":"gg"}})");
+    const std::string renamed = read_until(from_child[0], "\"id\":7", 4000);
+    EXPECT_HAS(check, renamed, "\"id\":7");
+    EXPECT(check, renamed.find("gg") == std::string::npos);
+    ::close(to_child[1]);
+    ::close(from_child[0]);
+    ::kill(pid, SIGKILL);
+    int status = 0;
+    ::waitpid(pid, &status, 0);
+    fs::remove_all(root, ec);
+}
+
 } // namespace
 
 int run_lsp_tests() {
     tlc::test::Check check;
     const std::string bin = TLC_BIN;
     check_lib_server(check, bin);
+    check_json_parse(check);
+    check_rename_import(check, bin);
 
     char path[] = "/tmp/tlc-lsp-XXXXXX.tlc";
     const int file = ::mkstemps(path, 4);

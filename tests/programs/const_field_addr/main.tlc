@@ -1,0 +1,13 @@
+// `&c.x` through `*const Point` is `*const i32`. A writable pointer would let `*q = 5` change a const place.
+type Point struct {
+    x i32;
+    y i32;
+};
+
+func main() i32 {
+    var p = Point{.x = 40, .y = 2};
+    var c *const Point = &p;
+    var q *i32 = &c.x;
+    *q = 5;
+    return p.x;
+}

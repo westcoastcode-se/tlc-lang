@@ -162,11 +162,27 @@ struct Parse {
                     text.push_back('\t');
                     break;
                 case 'u': {
-                    int code = 0;
-                    for (int n = 0; n < 4; ++n) {
-                        code = (code << 4) | hex_digit();
+                    uint32_t code = read_hex4();
+                    // `\ud83d\ude00` is one code point. Encoding each half alone gives CESU-8, which is not UTF-8,
+                    // and the bytes go back to the client in edits. A lone half is U+FFFD.
+                    if (code >= 0xD800 && code <= 0xDBFF) {
+                        if (in.substr(at, 2) == "\\u") {
+                            const std::size_t saved = at;
+                            at += 2;
+                            const uint32_t low = read_hex4();
+                            if (low >= 0xDC00 && low <= 0xDFFF) {
+                                code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+                            } else {
+                                at = saved;
+                                code = 0xFFFD;
+                            }
+                        } else {
+                            code = 0xFFFD;
+                        }
+                    } else if (code >= 0xDC00 && code <= 0xDFFF) {
+                        code = 0xFFFD;
                     }
-                    append_utf8(text, static_cast<uint32_t>(code));
+                    append_utf8(text, code);
                     break;
                 }
                 default:
@@ -217,6 +233,23 @@ struct Parse {
         return jint(value);
     }
 
+    uint32_t read_hex4() {
+        uint32_t code = 0;
+        for (int n = 0; n < 4; ++n) {
+            code = (code << 4) | static_cast<uint32_t>(hex_digit());
+        }
+        return code;
+    }
+
+    // Each `[` or `{` recurses. 100000 of them in a 200 KB message overflowed the server's stack.
+    static constexpr int kMaxDepth = 256;
+    int depth = 0;
+    struct Nest {
+        int &depth;
+        explicit Nest(int &d) : depth(d) { ++depth; }
+        ~Nest() { --depth; }
+    };
+
     Json parse_value() {
         skip();
         if (at >= in.size()) {
@@ -224,6 +257,11 @@ struct Parse {
             return {};
         }
         const char c = in[at];
+        const Nest nest(depth);
+        if ((c == '{' || c == '[') && depth > kMaxDepth) {
+            ok = false;
+            return {};
+        }
         if (c == '"') {
             return parse_string();
         }
@@ -311,6 +349,30 @@ Pos locate(const std::string &text, uint32_t offset);
 uint32_t offset_at(const std::string &text, int line, int character);
 uint32_t skip_lex(const std::string &text, uint32_t i);
 bool in_literal(const std::string &text, uint32_t offset);
+
+// Line starts and comment or quote spans of one text, built in one scan. `locate`, `offset_at`, and
+// `in_literal` each scan from offset 0. Called once per symbol or identifier, that is quadratic in the
+// file. While a `LineIndex` is active, those calls on the same string object use it instead.
+// The text must not change while the index is active.
+class LineIndex {
+  public:
+    explicit LineIndex(const std::string &text);
+    LineIndex(const LineIndex &) = delete;
+    LineIndex &operator=(const LineIndex &) = delete;
+    ~LineIndex();
+
+    const std::string &text() const { return text_; }
+    Pos locate(uint32_t offset) const;
+    uint32_t offset_at(int line, int character) const;
+    bool in_literal(uint32_t offset) const;
+
+  private:
+    const std::string &text_;
+    std::vector<uint32_t> starts_;
+    // Half-open [begin, end) of each comment and quote, in order. They do not overlap.
+    std::vector<std::pair<uint32_t, uint32_t>> spans_;
+    const LineIndex *outer_ = nullptr;
+};
 uint32_t match_brace(const std::string &text, uint32_t open);
 std::string percent_decode(std::string_view text);
 std::string uri_to_path(std::string_view uri);

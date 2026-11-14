@@ -1,0 +1,13 @@
+// A runtime divisor of zero panics. Without the check, -O2 returned any value from the undefined `sdiv`.
+var zero = 0;
+
+func main() i32 {
+    var n = 40;
+    var d = 5;
+    n = n / d * 5 + 42 % d;
+    if (n != 42) {
+        return 1;
+    }
+    n /= zero;
+    return n;
+}

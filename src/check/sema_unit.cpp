@@ -1034,7 +1034,7 @@ Type Checker::file_array_initializer(VarDecl &var, const Type *declared) {
         }
         // `[_][2]i32{inner}` copies that array. A call runs before `main`.
         if (element.kind == TypeKind::Array && element.length >= 0) {
-            if (!(var.is_const_decl && var.is_comptime) && !var.is_extern && startup_call(value)) {
+            if (!var.is_const_decl && !var.is_extern && startup_call(value)) {
                 startup = true;
                 return;
             }
@@ -1047,8 +1047,16 @@ Type Checker::file_array_initializer(VarDecl &var, const Type *declared) {
         }
         // `[_]i32{give()}` and `[_]Point{give()}` run before `main`.
         // A `const` stays a constant. `n + 1` is not this call.
-        if (!(var.is_const_decl && var.is_comptime) && !var.is_extern && startup_call(value)) {
+        if (!var.is_const_decl && !var.is_extern && startup_call(value)) {
             startup = true;
+            return;
+        }
+        // In a `const`, a call is an element only when it folds, `[_]i32{add(1)}` with `add` a `comptime func`.
+        // Codegen stores the folded value. A call that does not fold would have to run before `main`.
+        if (var.is_const_decl && !var.is_comptime && startup_call(value)) {
+            if (!fold_int(value).has_value()) {
+                runtime = true;
+            }
             return;
         }
         const FileConst kind = file_constant(value, seen, !(var.is_const_decl && var.is_comptime));
@@ -1415,8 +1423,8 @@ bool Checker::accept_array_copy(VarDecl &var) {
     if (var.init == nullptr || std::holds_alternative<Expr::Init>(var.init->data)) {
         return true;
     }
-    // `var copy [2]i32 = give()` runs before `main`. A `const` stays a constant.
-    if (!(var.is_const_decl && var.is_comptime) && !var.is_extern && startup_call(*var.init)) {
+    // `var copy [2]i32 = give()` runs before `main`. A `const` stays a constant, so a call there must fold.
+    if (!var.is_const_decl && !var.is_extern && startup_call(*var.init)) {
         var.runtime_init = true;
         return true;
     }
@@ -1898,6 +1906,37 @@ void Checker::check_globals(const TranslationUnit &unit) {
                     }
                     return call;
                 };
+                // A call inside a brace list that does not fold. `{.x = add(1)}` with `add` a `comptime func` folds.
+                auto unfolded_call = [&](auto &self, const Expr &expr) -> bool {
+                    if (startup_call(expr)) {
+                        const Expr *cursor = &expr;
+                        while (const auto *unary = std::get_if<Expr::Unary>(&cursor->data)) {
+                            if (unary->expr == nullptr) {
+                                break;
+                            }
+                            cursor = unary->expr.get();
+                        }
+                        const auto *call = std::get_if<Expr::Call>(&cursor->data);
+                        const bool folded = fold_int(expr).has_value() ||
+                                            (call != nullptr && (call->comptime_struct != nullptr || call->comptime_text));
+                        return !folded;
+                    }
+                    const auto *init = std::get_if<Expr::Init>(&expr.data);
+                    if (init == nullptr) {
+                        return false;
+                    }
+                    for (const Expr::FieldInit &field : init->fields) {
+                        if (field.value != nullptr && self(self, *field.value)) {
+                            return true;
+                        }
+                    }
+                    for (const auto &element : init->elements) {
+                        if (element && self(self, *element)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                };
                 if (diags_.size() == before) {
                     // A folding call is the constant in the global. A store would write read-only memory.
                     // An i32 or a bool folds to an integer. A struct is the kept literal. A string is the bytes.
@@ -1938,10 +1977,13 @@ void Checker::check_globals(const TranslationUnit &unit) {
                         if (!folded) {
                             error(var->loc, "global initializer is not a constant");
                         }
-                    } else if (!(var->is_const_decl && var->is_comptime) && !var->is_extern &&
+                    } else if (!var->is_const_decl && !var->is_extern &&
                                (runs_at_startup(*var->init) || want.kind == TypeKind::Tuple ||
                                 startup_value(startup_value, *var->init))) {
                         const_cast<VarDecl *>(var)->runtime_init = true;
+                    } else if (var->is_const_decl && !var->is_comptime && unfolded_call(unfolded_call, *var->init)) {
+                        // `const pt Point = {.x = give()}` would run `give` before `main`. A `const` does not.
+                        error(var->loc, "global initializer is not a constant");
                     } else if (is_slice(want)) {
                         require_slice_name(*var->init, want, var->loc, before);
                     } else {

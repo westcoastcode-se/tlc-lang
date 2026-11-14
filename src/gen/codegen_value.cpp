@@ -361,7 +361,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     // `p!` is `*T` for this use. A debug build panics on null before that use.
                     // `value!.field ?? fallback` still selects the fallback when `value` is null.
                     const bool coalesce = node.coalesce && coalesce_miss_ != nullptr;
-                    if (!coalesce && !checks_) {
+                    // The evaluator always checks. A null `!` there would crash the compiler.
+                    if (!coalesce && !checks_ && !eval_) {
                         return inner_value;
                     }
                     if (pointer == nullptr || terminated() || function_ == nullptr || !pointer->getType()->isPointerTy()) {
@@ -719,15 +720,8 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             }
                             return widened(llvm::ConstantInt::get(lhs->getType(), 0));
                         }
-                    } else if (eval_ && !terminated() && function_ != nullptr) {
-                        install_eval_fault();
-                        llvm::Value *bad = builder_.CreateICmpEQ(rhs, llvm::ConstantInt::get(rhs->getType(), 0));
-                        auto *fail = llvm::BasicBlock::Create(context_, "div.fail", function_);
-                        auto *ok = llvm::BasicBlock::Create(context_, "div.ok", function_);
-                        builder_.CreateCondBr(bad, fail, ok);
-                        builder_.SetInsertPoint(fail);
-                        eval_fail(node.loc, 1);
-                        builder_.SetInsertPoint(ok);
+                    } else {
+                        guard_divisor(node.loc, rhs);
                     }
                     if (node.op == TokenKind::Slash) {
                         return widened(uns ? builder_.CreateUDiv(lhs, rhs) : signed_div(false));
@@ -829,6 +823,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         // `sdiv` and `srem` of the minimum signed value and -1 are poison.
                         // The quotient wraps. The remainder is 0.
                         const bool remainder = node.op == TokenKind::PercentEq;
+                        if (!llvm::isa<llvm::ConstantInt>(rhs)) {
+                            guard_divisor(node.loc, rhs);
+                        }
                         if (common_unsigned) {
                             combined = remainder ? builder_.CreateURem(lhs, rhs) : builder_.CreateUDiv(lhs, rhs);
                         } else if (const auto *divisor = llvm::dyn_cast<llvm::ConstantInt>(rhs);

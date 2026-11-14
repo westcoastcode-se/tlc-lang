@@ -1526,7 +1526,7 @@ Naming the field replaces the tuple. `{0...}` stores 0.
 
 `p *i32 = &n` is reported as `global initializer is not a constant`.
 
-A short list leaves the elements it does not name uninitialized.
+A short list leaves the elements it does not name uninitialized. In a file-scope value those elements are zero.
 
 `0...` stores 0 in those elements.
 

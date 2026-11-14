@@ -490,6 +490,11 @@ struct AbiMark {
     unsigned align = 1;
 };
 
+// Fault kinds the evaluator stores. 1 and 2 are division and shift. `comptime_fault_text` names each one.
+inline constexpr int kEvalNull = 3;
+inline constexpr int kEvalSteps = 4;
+inline constexpr int kEvalDepth = 5;
+
 struct ExternLayout {
     bool active = false;
     bool sret = false;
@@ -604,6 +609,8 @@ class CodeGen {
     llvm::GlobalVariable *eval_fail_file_ = nullptr;
     llvm::GlobalVariable *eval_fail_off_ = nullptr;
     llvm::GlobalVariable *eval_fail_kind_ = nullptr;
+    llvm::GlobalVariable *eval_fuel_ = nullptr;
+    llvm::GlobalVariable *eval_floor_ = nullptr;
     // `lower` is const. The struct is created the first time a slice is lowered.
     mutable llvm::StructType *slice_ty_ = nullptr;
     // `-g`. Line numbers and variable locations for a debugger.
@@ -1384,6 +1391,10 @@ class CodeGen {
     void collect_abi_leaves(llvm::Type *type, uint64_t offset, std::vector<AbiLeaf> &leaves) const;
     ExternLayout extern_layout(const FunctionDecl &fn, uint32_t file) const;
     void apply_extern_attrs(llvm::Function *function, const ExternLayout &layout) const;
+    // The SysV C convention extends an integer narrower than 32 bits at the boundary. Clang's callee reads
+    // `signed char` as the whole register, so an `i8` argument needs `signext` and a `u8` or `bool` `zeroext`.
+    void apply_c_int_attrs(llvm::Function *function, const FunctionDecl &fn, uint32_t file,
+                           const ExternLayout &layout) const;
     void annotate_call(llvm::CallInst *inst, const std::vector<AbiMark> &marks) const;
     llvm::AllocaInst *aligned_slot(llvm::Type *type, unsigned align, const std::string &name);
     llvm::Value *addr_at(llvm::Value *base, uint64_t offset);
@@ -1607,7 +1618,7 @@ class CodeGen {
     void store_each_element(llvm::Value *raw, llvm::Value *count, llvm::Type *elem, llvm::Constant *image);
     std::optional<int32_t> folded_sizeof(const Expr::Sizeof &node) const;
     llvm::Constant *const_array(const Expr::Init &init, const Binding &dest);
-    // `zero_pad` stores 0 for a short `{4, 0...}`. A list without `0...` does not.
+    // `zero_pad` stores 0 after a short list in a file-scope value, `{4}` and `{4, 0...}` alike.
     llvm::Constant *fill_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags,
                                bool zero_pad = false);
     // The constant array stored by `expr`, using that array's own global when `expr` is a name.
@@ -1737,10 +1748,16 @@ class CodeGen {
     void abort_out_of_memory(SourceLoc loc);
     // `builtin.panic(message)`, then unreachable. The frame names `loc`.
     void abort_panic(SourceLoc loc, const char *message);
+    // A divisor that is not a constant is checked before `/` or `%`. A zero is `division by zero`.
+    // Without the check, `sdiv` by zero is undefined and -O2 returns any value.
+    void guard_divisor(SourceLoc loc, llvm::Value *divisor);
     // Records `loc` and returns from the function being evaluated.
     void install_eval_fault();
     // `kind` 1 is division by zero. `kind` 2 is a shift past the bit width. 0 is the index fault.
     void eval_fail(SourceLoc loc, int kind = 0);
+    // A comptime loop step or call spends one step. A call also checks the stack floor. Without these, an endless
+    // loop hangs the compiler and endless recursion overflows its stack.
+    void eval_guard(SourceLoc loc, bool entry);
     bool local_array_address(const llvm::Value *value) const;
     // A named slice in this function now holds a pointer into a local array.
     void mark_local_array(const std::string &name);

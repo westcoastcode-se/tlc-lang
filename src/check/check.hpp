@@ -93,6 +93,10 @@ struct Symbol {
     bool runtime_const = false;
     // `var name` and `var name const Type`. `const` and `:=` are not this binding.
     bool is_var = false;
+    // `&name` was taken. A store through that pointer can write `null`, so a null check does not narrow the name.
+    bool address_taken = false;
+    // A null check made this `?*T` a `*T` for the region it guards. `restore_optional` ends it.
+    bool narrowed = false;
     // Set with `promote_init` when `comptime const folded = name` may copy this initializer.
     // The name is not itself a compiler constant.
     bool promotable = false;

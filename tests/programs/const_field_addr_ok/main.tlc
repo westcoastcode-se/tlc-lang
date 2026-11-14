@@ -1,0 +1,25 @@
+// The address of a place keeps the const of the path to it. A pointee reached through `*` keeps its own type.
+type Inner struct {
+    y i32;
+};
+
+type Point struct {
+    x i32;
+    in Inner;
+    p *i32;
+};
+
+func main() i32 {
+    var v = 0;
+    var p = Point{.x = 40, .in = Inner{.y = 2}, .p = &v};
+    var c *const Point = &p;
+    const k = p;
+    var a *const i32 = &c.x;
+    var b *const i32 = &c.in.y;
+    var d *const i32 = &k.x;
+    var e *i32 = &(*k.p);
+    *e = 1;
+    var m *Point = &p;
+    var f *i32 = &m.in.y;
+    return *a + *b + *d - 40 + (*f - 2) + (v - 1);
+}

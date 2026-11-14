@@ -1,0 +1,1 @@
+compile-error: return type: expected Duo, found 2 results

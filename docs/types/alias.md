@@ -100,7 +100,7 @@ A tuple value does not convert to a slice. `row[0:2]`, `row[:]`, the same range 
 
 A field may also use the alias name: `value Duo`.
 
-`func f() (i32, i32)` is still two results. `func f() ((i32, i32))` is one tuple result. `return (40, 2)` matches it. `return 40, 2` does not.
+`func f() (i32, i32)` is still two results. `func f() ((i32, i32))` is one tuple result. `return (40, 2)` matches it. `return 40, 2` does not. `func f() Duo` is one result of that alias. `return Duo((40, 2))` matches it. `return 40, 2` is `return type: expected Duo, found 2 results`.
 
 ## Type parameters
 

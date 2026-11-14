@@ -526,6 +526,27 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         if (const Symbol *symbol = lookup(named->text); symbol != nullptr && symbol->is_immutable) {
                             inner.is_const = true;
                         }
+                        // A narrowed `?*T` stays narrowed only while nothing else can store into it.
+                        // `&p` ends that narrowing here, and a later null check does not start one.
+                        if (Symbol *symbol = lookup_scope(named->text);
+                            symbol != nullptr && !symbol->is_function && symbol->type.kind == TypeKind::Pointer) {
+                            if (symbol->narrowed) {
+                                symbol->type.optional = true;
+                                symbol->narrowed = false;
+                                inner.optional = true;
+                            }
+                            symbol->address_taken = true;
+                        }
+                    }
+                    // `&c.x` through `c *const Point`, `&k.x` of a `const k`, and `&c.in.y` are read-only places.
+                    // The address keeps that, the same rule an assignment to the place uses.
+                    // `&(*k.p)` is the pointee of `k.p`, whose own type says whether it is const.
+                    const bool deref = [&]() {
+                        const auto *star = std::get_if<Expr::Unary>(&node.expr->data);
+                        return star != nullptr && star->op == TokenKind::Star;
+                    }();
+                    if (!deref && !std::holds_alternative<Expr::Name>(node.expr->data) && const_path(*node.expr)) {
+                        inner.is_const = true;
                     }
                     return type_pointer(inner);
                 }

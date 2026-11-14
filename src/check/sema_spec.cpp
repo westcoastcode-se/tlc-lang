@@ -5233,6 +5233,23 @@ void Checker::flush_appends() {
     if (moved.empty()) {
         return;
     }
+    // `methods_` still names the objects that lived in `deferred_methods_`, which `clear` freed.
+    // `publish_reflected_methods` and the allocator check read `decl` after this point.
+    const auto relocate_info = [&](auto &self, MethodInfo &info) -> void {
+        if (const auto found = moved.find(info.decl); found != moved.end()) {
+            info.decl = found->second;
+        }
+        for (MethodInfo &other : info.more) {
+            self(self, other);
+        }
+    };
+    for (auto &file : methods_) {
+        for (auto &owner : file.second) {
+            for (auto &method : owner.second) {
+                relocate_info(relocate_info, method.second);
+            }
+        }
+    }
     if (primary_unit_ != nullptr) {
         relocate_unit(*primary_unit_, moved);
     }

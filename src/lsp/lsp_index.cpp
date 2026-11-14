@@ -1070,6 +1070,8 @@ uint32_t body_end(const FunctionDecl &fn, const std::string &text, uint32_t fall
 }
 
 void index_unit(const PackageNode &node, const std::string &text, const std::string &uri, bool entry, std::vector<Sym> &out) {
+    // Each symbol is placed with `locate`. One index keeps that linear in the file.
+    const LineIndex lines(text);
     std::vector<uint32_t> marks;
     marks.push_back(static_cast<uint32_t>(text.size()));
     for (const TopDecl &decl : node.unit.decls) {

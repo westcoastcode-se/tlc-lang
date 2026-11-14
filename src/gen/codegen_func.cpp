@@ -399,6 +399,7 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
             }
         }
     }
+    eval_guard(fn.loc, true);
     emit_stmt(*fn.body);
     finish_function();
     pop();

@@ -161,10 +161,11 @@ bool Checker::narrow_optional(const std::string &name) {
     if (symbol == nullptr || scopes_.empty() || symbol->function_id != scopes_.back().function_id) {
         return false;
     }
-    if (symbol->type.kind != TypeKind::Pointer || !symbol->type.optional) {
+    if (symbol->type.kind != TypeKind::Pointer || !symbol->type.optional || symbol->address_taken) {
         return false;
     }
     symbol->type.optional = false;
+    symbol->narrowed = true;
     return true;
 }
 
@@ -174,6 +175,7 @@ void Checker::restore_optional(const std::string &name) {
         return;
     }
     symbol->type.optional = true;
+    symbol->narrowed = false;
 }
 
 bool Checker::const_path(const Expr &expr) {
@@ -2766,6 +2768,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                         error(node.loc, "type mismatch");
                         return;
                     }
+                    // The value already reported its error. Checking it again below repeats that error.
+                    if (got.kind == TypeKind::Invalid) {
+                        return;
+                    }
                     if (one_tuple) {
                         if (got.kind != TypeKind::Invalid) {
                             match_return(got, return_type_);
@@ -2774,8 +2780,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                 }
                 if (return_type_.kind == TypeKind::Tuple && !one_tuple) {
-                    // `func f() One` where `One` is one element. The value is that alias, not the element.
-                    if (return_type_.alias_id != 0 && return_type_.results.size() == 1) {
+                    // `func f() Duo` names one tuple value, whatever its element count. The value is that alias,
+                    // not its elements, so `return 40, 2` does not spread into it.
+                    if (return_type_.alias_id != 0) {
                         if (exprs.size() == 1 && exprs.front() != nullptr) {
                             match_return(check_expr(*exprs.front(), true), return_type_);
                         } else {

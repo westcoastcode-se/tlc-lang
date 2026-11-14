@@ -1767,6 +1767,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                 llvm::BasicBlock *end_block = llvm::BasicBlock::Create(context_, "while.end", function_);
                 builder_.CreateBr(cond_block);
                 builder_.SetInsertPoint(cond_block);
+                eval_guard(node.loc, false);
                 llvm::Value *cond = emit_rvalue(*node.cond).value;
                 if (!terminated()) {
                     builder_.CreateCondBr(is_nonzero(cond), body_block, end_block);
@@ -1796,6 +1797,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     builder_.CreateBr(cond_block);
                 }
                 builder_.SetInsertPoint(cond_block);
+                eval_guard(node.loc, false);
                 llvm::Value *cond = node.cond ? emit_rvalue(*node.cond).value : zero();
                 if (!terminated()) {
                     builder_.CreateCondBr(is_nonzero(cond), body_block, end_block);
@@ -1824,6 +1826,7 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                     builder_.CreateBr(cond_block);
                 }
                 builder_.SetInsertPoint(cond_block);
+                eval_guard(node.loc, false);
                 if (node.cond) {
                     llvm::Value *cond = emit_rvalue(*node.cond).value;
                     if (!terminated()) {

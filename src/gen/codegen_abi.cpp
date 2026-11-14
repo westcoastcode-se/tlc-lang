@@ -352,6 +352,49 @@ void CodeGen::apply_extern_attrs(llvm::Function *function, const ExternLayout &l
     }
 }
 
+void CodeGen::apply_c_int_attrs(llvm::Function *function, const FunctionDecl &fn, uint32_t file,
+                                const ExternLayout &layout) const {
+    if (function == nullptr || !fn.extern_c) {
+        return;
+    }
+    const auto extension = [](llvm::Type *type, bool is_unsigned) {
+        auto *integer = llvm::dyn_cast<llvm::IntegerType>(type);
+        if (integer == nullptr || integer->getBitWidth() >= 32) {
+            return llvm::Attribute::None;
+        }
+        return integer->getBitWidth() == 1 || is_unsigned ? llvm::Attribute::ZExt : llvm::Attribute::SExt;
+    };
+    unsigned index = layout.active && layout.sret ? 1U : 0U;
+    for (std::size_t param = 0; param < fn.params.size(); ++param) {
+        if (layout.active && param < layout.args.size() && layout.args[param].is_struct) {
+            const ExternLayout::Arg &arg = layout.args[param];
+            index += arg.abi.memory ? 1U : static_cast<unsigned>(arg.abi.parts.size());
+            continue;
+        }
+        if (index >= function->arg_size()) {
+            return;
+        }
+        const Lowered low = lower_param_type(file, fn.params[param]);
+        const llvm::Attribute::AttrKind kind =
+            extension(function->getArg(index)->getType(), low.depth == 0 && low.elem_unsigned);
+        if (kind != llvm::Attribute::None && !function->hasParamAttribute(index, kind)) {
+            function->addParamAttr(index, kind);
+        }
+        ++index;
+    }
+    const bool many = fn.results.size() > 1;
+    const bool ret_fnptr = fn.results.size() == 1 && fn.results.front().is_fn_ptr;
+    if (many || ret_fnptr || fn.is_struct || fn.indirections != 0 || fn.return_type == "void" ||
+        (layout.active && (layout.sret || layout.ret_struct != nullptr))) {
+        return;
+    }
+    const Lowered ret = lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, false, 0, false);
+    const llvm::Attribute::AttrKind kind = extension(function->getReturnType(), ret.depth == 0 && ret.elem_unsigned);
+    if (kind != llvm::Attribute::None && !function->hasRetAttribute(kind)) {
+        function->addRetAttr(kind);
+    }
+}
+
 void CodeGen::annotate_call(llvm::CallInst *inst, const std::vector<AbiMark> &marks) const {
     for (const AbiMark &mark : marks) {
         if (mark.sret) {

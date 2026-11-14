@@ -28,7 +28,7 @@ A complete list stores only the values it names.
 
 A file-scope array with no initializer is zero.
 
-A file-scope list that ends with `0...` stores 0 in every element the list does not name.
+A file-scope list that ends with `0...` stores 0 in every element the list does not name. A file-scope short list without `0...` stores 0 there too. `var row [4]i32 = {1, 2}` is 1, 2, 0, 0.
 
 The compiler reports a file-scope shorter list, without `0...`, as `global initializer is not a constant` when code is emitted. `--check` accepts that list.
 

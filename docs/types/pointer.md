@@ -22,6 +22,8 @@ Reading `*p` and `p[i]` is allowed.
 
 `*T` may be stored in `*const T`, but `*const T` may not be stored in `*T`.
 
+The address of a place reached through `*const T` or a `const` binding is a pointer to const. `&c.x` when `c` is `*const Point` is `*const i32`, and `var q *i32 = &c.x` is `type mismatch: expected *i32, found *const i32`. `&(*k.p)` takes its const from the type of `k.p`.
+
 `?*const T` is that pointer or `null`.
 
 `**const T` is a pointer to a pointer to constant `T`.

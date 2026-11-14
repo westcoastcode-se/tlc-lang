@@ -1,0 +1,20 @@
+// A call that folds is a constant element or field of a file-scope `const`. A `var` may run any call.
+type Point struct {
+    x i32;
+};
+
+comptime func add(n i32) i32 {
+    return n + 1;
+}
+
+func give() i32 {
+    return 10;
+}
+
+const row = [_]i32{add(19), 2};
+const pt Point = {.x = add(9)};
+var late = [_]i32{give()};
+
+func main() i32 {
+    return row[0] + row[1] + pt.x + late[0];
+}

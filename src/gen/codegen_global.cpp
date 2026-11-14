@@ -210,6 +210,9 @@ void CodeGen::declare_functions(const PackageNode &node) {
                 apply_extern_attrs(function, layout);
                 extern_abis_.emplace(function, layout);
             }
+            if (acc.extern_c) {
+                apply_c_int_attrs(function, *acc.fn, node.file_id, layout);
+            }
             if (!layout.active) {
                 unsigned index = 0;
                 for (auto &arg : function->args()) {
@@ -369,15 +372,17 @@ void CodeGen::declare_globals(const PackageNode &node) {
         if (global == nullptr) {
             llvm::Constant *init = nullptr;
             if (!var->is_extern) {
+                // A file-scope value with no initializer is zero. An initializer replaces this later.
+                // `undef` here lets LLVM read any value from a `var h i32` that is never stored.
                 if (low.is_slice) {
-                    init = llvm::UndefValue::get(ty);
+                    init = llvm::Constant::getNullValue(ty);
                 } else if (low.trait_id >= 0 && low.struct_id < 0 && low.depth == 0 && !low.is_array) {
                     init = llvm::ConstantAggregateZero::get(ty);
                 } else if (low.is_array || (low.depth == 0 && low.struct_id >= 0)) {
-                    // Unset fields stay undef. A field value or `0...` replaces that hole.
+                    // Unset fields are zero, or the field's default.
                     init = bare_initializer(low, ty);
                 } else {
-                    init = llvm::UndefValue::get(ty);
+                    init = llvm::Constant::getNullValue(ty);
                 }
             }
             global = new llvm::GlobalVariable(module_, ty, var->is_const_decl, form.linkage, init, form.name);

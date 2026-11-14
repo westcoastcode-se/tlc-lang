@@ -8,7 +8,9 @@
 #include "pkg/pkg.hpp"
 #include "check/sema.hpp"
 
+#include <algorithm>
 #include <cerrno>
+#include <unordered_map>
 #include <charconv>
 #include <cstdint>
 #include <cstdlib>
@@ -162,11 +164,58 @@ uint32_t innermost_brace(const std::string &text, uint32_t pos) {
     return stack.back();
 }
 
+namespace {
+
+// Symbols by name for one `syms` vector, in vector order. Semantic tokens look up every identifier, and a
+// scan of every symbol for each one is quadratic in the file. The vector must not change while it is active.
+class NameIndex {
+  public:
+    explicit NameIndex(const std::vector<Sym> &syms) : syms_(syms), outer_(active_) {
+        for (const Sym &sym : syms) {
+            if (sym.bare) {
+                by_name_[sym.name].push_back(&sym);
+            }
+        }
+        active_ = this;
+    }
+    NameIndex(const NameIndex &) = delete;
+    NameIndex &operator=(const NameIndex &) = delete;
+    ~NameIndex() { active_ = outer_; }
+
+    static const std::vector<const Sym *> *bare(const std::vector<Sym> &syms, const std::string &name) {
+        if (active_ == nullptr || &active_->syms_ != &syms) {
+            return nullptr;
+        }
+        static const std::vector<const Sym *> none;
+        const auto found = active_->by_name_.find(name);
+        return found == active_->by_name_.end() ? &none : &found->second;
+    }
+
+  private:
+    const std::vector<Sym> &syms_;
+    std::unordered_map<std::string, std::vector<const Sym *>> by_name_;
+    const NameIndex *outer_ = nullptr;
+    static thread_local const NameIndex *active_;
+};
+
+thread_local const NameIndex *NameIndex::active_ = nullptr;
+
+} // namespace
+
 std::vector<const Sym *> bare_candidates(const std::vector<Sym> &syms, const std::string &uri, const std::string &name,
                                          uint32_t offset) {
     std::vector<const Sym *> found;
     int best_rank = 100;
-    for (const Sym &sym : syms) {
+    std::vector<const Sym *> every;
+    const std::vector<const Sym *> *named = NameIndex::bare(syms, name);
+    if (named == nullptr) {
+        for (const Sym &sym : syms) {
+            every.push_back(&sym);
+        }
+        named = &every;
+    }
+    for (const Sym *entry : *named) {
+        const Sym &sym = *entry;
         if (sym.name != name || !sym.bare) {
             continue;
         }
@@ -1585,11 +1634,14 @@ int token_modifiers_of(const Sym &sym, bool declaration) {
 }
 
 // Fields, methods, and enum members are not bare, so a use lookup misses the declaration.
+// `decls` is sorted by offset. Several declarations can share an offset, and the first with that name wins.
 const Sym *declared_here(const std::vector<std::pair<uint32_t, const Sym *>> &decls, uint32_t offset,
                          std::string_view word) {
-    for (const auto &decl : decls) {
-        if (decl.first == offset && decl.second->name == word) {
-            return decl.second;
+    auto it = std::lower_bound(decls.begin(), decls.end(), offset,
+                               [](const auto &decl, uint32_t at) { return decl.first < at; });
+    for (; it != decls.end() && it->first == offset; ++it) {
+        if (it->second->name == word) {
+            return it->second;
         }
     }
     return nullptr;
@@ -1642,6 +1694,8 @@ struct Emitted {
 } // namespace
 
 Json semantic_tokens(const Doc &doc, bool ranged, Pos start, Pos end) {
+    // Every identifier is located and checked for a literal. One index keeps that linear in the file.
+    const LineIndex lines(doc.text);
     std::vector<std::pair<uint32_t, const Sym *>> decls;
     for (const Sym &sym : doc.syms) {
         if (!sym.has_loc || sym.uri != doc.uri || sym.name.empty()) {
@@ -1653,6 +1707,8 @@ Json semantic_tokens(const Doc &doc, bool ranged, Pos start, Pos end) {
         }
         decls.emplace_back(at, &sym);
     }
+    std::stable_sort(decls.begin(), decls.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+    const NameIndex names(doc.syms);
     const uint32_t range_from = ranged ? offset_at(doc.text, start.line, start.character) : 0;
     const uint32_t range_to = ranged ? offset_at(doc.text, end.line, end.character) : 0;
     std::vector<Emitted> tokens;

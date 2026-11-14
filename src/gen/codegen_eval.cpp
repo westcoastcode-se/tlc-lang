@@ -214,7 +214,8 @@ bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn,
     // An unemitted function with internal linkage is not a valid declaration. Drop the ones nothing calls.
     std::vector<llvm::Function *> drop;
     for (llvm::Function &item : module_) {
-        if (!item.isDeclaration() || &item == function) {
+        // An intrinsic, such as the frame address the step guard reads, is not a missing function.
+        if (!item.isDeclaration() || &item == function || item.isIntrinsic()) {
             continue;
         }
         if (!item.use_empty()) {
@@ -343,7 +344,8 @@ bool CodeGen::define_comptime_string(const PackageGraph &graph, const FunctionDe
     }
     std::vector<llvm::Function *> drop;
     for (llvm::Function &item : module_) {
-        if (!item.isDeclaration() || &item == body) {
+        // An intrinsic, such as the frame address the step guard reads, is not a missing function.
+        if (!item.isDeclaration() || &item == body || item.isIntrinsic()) {
             continue;
         }
         if (!item.use_empty()) {
@@ -403,6 +405,17 @@ bool CodeGen::define_comptime_string(const PackageGraph &graph, const FunctionDe
 int fault_kind = 0;
 
 int comptime_fault_kind() { return fault_kind; }
+
+const char *comptime_fault_text() {
+    switch (fault_kind) {
+    case 1: return "division by zero";
+    case 2: return "shift out of range";
+    case kEvalNull: return "null pointer";
+    case kEvalSteps: return "comptime loop does not end";
+    case kEvalDepth: return "comptime recursion too deep";
+    default: return "index out of range";
+    }
+}
 
 SourceLoc read_comptime_fault(llvm::orc::LLJIT &jit) {
     SourceLoc loc;
@@ -1965,9 +1978,8 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
         }
         drop.push_back(&item);
     }
-    for (llvm::Function *item : drop) {
-        item->eraseFromParent();
-    }
+    // `files_` still names the declarations in `drop`. Read the symbols before erasing them, or the casts below
+    // read freed functions. A dropped declaration is never in the image, which keeps only definitions.
     for (const auto &entry : files_) {
         for (const auto &symbol : entry.second.functions) {
             auto *function = llvm::dyn_cast_or_null<llvm::Function>(symbol.second.value);
@@ -1977,6 +1989,9 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
             }
             image.functions.emplace_back(function->getName().str(), symbol.second.decl->name);
         }
+    }
+    for (llvm::Function *item : drop) {
+        item->eraseFromParent();
     }
     const auto same_file = files_.find(file);
     if (same_file != files_.end()) {

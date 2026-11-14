@@ -3287,9 +3287,7 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
     const std::optional<int32_t> ran = eval_comptime_i32(*graph_, wrapper, file, &fault, specs, structs, aliases);
     if (fault.valid()) {
         const std::string message = comptime_assert_message(*wrapper.body, fault);
-        report_comptime_fault(fault, message.empty() ? std::string(comptime_fault_kind() == 1   ? "division by zero"
-                                                           : comptime_fault_kind() == 2 ? "shift out of range"
-                                                                                        : "index out of range")
+        report_comptime_fault(fault, message.empty() ? std::string(comptime_fault_text())
                                 : message, fn->name);
         return std::nullopt;
     }
@@ -3469,9 +3467,7 @@ bool Checker::fold_comptime_wide(const Expr::Call &call) {
             return false;
         }
         const std::string message = comptime_assert_message(*wrapper.body, fault);
-        report_comptime_fault(fault, message.empty() ? std::string(comptime_fault_kind() == 1   ? "division by zero"
-                                                           : comptime_fault_kind() == 2 ? "shift out of range"
-                                                                                        : "index out of range")
+        report_comptime_fault(fault, message.empty() ? std::string(comptime_fault_text())
                                 : message, fn->name);
         return true;
     };
@@ -3657,9 +3653,7 @@ bool Checker::fold_comptime_f64(const Expr::Call &call) {
     }
     if (fault.valid()) {
         const std::string message = comptime_assert_message(*wrapper.body, fault);
-        report_comptime_fault(fault, message.empty() ? std::string(comptime_fault_kind() == 1   ? "division by zero"
-                                                           : comptime_fault_kind() == 2 ? "shift out of range"
-                                                                                        : "index out of range")
+        report_comptime_fault(fault, message.empty() ? std::string(comptime_fault_text())
                                 : message, fn->name);
         return false;
     }
@@ -3856,9 +3850,7 @@ bool Checker::fold_comptime_enum(const Expr::Call &call) {
     const std::optional<int32_t> ran = eval_comptime_i32(*graph_, wrapper, file, &fault, specs, structs, aliases);
     if (fault.valid()) {
         const std::string message = comptime_assert_message(*wrapper.body, fault);
-        report_comptime_fault(fault, message.empty() ? std::string(comptime_fault_kind() == 1   ? "division by zero"
-                                                           : comptime_fault_kind() == 2 ? "shift out of range"
-                                                                                        : "index out of range")
+        report_comptime_fault(fault, message.empty() ? std::string(comptime_fault_text())
                                 : message, fn->name);
         return false;
     }
@@ -3994,9 +3986,7 @@ bool Checker::fold_comptime_string(const Expr::Call &call) {
     const std::optional<std::string> ran = eval_comptime_string(*graph_, wrapper, file, &fault, specs);
     if (fault.valid()) {
         const std::string message = comptime_assert_message(*wrapper.body, fault);
-        report_comptime_fault(fault, message.empty() ? std::string(comptime_fault_kind() == 1   ? "division by zero"
-                                                           : comptime_fault_kind() == 2 ? "shift out of range"
-                                                                                        : "index out of range")
+        report_comptime_fault(fault, message.empty() ? std::string(comptime_fault_text())
                                 : message, fn->name);
         return false;
     }
@@ -4225,9 +4215,7 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
     ComptimeStructValue ran = eval_comptime_struct(*graph_, wrapper, file, &fault, specs);
     if (fault.valid()) {
         const std::string message = comptime_assert_message(*wrapper.body, fault);
-        report_comptime_fault(fault, message.empty() ? std::string(comptime_fault_kind() == 1   ? "division by zero"
-                                                           : comptime_fault_kind() == 2 ? "shift out of range"
-                                                                                        : "index out of range")
+        report_comptime_fault(fault, message.empty() ? std::string(comptime_fault_text())
                                 : message, fn->name);
         return kept;
     }

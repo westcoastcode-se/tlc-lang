@@ -20,6 +20,8 @@ The `else` of `p == null`, and the `else` of `p != null` when that `else` always
 
 A field comparison such as `person.home == null` does not narrow.
 
+A name whose address is taken, `var pp = &p`, does not narrow. A store through `pp` could write `null`. Taking `&p` inside a narrowed region ends the narrowing there. `*p` after it is `type mismatch`, and `*p!` asserts that use.
+
 `*p`, `p.field`, and `p[i]` on a `?*T` are reported as `type mismatch` until the name is narrowed.
 
 Passing `?*T` where `*T` is required is reported as `type mismatch` until then.

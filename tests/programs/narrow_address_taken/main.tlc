@@ -1,0 +1,11 @@
+// A null check does not narrow a name whose address is taken. `*pp = null` would make `*p` read null.
+func main() i32 {
+    var n i32 = 4;
+    var p ?*i32 = &n;
+    var pp = &p;
+    if (p == null) {
+        return 0;
+    }
+    *pp = null;
+    return *p;
+}

@@ -1,0 +1,12 @@
+// Recursion with no end in a comptime func is reported before it overflows the compiler stack.
+comptime func down(n i32) i32 {
+    if (n < 0) {
+        return 0;
+    }
+    return down(n + 1) + 1;
+}
+
+func main() i32 {
+    comptime const k = down(1);
+    return 0;
+}

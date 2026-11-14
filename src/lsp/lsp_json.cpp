@@ -8,6 +8,7 @@
 #include "pkg/pkg.hpp"
 #include "check/sema.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <charconv>
 #include <cstdint>
@@ -281,7 +282,103 @@ int utf16_units(std::string_view text) {
     return units;
 }
 
+namespace {
+
+thread_local const LineIndex *active_lines = nullptr;
+
+const LineIndex *lines_for(const std::string &text) {
+    return active_lines != nullptr && &active_lines->text() == &text ? active_lines : nullptr;
+}
+
+Pos locate_scan(const std::string &text, uint32_t offset);
+uint32_t offset_scan(const std::string &text, int line, int character);
+bool literal_scan(const std::string &text, uint32_t offset);
+
+} // namespace
+
+LineIndex::LineIndex(const std::string &text) : text_(text), outer_(active_lines) {
+    starts_.push_back(0);
+    for (uint32_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\n') {
+            starts_.push_back(i + 1);
+        }
+    }
+    uint32_t i = 0;
+    while (i < text.size()) {
+        const uint32_t next = skip_lex(text, i);
+        if (next != i) {
+            spans_.emplace_back(i, next);
+            i = next;
+            continue;
+        }
+        ++i;
+    }
+    active_lines = this;
+}
+
+LineIndex::~LineIndex() { active_lines = outer_; }
+
+Pos LineIndex::locate(uint32_t offset) const {
+    if (offset > text_.size()) {
+        offset = static_cast<uint32_t>(text_.size());
+    }
+    const auto after = std::upper_bound(starts_.begin(), starts_.end(), offset);
+    const auto line = static_cast<int>(after - starts_.begin()) - 1;
+    const uint32_t start = starts_[static_cast<std::size_t>(line)];
+    return Pos{line, utf16_units(std::string_view(text_).substr(start, offset - start))};
+}
+
+uint32_t LineIndex::offset_at(int line, int character) const {
+    if (line < 0) {
+        line = 0;
+    }
+    if (static_cast<std::size_t>(line) >= starts_.size()) {
+        return static_cast<uint32_t>(text_.size());
+    }
+    // The column walk is the same as `offset_scan`, from the start of that line.
+    const uint32_t start = starts_[static_cast<std::size_t>(line)];
+    const std::string_view rest = std::string_view(text_).substr(start);
+    const std::size_t newline = rest.find('\n');
+    const std::string row(rest.substr(0, newline == std::string_view::npos ? rest.size() : newline));
+    return start + offset_scan(row, 0, character);
+}
+
+bool LineIndex::in_literal(uint32_t offset) const {
+    const uint32_t end = offset < text_.size() ? offset : static_cast<uint32_t>(text_.size());
+    // The scan reports a literal when one starts before `end` and reaches past it.
+    const auto after = std::upper_bound(spans_.begin(), spans_.end(), std::make_pair(end, UINT32_MAX),
+                                        [](const auto &a, const auto &b) { return a.first < b.first; });
+    if (after == spans_.begin()) {
+        return false;
+    }
+    const auto &span = *(after - 1);
+    return span.first < end && span.second > end;
+}
+
 Pos locate(const std::string &text, uint32_t offset) {
+    if (const LineIndex *lines = lines_for(text)) {
+        return lines->locate(offset);
+    }
+    return locate_scan(text, offset);
+}
+
+uint32_t offset_at(const std::string &text, int line, int character) {
+    if (const LineIndex *lines = lines_for(text)) {
+        return lines->offset_at(line, character);
+    }
+    return offset_scan(text, line, character);
+}
+
+bool in_literal(const std::string &text, uint32_t offset) {
+    if (const LineIndex *lines = lines_for(text)) {
+        return lines->in_literal(offset);
+    }
+    return literal_scan(text, offset);
+}
+
+namespace {
+
+Pos locate_scan(const std::string &text, uint32_t offset) {
     if (offset > text.size()) {
         offset = static_cast<uint32_t>(text.size());
     }
@@ -296,7 +393,7 @@ Pos locate(const std::string &text, uint32_t offset) {
     return Pos{line, utf16_units(std::string_view(text).substr(start, offset - start))};
 }
 
-uint32_t offset_at(const std::string &text, int line, int character) {
+uint32_t offset_scan(const std::string &text, int line, int character) {
     if (line < 0) {
         line = 0;
     }
@@ -332,6 +429,8 @@ uint32_t offset_at(const std::string &text, int line, int character) {
     }
     return i;
 }
+
+} // namespace
 
 // Index just past a comment or quote that starts at `i`. A raw string is wrapped in backticks and
 // does not treat `\` as an escape. Returns `i` when the character starts neither.
@@ -379,7 +478,9 @@ uint32_t skip_lex(const std::string &text, uint32_t i) {
     return i;
 }
 
-bool in_literal(const std::string &text, uint32_t offset) {
+namespace {
+
+bool literal_scan(const std::string &text, uint32_t offset) {
     uint32_t i = 0;
     const uint32_t end = offset < text.size() ? offset : static_cast<uint32_t>(text.size());
     while (i < end) {
@@ -395,6 +496,8 @@ bool in_literal(const std::string &text, uint32_t offset) {
     }
     return false;
 }
+
+} // namespace
 
 uint32_t match_brace(const std::string &text, uint32_t open) {
     if (open >= text.size() || text[open] != '{') {
