@@ -70,13 +70,23 @@ class Parser {
     std::vector<Token> tokens_;
     DiagnosticEngine &diags_;
     std::size_t pos_ = 0;
-    // Each level of the tree costs stack in the parser, the checker, and codegen, and 2000 nested `(`
-    // overflowed it. A parenthesis, a unary operator, a statement, a type, a brace list, and each link of a
-    // `a + b + ...` or `a.b.c` chain is one level. Past the limit the parse stops at the end of the file.
-    static constexpr int kMaxNest = 1000;
+    // Each level of the tree costs stack in the parser, the checker, and codegen. A parenthesis, a unary
+    // operator, a statement, a type, and a brace list is one level. The compiler runs on `kCompilerStack`,
+    // and this limit holds there with ASAN too. Deeply nested blocks check in quadratic time, so the limit
+    // is not higher. Past it the parse stops at the end of the file.
+    static constexpr int kMaxNest = 10000;
     int nest_ = 0;
     bool nest_failed_ = false;
+    // The diagnostics up to `nesting too deep`. The parse then unwinds at the end of the file, and the
+    // `expected ')'` each level reports on the way out is not kept.
+    std::size_t nest_failed_at_ = 0;
     void deepen();
+    // A link of `a + b + ...` or `a.b.c` is one level of the left-deep tree, but the parser loops over it.
+    // Generated sums and tables are long, so links have their own budget along the path from the root.
+    // The compiler runs on a large stack, `kCompilerStack` in driver/stack.hpp, that holds this many.
+    static constexpr int kMaxChain = 100000;
+    int chain_ = 0;
+    void lengthen();
     struct Nest {
         Parser &parser;
         int saved;
@@ -89,10 +99,14 @@ class Parser {
     struct KeepNest {
         Parser &parser;
         int saved;
-        explicit KeepNest(Parser &p) : parser(p), saved(p.nest_) {}
+        int saved_chain;
+        explicit KeepNest(Parser &p) : parser(p), saved(p.nest_), saved_chain(p.chain_) {}
         KeepNest(const KeepNest &) = delete;
         KeepNest &operator=(const KeepNest &) = delete;
-        ~KeepNest() { parser.nest_ = saved; }
+        ~KeepNest() {
+            parser.nest_ = saved;
+            parser.chain_ = saved_chain;
+        }
     };
     bool saw_decl_ = false;
     // `var s struct { ... }` is a struct with no written name. The name is not a type spelling.

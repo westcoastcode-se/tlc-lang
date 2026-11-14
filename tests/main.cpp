@@ -1,3 +1,5 @@
+#include "driver/stack.hpp"
+
 #include <iostream>
 
 int run_cli_tests();
@@ -11,7 +13,7 @@ int run_abi_tests();
 int run_lsp_tests();
 int run_battery_tests();
 
-int main() {
+static int run_all() {
     int failed = 0;
     failed += run_cli_tests();
     failed += run_diag_tests();
@@ -30,3 +32,6 @@ int main() {
     std::cout << "all tests passed\n";
     return 0;
 }
+
+// The programs run in this process, so they get the compiler's stack too.
+int main() { return tlc::run_on_large_stack(run_all); }

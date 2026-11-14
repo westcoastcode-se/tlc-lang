@@ -1165,8 +1165,28 @@ class CodeGen {
         }
         // `{.y = 2.5}` for an `i32` field stores 2, as `i32(2.5)` does. Storing the `double` itself wrote
         // eight bytes into a four-byte slot. A `bool` slot is true for any value but 0.
-        if (llvm::Type *slot_type = slot_int_type(slot);
-            slot_type != nullptr && rhs.value->getType()->isFloatingPointTy()) {
+        llvm::Type *slot_type = slot_int_type(slot);
+        if (slot_type == nullptr && slot.value != nullptr && slot.depth == 0 && slot.struct_id < 0) {
+            // A plain `i32` local carries no width. The slot's own memory type says it.
+            if (const auto *local = llvm::dyn_cast<llvm::AllocaInst>(slot.value)) {
+                slot_type = local->getAllocatedType();
+            } else if (const auto *global = llvm::dyn_cast<llvm::GlobalVariable>(slot.value)) {
+                slot_type = global->getValueType();
+            } else if (const auto *step = llvm::dyn_cast<llvm::GetElementPtrInst>(slot.value)) {
+                slot_type = step->getResultElementType();
+            }
+            if (slot_type != nullptr && !slot_type->isIntegerTy()) {
+                slot_type = nullptr;
+            }
+            // `*p` through a loaded pointer has no memory type to read. A leaf with no width, no kind, and no
+            // shape is a plain `i32`.
+            if (slot_type == nullptr && slot.elem_bits == 0 && !slot.elem_float && !slot.elem_bool &&
+                !slot.elem_char && !slot.elem_void && !slot.is_tuple && !slot.is_array && !slot.is_slice &&
+                slot.trait_id < 0 && slot.fn_ty == nullptr && slot.shells.empty()) {
+                slot_type = i32();
+            }
+        }
+        if (slot_type != nullptr && rhs.value->getType()->isFloatingPointTy()) {
             if (slot.elem_bool) {
                 llvm::Value *truth = builder_.CreateFCmpUNE(rhs.value, llvm::ConstantFP::get(rhs.value->getType(), 0.0));
                 return builder_.CreateZExtOrTrunc(truth, slot_type);

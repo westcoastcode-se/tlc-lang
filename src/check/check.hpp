@@ -950,6 +950,13 @@ class Checker {
         bool wide = false;
     };
     std::optional<int> fold_int(const Expr &expr);
+    std::optional<int> fold_int_uncached(const Expr &expr);
+    // Only the fold `check_expr` makes after checking a node stores here. A fold before the check can miss
+    // a value the check fills in, `len_value` or a comptime result. The outermost `check_expr` empties it
+    // on return, so a node freed by a rewrite is never read at a reused address.
+    std::unordered_map<const Expr *, std::pair<uint64_t, std::optional<int>>> fold_int_cache_;
+    int fold_int_store_ = 0;
+    int check_expr_depth_ = 0;
     // `u32` and 64-bit operands fold at their width. The other operands keep `eval_int_op`.
     bool wide_operand(const Expr &expr, int depth = 0);
     std::optional<int> fold_int_binary(const Expr &expr, TokenKind op, int lhs, int rhs);
@@ -996,6 +1003,8 @@ class Checker {
     bool switch_case_matches(const SwitchFrame &frame, const Type &got) const;
     std::optional<FoldedNumber> fold_number(const Expr &expr);
     std::optional<FoldedNumber> fold_number(const Expr &expr, std::unordered_set<std::string> &seen);
+    std::optional<FoldedNumber> fold_number_uncached(const Expr &expr, std::unordered_set<std::string> &seen);
+    std::unordered_map<const Expr *, std::pair<uint64_t, std::optional<FoldedNumber>>> fold_number_cache_;
     // `typeof(...)` after checking. Empty when this expression is not that constant.
     std::optional<std::string> type_constant(const Expr &expr) const;
 

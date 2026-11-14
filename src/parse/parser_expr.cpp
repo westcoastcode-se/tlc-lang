@@ -103,7 +103,7 @@ std::unique_ptr<Expr> Parser::parse_binary(int level) {
         }
         const SourceLoc loc = peek().loc;
         ++pos_;
-        deepen();
+        lengthen();
         auto rhs = level == last ? parse_unary() : parse_binary(level + 1);
         Expr::Binary node;
         node.loc = loc;
@@ -754,7 +754,7 @@ std::unique_ptr<Expr> Parser::parse_postfix() {
 std::unique_ptr<Expr> Parser::finish_postfix(std::unique_ptr<Expr> expr) {
     const KeepNest chain(*this);
     while (true) {
-        deepen();
+        lengthen();
         if (eat(TokenKind::LParen)) {
             Expr::Call call;
             call.loc = expr_loc(*expr);

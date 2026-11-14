@@ -1667,6 +1667,18 @@ Type Checker::value_type(Type type) {
 }
 
 Type Checker::check_expr(const Expr &expr, bool used) {
+    struct Depth {
+        Checker &self;
+        explicit Depth(Checker &checker) : self(checker) { ++self.check_expr_depth_; }
+        Depth(const Depth &) = delete;
+        Depth &operator=(const Depth &) = delete;
+        ~Depth() {
+            if (--self.check_expr_depth_ == 0) {
+                self.fold_int_cache_.clear();
+                self.fold_number_cache_.clear();
+            }
+        }
+    } depth(*this);
     cond_split_ = false;
     const Type raw = check_raw(expr, used);
     const Type type = value_type(raw);
@@ -1675,7 +1687,10 @@ Type Checker::check_expr(const Expr &expr, bool used) {
         cond_false_ = assign_;
     }
     // A constant condition makes the other arm unreachable. `&&` and `||` set both arms themselves.
-    if (const std::optional<int> folded = fold_int(expr)) {
+    ++fold_int_store_;
+    const std::optional<int> folded = fold_int(expr);
+    --fold_int_store_;
+    if (folded) {
         if (*folded != 0) {
             cond_false_.unreachable = true;
         } else {

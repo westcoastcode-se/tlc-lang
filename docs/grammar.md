@@ -2104,7 +2104,7 @@ The string is the diagnostic when the condition is false.
 
 An `i32` add of two locals is a load, an `addl`, and a store.
 
-Nesting is limited to 1000 levels. A parenthesis costs about five, and a unary operator, a statement, a type, a brace list, and each link of an `a + b + ...` or `a.b.c` chain cost one. Deeper source is `nesting too deep`, and the parse stops there.
+Nesting is limited to 10000 levels. A parenthesis costs about four, so about 2500 parentheses fit, and a unary operator, a statement, a type, and a brace list cost one. The links of an `a + b + ...` or `a.b.c` chain have their own limit of 100000 along any path from the root, so a generated sum of 100000 terms compiles. Past either limit the source is `nesting too deep`, the parse stops there, and the errors the unwinding would report are not shown.
 
 A comparison yields `bool`.
 

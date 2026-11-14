@@ -3592,6 +3592,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                             } else if (comptime_array_literal(*bind.value)) {
                                 // The array is only a tuple element. The name is that literal.
                                 symbol.is_constant = true;
+                                ++fold_generation_;
                                 symbol.const_init = bind.value.get();
                             } else {
                                 error(loc, "not supported yet");
@@ -3600,12 +3601,15 @@ void Checker::check_stmt(const Stmt &stmt) {
                                    (parts[index].kind == TypeKind::Bool && parts[index].alias_id == 0)) {
                             if (const std::optional<int> value = constant_index(*bind.value)) {
                                 symbol.is_constant = true;
+                                ++fold_generation_;
                                 symbol.folded_local = true;
                                 symbol.const_value = parts[index].kind == TypeKind::Bool ? (*value != 0 ? 1 : 0) : *value;
+                                ++fold_generation_;
                                 symbol.const_init = bind.value.get();
                             }
                         } else {
                             symbol.is_constant = true;
+                            ++fold_generation_;
                             symbol.const_init = bind.value.get();
                         }
                     } else if (node.is_const && !node.is_comptime) {
@@ -3683,6 +3687,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                             assignable(*existing, loc, parts[i]);
                             if (Symbol *live = lookup(node.names[i]); live != nullptr) {
                                 live->held_comptime = false;
+                                ++fold_generation_;
                                 live->folded_local = false;
                                 live->pending_fold = false;
                             }
@@ -3796,6 +3801,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                                         error(var.loc, "var is not a compile-time constant");
                                     } else if (comptime_array_literal(*written.init)) {
                                         live->is_constant = true;
+                                        ++fold_generation_;
                                         live->const_init = written.init.get();
                                     } else {
                                         error(var.loc, "not supported yet");
@@ -3804,12 +3810,15 @@ void Checker::check_stmt(const Stmt &stmt) {
                                            (live->type.kind == TypeKind::Bool && live->type.alias_id == 0)) {
                                     if (const std::optional<int> value = constant_index(*written.init)) {
                                         live->is_constant = true;
+                                        ++fold_generation_;
                                         live->folded_local = true;
                                         live->const_value = live->type.kind == TypeKind::Bool ? (*value != 0 ? 1 : 0) : *value;
+                                        ++fold_generation_;
                                         live->const_init = written.init.get();
                                     }
                                 } else {
                                     live->is_constant = true;
+                                    ++fold_generation_;
                                     live->const_init = written.init.get();
                                 }
                             } else if (var.is_const_decl && var.init != nullptr) {

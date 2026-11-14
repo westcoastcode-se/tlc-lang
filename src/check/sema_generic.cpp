@@ -1493,7 +1493,9 @@ void Checker::fold_early_consts(TranslationUnit &unit, uint32_t file_id) {
         symbol.name = var->name;
         symbol.type = type_int();
         symbol.is_constant = true;
+        ++fold_generation_;
         symbol.const_value = *value;
+        ++fold_generation_;
         declare(std::move(symbol), var->loc);
     }
     pop();

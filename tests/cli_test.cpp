@@ -345,6 +345,35 @@ int run_cli_tests() {
         EXPECT(check, folded.code == 0);
         EXPECT(check, took < std::chrono::seconds(10));
     }
+    // A generated sum of 100000 terms compiles on the compiler's large stack. Each link used to cost a
+    // level of the 1000-level nesting limit, and each fold walked the chain below it again.
+    {
+        std::string sum = "func main() i32 {\n    var x = 1;\n    var ok = x == 1";
+        std::string chain = "x";
+        for (int n = 1; n < 100000; ++n) {
+            chain += " + x";
+        }
+        for (int n = 1; n < 20000; ++n) {
+            sum += " && x == 1";
+        }
+        write_file("long_sum.tlc", sum + ";\n    var s = " + chain + ";\n    return ok ? s % 1000 + 42 : 1;\n}\n");
+        const auto start = std::chrono::steady_clock::now();
+        const tlc::test::Proc ran = tlc::test::spawn({bin, "--run", (dir.path / "long_sum.tlc").string()});
+        const auto took = std::chrono::steady_clock::now() - start;
+        EXPECT(check, ran.code == 42);
+        EXPECT(check, took < std::chrono::seconds(30));
+        // One link past the budget is one `nesting too deep`, with no `expected ';'` after it.
+        write_file("over_sum.tlc", "func main() i32 {\n    var x = 1;\n    return " + chain + " + x + x;\n}\n");
+        const tlc::test::Proc over = tlc::test::spawn({bin, "--check", (dir.path / "over_sum.tlc").string()});
+        EXPECT(check, over.code != 0);
+        EXPECT(check, over.err.find("nesting too deep") != std::string::npos);
+        EXPECT(check, std::count(over.err.begin(), over.err.end(), '\n') == 1);
+        // 2000 nested parentheses are within the nesting limit. The default 8 MB stack overflowed there.
+        write_file("deep_paren.tlc", "func main() i32 {\n    var x = 42;\n    return " + std::string(2000, '(') + "x" +
+                                         std::string(2000, ')') + ";\n}\n");
+        const tlc::test::Proc deep = tlc::test::spawn({bin, "--run", (dir.path / "deep_paren.tlc").string()});
+        EXPECT(check, deep.code == 42);
+    }
     // The command line lists 100 diagnostics. A 101st is replaced by `too many errors`.
     {
         std::string exact = "func main() i32 {\n    return 0;\n}\n";

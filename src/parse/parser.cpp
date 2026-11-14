@@ -52,11 +52,22 @@ void Parser::deepen() {
     if (!nest_failed_) {
         error_here("nesting too deep");
         nest_failed_ = true;
+        nest_failed_at_ = diags_.size();
     }
     // Every caller then sees the end of the file and unwinds without going deeper.
     if (!tokens_.empty()) {
         pos_ = tokens_.size() - 1;
     }
+}
+
+void Parser::lengthen() {
+    ++chain_;
+    if (chain_ <= kMaxChain) {
+        return;
+    }
+    // Past the budget the parse stops as `deepen` does.
+    nest_ = kMaxNest;
+    deepen();
 }
 
 bool Parser::expect(TokenKind kind, const std::string &message) {
@@ -365,6 +376,9 @@ TranslationUnit Parser::parse() {
         TopDecl top;
         top.data = std::move(var);
         unit.decls.push_back(std::move(top));
+    }
+    if (nest_failed_) {
+        diags_.truncate(nest_failed_at_);
     }
     return unit;
 }

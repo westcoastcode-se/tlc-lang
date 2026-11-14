@@ -455,6 +455,25 @@ std::optional<Checker::FoldedNumber> Checker::fold_number(const Expr &expr) {
 }
 
 std::optional<Checker::FoldedNumber> Checker::fold_number(const Expr &expr, std::unordered_set<std::string> &seen) {
+    // The same cache as `fold_int`. A fold inside a constant's initializer has names in `seen` and can
+    // stop at a cycle, so only a fold from the top is kept.
+    if (!seen.empty()) {
+        return fold_number_uncached(expr, seen);
+    }
+    if (const auto found = fold_number_cache_.find(&expr);
+        found != fold_number_cache_.end() && found->second.first == fold_generation_) {
+        return found->second.second;
+    }
+    const uint64_t generation = fold_generation_;
+    std::optional<FoldedNumber> folded = fold_number_uncached(expr, seen);
+    if (fold_int_store_ > 0 && generation == fold_generation_) {
+        fold_number_cache_[&expr] = {generation, folded};
+    }
+    return folded;
+}
+
+std::optional<Checker::FoldedNumber> Checker::fold_number_uncached(const Expr &expr,
+                                                                   std::unordered_set<std::string> &seen) {
     const auto from_int = [](int value) {
         return FoldedNumber{static_cast<double>(value), false, false};
     };
@@ -1727,6 +1746,20 @@ std::optional<int> Checker::fold_int_binary(const Expr &expr, TokenKind op, int 
 }
 
 std::optional<int> Checker::fold_int(const Expr &expr) {
+    // `check_expr` folds each link of `a + b + ...`, and each fold walked the chain below it again.
+    if (const auto found = fold_int_cache_.find(&expr);
+        found != fold_int_cache_.end() && found->second.first == fold_generation_) {
+        return found->second.second;
+    }
+    const uint64_t generation = fold_generation_;
+    std::optional<int> folded = fold_int_uncached(expr);
+    if (fold_int_store_ > 0 && generation == fold_generation_) {
+        fold_int_cache_[&expr] = {generation, folded};
+    }
+    return folded;
+}
+
+std::optional<int> Checker::fold_int_uncached(const Expr &expr) {
     auto wrap = [](int64_t value) { return static_cast<int>(static_cast<uint32_t>(value)); };
     return std::visit(
         [&](const auto &node) -> std::optional<int> {
@@ -4880,6 +4913,7 @@ void Checker::note_promotable(Symbol &symbol, const Expr *init) {
         symbol.promote_init = init;
         if (const std::optional<int> value = fold_int(*init)) {
             symbol.const_value = *value;
+            ++fold_generation_;
             symbol.folded_init = true;
         }
         return;
@@ -4892,6 +4926,7 @@ void Checker::note_promotable(Symbol &symbol, const Expr *init) {
     if (const std::optional<int> value = constant_index(*init)) {
         symbol.promote_init = init;
         symbol.const_value = *value;
+        ++fold_generation_;
         symbol.folded_init = true;
     }
 }
@@ -4911,6 +4946,7 @@ void Checker::note_held(Symbol &symbol, const Expr &init) {
         if (const std::optional<int> value = constant_index(init)) {
             symbol.folded_local = true;
             symbol.const_value = symbol.type.kind == TypeKind::Bool ? (*value != 0 ? 1 : 0) : *value;
+            ++fold_generation_;
         }
     }
 }
@@ -4948,6 +4984,7 @@ void Checker::release_held_expr(const Expr &expr) {
         return;
     }
     symbol->held_comptime = false;
+    ++fold_generation_;
     symbol->folded_local = false;
 }
 
@@ -5210,6 +5247,7 @@ void Checker::release_assigned(const Stmt *stmt, const std::string &hide_name) {
             continue;
         }
         visible->held_comptime = false;
+        ++fold_generation_;
         visible->folded_local = false;
         visible->pending_fold = false;
     }
@@ -5237,6 +5275,7 @@ void Checker::release_assigned_expr(const Expr *expr) {
             continue;
         }
         visible->held_comptime = false;
+        ++fold_generation_;
         visible->folded_local = false;
         visible->pending_fold = false;
     }
@@ -5717,6 +5756,7 @@ int Checker::explain_comptime_stmt(const Stmt &stmt, const std::string &fn_name)
                         symbol.held_comptime = true;
                         symbol.folded_local = true;
                         symbol.const_value = *value;
+                        ++fold_generation_;
                         symbol.const_init = node.value.get();
                         if (scopes_.empty()) {
                             return 0;

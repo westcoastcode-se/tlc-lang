@@ -949,7 +949,9 @@ void Checker::define_constant(const VarDecl &var, Type type, int folded) {
     symbol.name = var.name;
     symbol.type = std::move(type);
     symbol.is_constant = true;
+    ++fold_generation_;
     symbol.const_value = folded;
+    ++fold_generation_;
     // An invalid constant is not folded again. Its initializer would repeat the error.
     symbol.const_init = symbol.type.kind == TypeKind::Invalid ? nullptr : var.init.get();
     symbol.package_file = file_id_;
@@ -2202,6 +2204,7 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
                 symbol.name = var->name;
                 symbol.type = type_int();
                 symbol.is_constant = true;
+                ++fold_generation_;
                 symbol.const_value = var->const_value;
                 symbol.package_file = file_id;
                 exports_[file_id].insert_or_assign(var->name, std::move(symbol));
