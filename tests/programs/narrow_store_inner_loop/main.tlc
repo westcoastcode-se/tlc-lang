@@ -1,4 +1,5 @@
-// In an inner loop the read above the store runs again after it, so the store must stay a `*Node`.
+// An inner loop that stores a `?*Node` into the name runs its read again after that store. The name is a
+// `?*Node` for that whole loop, so `p.v` there needs its own check.
 type Node struct {
     next ?*Node;
     v i32;

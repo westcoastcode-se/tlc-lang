@@ -4963,7 +4963,15 @@ bool Checker::expr_assigns(const Expr &expr, const std::string &name, bool hidde
         [&](const auto &item) -> bool {
             using T = std::decay_t<decltype(item)>;
             if constexpr (std::is_same_v<T, Expr::Assign>) {
-                if (item.lhs != nullptr && rooted(*item.lhs)) {
+                if (narrow_scan_) {
+                    // Only `p = value` can make `p` null. `p = &place` is never null, and `p.x = 1` keeps `p`.
+                    const auto *target = item.lhs == nullptr ? nullptr : std::get_if<Expr::Name>(&item.lhs->data);
+                    const auto *address = item.rhs == nullptr ? nullptr : std::get_if<Expr::Unary>(&item.rhs->data);
+                    const bool to_address = address != nullptr && !address->postfix && address->op == TokenKind::Amp;
+                    if (target != nullptr && target->text == name && !to_address) {
+                        return true;
+                    }
+                } else if (item.lhs != nullptr && rooted(*item.lhs)) {
                     return true;
                 }
                 return (item.lhs != nullptr && expr_assigns(*item.lhs, name, false)) ||
@@ -4972,9 +4980,15 @@ bool Checker::expr_assigns(const Expr &expr, const std::string &name, bool hidde
                 if (item.expr == nullptr) {
                     return false;
                 }
-                if (!item.postfix &&
-                    (item.op == TokenKind::PlusPlus || item.op == TokenKind::MinusMinus || item.op == TokenKind::Amp) &&
-                    rooted(*item.expr)) {
+                if (narrow_scan_) {
+                    // `&p` can store null through the pointer. `&p.x` does not reach `p` itself.
+                    const auto *target = std::get_if<Expr::Name>(&item.expr->data);
+                    if (!item.postfix && item.op == TokenKind::Amp && target != nullptr && target->text == name) {
+                        return true;
+                    }
+                } else if (!item.postfix &&
+                           (item.op == TokenKind::PlusPlus || item.op == TokenKind::MinusMinus || item.op == TokenKind::Amp) &&
+                           rooted(*item.expr)) {
                     return true;
                 }
                 return expr_assigns(*item.expr, name, false);

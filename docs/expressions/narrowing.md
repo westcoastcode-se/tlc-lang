@@ -20,11 +20,13 @@ The `else` of `p == null`, and the `else` of `p != null` when that `else` always
 
 A field comparison such as `person.home == null` does not narrow.
 
-A name whose address is taken, `var pp = &p`, does not narrow. A store through `pp` could write `null`. Taking `&p` inside a narrowed region ends the narrowing there. `*p` after it is `type mismatch`, and `*p!` asserts that use.
+A name whose address is taken, `var pp = &p`, does not narrow. A store through `pp` could write `null`. Taking `&p` inside a narrowed region ends the narrowing there. `*p` after it is `type mismatch`, and `*p!` asserts that use. Inside a loop it ends the narrowing for that whole loop, as described below.
 
 A store into a narrowed name is checked against the declared `?*T`. `p = p.next` in `while (p != null)` walks a list. After a store of a `?*T` or `null` the name is `?*T` again, so a later `p.field` in that region is `type mismatch`. A store of a `*T` keeps the narrowing.
 
-A `?*T` store inside a loop nested in the region, or after a `defer` in it, is `type mismatch`. A use above the store could run again after it.
+A loop inside the region that can make the name null, by a store `p = value` or by taking `&p`, runs its earlier uses again after that. The name is `?*T` for that whole loop, so `p.field` there needs its own check, and a check inside the loop narrows it again. A store of an address, `p = &node`, and a store into a field, `p.x = 1`, keep the narrowing.
+
+A `?*T` store after a `defer` in the region is `type mismatch`. The deferred call runs after the store.
 
 The step of `for (; p != null; p = p.next)` runs only after the condition held, and it sees `p` narrowed.
 

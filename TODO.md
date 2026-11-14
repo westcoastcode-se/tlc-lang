@@ -13,11 +13,9 @@ These were found by review and have a repro. They are not fixed yet.
 ### Checker
 
 - A `*this` method is called through `*const Shape`. `func use(s *const Shape) void { s.grow(41); }` is accepted when `Rect::grow` takes `self *this`. A trait method has no receiver in the trait, and the body is checked once, not per struct. The spelling of a const trait method is not decided.
-- A `?*T` store into a narrowed name inside a nested loop, or after a `defer` in the narrowed region, is still `type mismatch`. Accepting it needs a flow analysis that knows a use above the store runs again after it.
 - A file-scope `comptime const k = f(2)` used as a file-scope array length, `var g [k]i32`, is `not supported yet` twice. The length is resolved before the constant is bound.
 - A C function pointer type that differs from the tlc one has no spelling of its own. A local or a tlc struct field holds it only by inference, `var f = get_cb()`. A generic parameter `func (T) i32` is a tlc type, so a C pointer that passes a struct is `type mismatch` there.
 - A fault inside an assignment in a `comptime func`, `d >>= n` or `d = d + 8 / (n - 40)`, is reported as `not supported yet` at the call, not as the fault with its call stack.
-- `&p` taken inside a loop of a narrowed region ends the narrowing only after its position. `for (...) { s = s + p.x; clear(&p); }` is accepted, and the next `p.x` can read null.
 - A failed file-scope `comptime const g = f(0)` still cascades: `const h = g + 1` is `undeclared identifier`, and `var arr [g]i32` is `not supported yet` twice.
 - A function with many held `k := i` locals is still quadratic to check. 1500 of them take about 20 seconds.
 - A C callback cannot be null from tlc. `?func (...)` is `not supported yet`, and `null` is `type mismatch` for a C function pointer parameter.

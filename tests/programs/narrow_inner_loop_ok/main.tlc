@@ -1,0 +1,37 @@
+// An inner loop may store a `?*Node` into a narrowed name. Inside that loop the name is a `?*Node`, and a
+// check there narrows it again. A store of an address keeps the narrowing, and a field store never ends it.
+type Node struct {
+    next ?*Node;
+    v i32;
+};
+
+func main() i32 {
+    var c Node = {.next = null, .v = 30};
+    var b Node = {.next = &c, .v = 2};
+    var a Node = {.next = &b, .v = 1};
+    var p ?*Node = &a;
+    var sum = 0;
+    if (p == null) {
+        return 1;
+    }
+    var rounds = 0;
+    while (rounds < 2) {
+        rounds++;
+        while (p != null) {
+            sum += p.v;
+            p = p.next;
+        }
+        p = &a;
+    }
+    var q ?*Node = &a;
+    if (q != null) {
+        var i = 0;
+        while (i < 3) {
+            q.v += 1;
+            q = &b;
+            i++;
+        }
+        sum += q.v;
+    }
+    return sum;
+}

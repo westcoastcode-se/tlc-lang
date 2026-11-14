@@ -1345,6 +1345,14 @@ class Checker {
     // `if` in a function with many locals does not walk every symbol. An entry is checked again when read.
     std::vector<std::pair<std::size_t, std::string>> held_names_;
     void note_held_name(const Symbol &symbol);
+    // Names a null check narrowed, newest last. A loop inside that region checks these at its entry.
+    std::vector<std::string> narrowed_names_;
+    // Set while `unsettle_narrowed` scans a loop. `expr_assigns` then counts only what can make the name
+    // null: `p = value` other than `p = &place`, and `&p`. A store into `p.x` does not change `p`.
+    mutable bool narrow_scan_ = false;
+    // A loop body that can make a narrowed `?*T` null runs again after that store. The name is `?*T` for
+    // the whole loop, so a use above the store needs its own check.
+    void unsettle_narrowed(const Stmt &loop);
     std::vector<std::pair<std::size_t, std::string>> held_candidates() const;
     void held_restore(const std::vector<HeldSlot> &snap);
     // Kept only when both arms still have the value from `before`.

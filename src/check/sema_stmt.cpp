@@ -4,6 +4,7 @@
 
 #include "check/detail.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 
@@ -168,10 +169,36 @@ bool Checker::narrow_optional(const std::string &name) {
     symbol->narrowed = true;
     symbol->narrow_loop = loop_depth_;
     symbol->narrow_defers = defers_checked_;
+    narrowed_names_.push_back(name);
     return true;
 }
 
+void Checker::unsettle_narrowed(const Stmt &loop) {
+    std::vector<std::string> seen;
+    for (const std::string &name : narrowed_names_) {
+        if (std::find(seen.begin(), seen.end(), name) != seen.end()) {
+            continue;
+        }
+        seen.push_back(name);
+        Symbol *symbol = lookup(name);
+        // Narrowed outside this loop. A narrowing by this loop's own condition starts after this check.
+        if (symbol == nullptr || !symbol->narrowed || symbol->narrow_loop > loop_depth_) {
+            continue;
+        }
+        narrow_scan_ = true;
+        const bool clears = stmt_assigns(loop, name, false);
+        narrow_scan_ = false;
+        if (clears) {
+            symbol->type.optional = true;
+            symbol->narrowed = false;
+        }
+    }
+}
+
 void Checker::restore_optional(const std::string &name) {
+    if (const auto at = std::find(narrowed_names_.rbegin(), narrowed_names_.rend(), name); at != narrowed_names_.rend()) {
+        narrowed_names_.erase(std::next(at).base());
+    }
     Symbol *symbol = lookup_scope(name);
     if (symbol == nullptr) {
         return;
@@ -3046,6 +3073,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     }
                 }
             } else if constexpr (std::is_same_v<T, Stmt::While>) {
+                unsettle_narrowed(stmt);
                 const int saved_macro = macro_depth_;
                 if (node.emit) {
                     if (saved_macro == 0) {
@@ -3100,6 +3128,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                 flow_frames_.pop_back();
                 assign_ = init_loop_exit(done.breaks, on_false, can_fail);
             } else if constexpr (std::is_same_v<T, Stmt::DoWhile>) {
+                unsettle_narrowed(stmt);
                 const int saved_macro = macro_depth_;
                 if (node.emit) {
                     if (saved_macro == 0) {
@@ -3174,6 +3203,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     check_stmt(*node.stmt);
                 }
             } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                unsettle_narrowed(stmt);
                 const int saved_macro = macro_depth_;
                 if (node.emit) {
                     if (saved_macro == 0) {

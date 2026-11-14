@@ -1,1 +1,1 @@
-compile-error: type mismatch: expected *Node, found ?*Node
+compile-error: type mismatch

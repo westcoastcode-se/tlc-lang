@@ -1,0 +1,23 @@
+// `&p` taken in a loop of a narrowed region can store null through the pointer before the next round.
+// The name is a `?*Point` for the whole loop, so the read above it is a type error, not a null read.
+type Point struct {
+    x i32;
+};
+
+func clear(pp *?*Point) void {
+    *pp = null;
+}
+
+func main() i32 {
+    var a Point = {.x = 1};
+    var p ?*Point = &a;
+    if (p == null) {
+        return 0;
+    }
+    var s = 0;
+    for (var i = 0; i < 2; i++) {
+        s = s + p.x;
+        clear(&p);
+    }
+    return s;
+}
