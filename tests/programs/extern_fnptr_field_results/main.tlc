@@ -1,0 +1,6 @@
+// A field of an `extern(abi="c") struct` cannot be a function pointer with several results. C has no such type.
+extern(abi="c") type T struct { f func () (i32, i32); };
+
+func main() i32 {
+    return 0;
+}

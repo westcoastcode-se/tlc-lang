@@ -1,0 +1,52 @@
+// More places a C function pointer appears. A parameter and the result of an `extern(abi="c")` body are C
+// pointers. An inferred literal whose parameter is a C pointer calls it the C way. A static method and the
+// `extern(abi="c")` list of an overloaded name are passed where C expects a callback. A narrow enum is
+// extended as C extends it.
+extern(abi="c") type FI struct { a i32; b f32; };
+type E enum(u8) { A, B, C };
+extern(abi="c") func outer2(f func (func (FI) i32) i32) i32;
+extern(abi="c") func call_fi(f func (FI) i32) i32;
+extern(abi="c") func call_enum(f func (E) E) i32;
+extern(abi="c", name="cover") func over(v FI) i32;
+func over(v i32) i32 {
+    return v;
+}
+
+extern(abi="c") func through(cb func (FI) i32) i32 {
+    var v FI = {.a = 1, .b = 2.0};
+    return cb(v);
+}
+
+func take(v FI) i32 {
+    return v.a + i32(v.b);
+}
+
+extern(abi="c") func pick() func (FI) i32 {
+    return take;
+}
+
+type Box struct {
+    n i32;
+};
+
+func Box::run(v FI) i32 {
+    return v.a + i32(v.b) + 1;
+}
+
+func next(e E) E {
+    if (e == E.C) {
+        return E.A;
+    }
+    return E.C;
+}
+
+func main() i32 {
+    if (outer2(through) != 102) { return 1; }
+    if (call_fi(pick()) != 42) { return 2; }
+    if (outer2((cb) { var v FI = {.a = 1, .b = 3.0}; return cb(v); }) != 103) { return 3; }
+    if (call_fi(Box.run) != 43) { return 4; }
+    if (call_fi(over) != 44) { return 5; }
+    if (over(7) != 7) { return 6; }
+    if (call_enum(next) != 20) { return 7; }
+    return 42;
+}

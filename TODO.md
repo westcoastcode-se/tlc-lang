@@ -16,10 +16,18 @@ These were found by review and have a repro. They are not fixed yet.
 - A `?*T` store into a narrowed name inside a nested loop, or after a `defer` in the narrowed region, is still `type mismatch`. Accepting it needs a flow analysis that knows a use above the store runs again after it.
 - A file-scope `comptime const k = f(2)` used as a file-scope array length, `var g [k]i32`, is `not supported yet` twice. The length is resolved before the constant is bound.
 - A C function pointer type that differs from the tlc one has no spelling of its own. A local or a tlc struct field holds it only by inference, `var f = get_cb()`. A generic parameter `func (T) i32` is a tlc type, so a C pointer that passes a struct is `type mismatch` there.
+- A fault inside an assignment in a `comptime func`, `d >>= n` or `d = d + 8 / (n - 40)`, is reported as `not supported yet` at the call, not as the fault with its call stack.
+- `&p` taken inside a loop of a narrowed region ends the narrowing only after its position. `for (...) { s = s + p.x; clear(&p); }` is accepted, and the next `p.x` can read null.
+- A failed file-scope `comptime const g = f(0)` still cascades: `const h = g + 1` is `undeclared identifier`, and `var arr [g]i32` is `not supported yet` twice.
+- A function with many held `k := i` locals is still quadratic to check. 1500 of them take about 20 seconds.
+- A C callback cannot be null from tlc. `?func (...)` is `not supported yet`, and `null` is `type mismatch` for a C function pointer parameter.
+- A binary chain of more than 1000 links, such as a generated sum of 2000 terms, is `nesting too deep`. Each link of the left-deep tree is one level of recursion in the checker.
+- A type with 2^31 elements, `type Pair [2147483647]i32`, or a `comptime func` called with 2147483647 as a length or loop bound, takes more than 30 seconds to compile. There is no limit on an array's size in bytes.
 
 ### Driver and language server
 
-- `tlc --run` prints the program's output only after it exits, stdout before stderr.
+- A `Content-Length` header with a tab after the colon, or a space before it, is skipped. A header with no length is skipped, and its body is then read as the next header, so the message after it is lost.
+- A syntax error in a closed sibling file stops semantic diagnostics in the open files of that package, as a syntax error in any loaded file does.
 - Semantic tokens on a file with thousands of locals that share one name stay slower than linear. `bare_candidates` checks every local of that name for each use.
 
 ## Generics and compile-time

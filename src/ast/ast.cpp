@@ -1391,6 +1391,8 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
     }
     copy.inferred = fn.inferred;
     copy.elaborated = fn.elaborated;
+    copy.c_abi_params = fn.c_abi_params;
+    copy.c_abi_result = fn.c_abi_result;
     copy.function_id = fn.function_id;
     copy.captures = fn.captures;
     copy.captured_here = fn.captured_here;

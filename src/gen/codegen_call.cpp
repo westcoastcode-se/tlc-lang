@@ -2046,8 +2046,9 @@ bool CodeGen::emit_iter_call(const Expr::Call &node, const Expr::Selector &selec
         return true;
     }
     const TypedValue base = value_of_binding(*self);
+    // `at(i i32)` converts its argument as a call does. `items.at(1.0)` passes 1.
     const TypedValue subscript = emit_rvalue(*node.args.front());
-    const TypedValue addr = index_address(base, subscript.value, node.loc);
+    const TypedValue addr = index_address(base, adapt(subscript, i32(), node.loc), node.loc);
     if (addr.value == nullptr) {
         return true;
     }

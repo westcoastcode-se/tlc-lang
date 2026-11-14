@@ -2797,6 +2797,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
                 // A short anonymous function, `(n) { ... }`, takes its types from the result.
                 auto supplied = [&](const Expr &value, const Type &want) {
+                    // `return take` where a C function pointer is the result passes the C wrapper, as an argument does.
+                    if (c_thunk(value, want)) {
+                        return want;
+                    }
                     if (inferred_function(value) != nullptr) {
                         return check_against(value, want);
                     }
@@ -4370,6 +4374,11 @@ void Checker::check_function(const FunctionDecl &fn) {
     const bool saved_quiet = quiet_;
     quiet_ = true;
     return_type_ = function_result(fn);
+    // An `extern(abi="c")` body returns a C function pointer and reads its parameters as C pointers,
+    // as its signature says. A tlc function returned there is passed through its C wrapper.
+    if (fn.extern_c || fn.c_abi_result) {
+        mark_c_abi(return_type_);
+    }
     quiet_ = saved_quiet;
     // The result was already rejected. Do not also report the returned expression.
     if (mentions_trait(return_type_)) {
@@ -4387,10 +4396,15 @@ void Checker::check_function(const FunctionDecl &fn) {
         written.optional = first.optional;
         written.const_pointee = first.const_pointee;
     }
-    for (const Param &param : fn.params) {
+    for (std::size_t param_index = 0; param_index < fn.params.size(); ++param_index) {
+        const Param &param = fn.params[param_index];
         const bool saved_param_quiet = quiet_;
         quiet_ = true;
         Type type = type_of_param(param);
+        if (fn.extern_c ||
+            (param_index < fn.c_abi_params.size() && fn.c_abi_params[param_index] != 0)) {
+            mark_c_abi(type);
+        }
         quiet_ = saved_param_quiet;
         // `comptime p (func (i32, i32) i32, i32)` stays. A runtime parameter is not that value.
         if (!param.is_comptime && tuple_holds_fn(type)) {

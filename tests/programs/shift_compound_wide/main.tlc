@@ -1,0 +1,6 @@
+// A constant compound shift amount past every width is `shift out of range`, as `x << 4294967296u64` is.
+func main() i32 {
+    var x = -8;
+    x <<= 4294967296u64;
+    return x;
+}

@@ -271,6 +271,15 @@ llvm::Value *CodeGen::emit_short_circuit(const Expr::Binary &expr, bool is_and) 
 }
 
 TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript, SourceLoc loc) {
+    // A checked index is an `i32`. A comptime func can be compiled for a call before its body is checked,
+    // and an index there may still be a float or another width. That body reports the error when checked.
+    if (subscript != nullptr && !subscript->getType()->isIntegerTy()) {
+        error(loc, "type mismatch");
+        return {};
+    }
+    if (subscript != nullptr && !subscript->getType()->isIntegerTy(32)) {
+        subscript = builder_.CreateSExtOrTrunc(subscript, i32());
+    }
     if (!base.shells.empty() && subscript != nullptr) {
         // A slice header carries its length. `s[i]` past it panics, as on the path without shells.
         const bool data_pointer = slice_data_addr_ && llvm::isa<llvm::ConstantInt>(subscript) &&
@@ -280,6 +289,26 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
             trap_index(subscript, builder_.CreateExtractValue(base.value, 1), loc);
             if (terminated()) {
                 return {};
+            }
+        }
+        // A decayed array keeps its own length in `array_len`, and its shells are the element: `a[k][0]` on
+        // `[3][2]T` checks `k` against 3. `p[k]` on `*[N]T` is `(*p)[k]`, and that `N` is the shell under the
+        // pointer. A slice value was checked above against its header.
+        if (!base.is_slice) {
+            int known = -1;
+            if (base.empty_decay) {
+                known = 0;
+            } else if (base.array_len > 0) {
+                known = base.array_len;
+            } else if (base.shells.front().kind == TypeShell::Kind::Pointer && base.shells.size() >= 2 &&
+                       base.shells[1].kind == TypeShell::Kind::Array && base.shells[1].length >= 0) {
+                known = base.shells[1].length;
+            }
+            if (known >= 0) {
+                trap_index(subscript, const_i32(known), loc);
+                if (terminated()) {
+                    return {};
+                }
             }
         }
         return index_shells(base, subscript);
@@ -390,6 +419,15 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
         return {};
     }
     llvm::Value *offset = subscript;
+    // Every decayed array still knows its length: the outer `N` of `[N][M]T`, of `[N][]T`, and of `*[N]T`.
+    // An index past it panics on each of these paths, not only on a flat `[N]T`.
+    const int known = base.ptr_to_array ? base.ptr_array_len : base.empty_decay ? 0 : base.array_len > 0 ? base.array_len : -1;
+    if (known >= 0) {
+        trap_index(offset, const_i32(known), loc);
+        if (terminated()) {
+            return {};
+        }
+    }
     if (base.elem_slice) {
         llvm::Value *slot =
             builder_.CreateInBoundsGEP(slice_type(), base.value, llvm::ArrayRef<llvm::Value *>{offset});
@@ -424,13 +462,7 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
                 base.elem_unsigned, -1, base.elem_float};
     }
     const int depth = base.depth - 1;
-    // A parameter `[N]T`, and a pointer copied from it, still knows `N`. `[0]T` has no element.
-    if (base.empty_decay || base.array_len > 0) {
-        trap_index(offset, const_i32(base.empty_decay ? 0 : base.array_len), loc);
-        if (terminated()) {
-            return {};
-        }
-    }
+    // A parameter `[N]T`, and a pointer copied from it, still knows `N`. `[0]T` has no element. Checked above.
     llvm::Value *slot = builder_.CreateInBoundsGEP(
         leaf_type(depth, base.elem_char, base.struct_id, base.elem_bool, base.elem_bits, base.elem_float), base.value,
         llvm::ArrayRef<llvm::Value *>{offset});

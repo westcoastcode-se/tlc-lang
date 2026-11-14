@@ -761,28 +761,6 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 case TokenKind::Caret: return widened(builder_.CreateXor(lhs, rhs));
                 case TokenKind::LtLt:
                 case TokenKind::GtGt: {
-                    const int width = common_bits > 0 ? common_bits : 32;
-                    if (const auto *amount = llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
-                        if (amount->getLimitedValue() >= static_cast<uint64_t>(width)) {
-                            if (eval_ && !terminated() && function_ != nullptr) {
-                                install_eval_fault();
-                                eval_fail(node.loc, 2);
-                            } else {
-                                error(node.loc, "shift out of range");
-                            }
-                            return widened(llvm::ConstantInt::get(lhs->getType(), 0));
-                        }
-                    } else if (eval_ && !terminated() && function_ != nullptr) {
-                        install_eval_fault();
-                        llvm::Value *bad = builder_.CreateICmpUGE(
-                            rhs, llvm::ConstantInt::get(rhs->getType(), static_cast<uint64_t>(width)));
-                        auto *fail = llvm::BasicBlock::Create(context_, "shift.fail", function_);
-                        auto *ok = llvm::BasicBlock::Create(context_, "shift.ok", function_);
-                        builder_.CreateCondBr(bad, fail, ok);
-                        builder_.SetInsertPoint(fail);
-                        eval_fail(node.loc, 2);
-                        builder_.SetInsertPoint(ok);
-                    }
                     return widened(emit_shift(node.loc, node.op == TokenKind::LtLt, uns, lhs, rhs));
                 }
                 case TokenKind::EqEq: return compared(llvm::CmpInst::ICMP_EQ);

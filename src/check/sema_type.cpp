@@ -2088,8 +2088,11 @@ void Checker::define_struct_fields() {
                 // A function pointer field of a C struct is called by C, or was stored by C.
                 mark_c_abi(field_type);
                 // A tagged union is not a C layout, and it cannot be marked `extern(abi="c")`.
+                // A function pointer field with several results has no C layout, as on a C parameter.
                 if (mentions_tagged_union(field_type)) {
                     error(field.loc, "extern(abi=\"c\") on a tagged union");
+                } else if (uses_many_results(field_type)) {
+                    error(field.loc, "extern function cannot use several results");
                 } else {
                     require_extern_struct(field_type, field.loc);
                 }
@@ -2378,7 +2381,7 @@ void Checker::install_local_type(const Stmt::LocalType &local) {
         symbol.name = item.name;
         symbol.is_type = true;
         symbol.is_enum = true;
-        symbol.type = type_enum(id);
+        symbol.type = enum_type(id);
         symbol.function_id = scopes_.back().function_id;
         symbol.loc = item.loc;
         declare(std::move(symbol), item.loc);
@@ -2566,7 +2569,7 @@ void Checker::register_enums(const TranslationUnit &unit, uint32_t file_id) {
         symbol.name = item->name;
         symbol.is_type = true;
         symbol.is_enum = true;
-        symbol.type = type_enum(id);
+        symbol.type = enum_type(id);
         exports_[file_id].emplace(item->name, std::move(symbol));
     }
 }
@@ -3048,7 +3051,7 @@ Type Checker::spelled_type(const std::string &name, const std::string &package, 
             error(loc, "undeclared identifier");
             return type_invalid();
         }
-        return with_indirections(type_enum(enum_id), indirections, loc, optional, const_pointee);
+        return with_indirections(enum_type(enum_id), indirections, loc, optional, const_pointee);
     }
     return with_indirections(type_of_name(name, loc, indirections > 0), indirections, loc, optional, const_pointee);
 }
@@ -3109,7 +3112,7 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
         Type alias;
         const bool have_alias = tag < 0 && package_typedef(file_id_, name, alias);
         if (tag < 0 && enumeration >= 0) {
-            type = with_indirections(type_enum(enumeration), indirections, loc, optional, const_pointee);
+            type = with_indirections(enum_type(enumeration), indirections, loc, optional, const_pointee);
         } else if (receiver && have_alias && alias.alias_id != 0 && (is_numeric(alias) || is_slice(alias))) {
             // `func Integer::twice(self this)` and `func string_view::equals(self this)` keep the alias.
             // The parser marks every receiver as a struct. `self *this` is a pointer to that alias.
@@ -3126,7 +3129,7 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
             error(loc, "not supported yet");
             type = type_invalid();
         } else if (const int enum_id = find_enum(file_id_, name); enum_id >= 0) {
-            type = with_indirections(type_enum(enum_id), indirections, loc, optional, const_pointee);
+            type = with_indirections(enum_type(enum_id), indirections, loc, optional, const_pointee);
         } else {
             error(loc, "undeclared identifier");
             type = type_invalid();

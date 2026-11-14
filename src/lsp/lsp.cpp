@@ -163,24 +163,22 @@ int run_lsp() {
                 doc->uri = uri;
             }
             doc->path = open_path_for(uri_to_path(uri));
+            // Opening a file with its saved text changes nothing another check read from disk.
+            bool unchanged = false;
+            if (method == "textDocument/didOpen" && !doc->path.empty()) {
+                const std::optional<std::string> disk = read_file(doc->path);
+                unchanged = disk && *disk == text;
+            }
             doc->text = std::move(text);
             doc->version = version;
             recheck(*doc, docs, workspace_root);
-            // The other open files of that package, and files that import it, see the new text too.
-            const std::string changed_dir = std::filesystem::path(doc->path).parent_path().string();
-            const std::string changed_uri = doc->uri;
-            for (Doc &other : docs) {
-                if (other.uri == changed_uri) {
-                    continue;
-                }
-                const bool sibling = std::filesystem::path(other.path).parent_path().string() == changed_dir;
-                const bool importer = std::any_of(other.notes.begin(), other.notes.end(), [&](const Note &note) {
-                    return note.uri == changed_uri;
-                }) || std::any_of(other.syms.begin(), other.syms.end(), [&](const Sym &sym) {
-                    return sym.uri == changed_uri;
-                });
-                if (sibling || importer) {
-                    recheck(other, docs, workspace_root);
+            // The other open files of that package, and files that read this one, see the new text too.
+            if (!unchanged) {
+                const std::string changed_uri = doc->uri;
+                const std::string changed_path = doc->path;
+                const std::string changed_package = doc->package_name;
+                for (const std::size_t i : dependents(docs, changed_uri, changed_path, changed_package)) {
+                    recheck(docs[i], docs, workspace_root);
                 }
             }
             sync_diagnostics(docs, sent);
@@ -196,7 +194,14 @@ int run_lsp() {
                 if (docs[n].uri != uri) {
                     continue;
                 }
+                // The files that read this buffer read the saved text again.
+                const std::string closed_uri = docs[n].uri;
+                const std::string closed_path = docs[n].path;
+                const std::string closed_package = docs[n].package_name;
                 docs.erase(docs.begin() + static_cast<std::ptrdiff_t>(n));
+                for (const std::size_t i : dependents(docs, closed_uri, closed_path, closed_package)) {
+                    recheck(docs[i], docs, workspace_root);
+                }
                 sync_diagnostics(docs, sent);
                 break;
             }

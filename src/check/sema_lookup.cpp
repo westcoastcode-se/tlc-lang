@@ -16,17 +16,20 @@ void Checker::error(SourceLoc loc, const std::string &message) {
 }
 
 void Checker::push() {
+    ++fold_generation_;
     const int id = scopes_.empty() ? 0 : scopes_.back().function_id;
     scopes_.emplace_back();
     scopes_.back().function_id = id;
 }
 
 void Checker::push_function() {
+    ++fold_generation_;
     scopes_.emplace_back();
     scopes_.back().function_id = ++function_seq_;
 }
 
 void Checker::pop() {
+    ++fold_generation_;
     if (!scopes_.empty()) {
         const std::size_t popped = scopes_.size() - 1;
         std::erase_if(held_names_, [&](const auto &entry) { return entry.first >= popped; });
@@ -55,6 +58,18 @@ bool Checker::captured(const Symbol &symbol) const {
         return false;
     }
     return symbol.function_id != scopes_.back().function_id;
+}
+
+Type Checker::enum_type(int id) const {
+    Type type = type_enum(id);
+    if (id >= 0 && id < static_cast<int>(enum_types_.size())) {
+        const Type &underlying = enum_types_[static_cast<std::size_t>(id)].underlying;
+        if (underlying.kind == TypeKind::Int || underlying.kind == TypeKind::Char) {
+            type.rank = rank_of(underlying);
+            type.is_unsigned = underlying.is_unsigned || underlying.kind == TypeKind::Char;
+        }
+    }
+    return type;
 }
 
 bool Checker::fn_pointer(const Type &type) const {
@@ -585,10 +600,18 @@ Type Checker::function_signature(const FunctionDecl &fn) {
     } pop{checking_};
     std::vector<Type> params;
     params.reserve(fn.params.size());
-    for (const Param &param : fn.params) {
-        params.push_back(type_of_param(param));
+    for (std::size_t i = 0; i < fn.params.size(); ++i) {
+        Type type = type_of_param(fn.params[i]);
+        if (i < fn.c_abi_params.size() && fn.c_abi_params[i] != 0) {
+            mark_c_abi(type);
+        }
+        params.push_back(std::move(type));
     }
-    Type signature = type_function(function_result(fn), std::move(params), fn.variadic);
+    Type result = function_result(fn);
+    if (fn.c_abi_result) {
+        mark_c_abi(result);
+    }
+    Type signature = type_function(std::move(result), std::move(params), fn.variadic);
     // `extern(abi="c")` is called with the C convention, and so is a function pointer in its signature.
     if (fn.extern_c) {
         mark_c_abi(signature);
@@ -993,6 +1016,7 @@ bool Checker::declare(Symbol symbol, SourceLoc loc) {
     if (symbol.name.empty()) {
         return false;
     }
+    ++fold_generation_;
     auto &table = scopes_.back().symbols;
     if (table.contains(symbol.name)) {
         error(loc, "redefinition");
@@ -1008,6 +1032,7 @@ bool Checker::shadow(Symbol symbol, SourceLoc loc) {
         return false;
     }
     (void)loc;
+    ++fold_generation_;
     note_held_name(symbol);
     scopes_.back().symbols.insert_or_assign(symbol.name, std::move(symbol));
     return true;
@@ -1035,7 +1060,7 @@ Type Checker::type_of_name(const std::string &name, SourceLoc loc, bool allow_in
         return lookup_tag(name, loc, allow_incomplete);
     }
     if (const int enum_id = find_enum(file_id_, name); enum_id >= 0) {
-        return type_enum(enum_id);
+        return enum_type(enum_id);
     }
     if (const int trait = package_trait(file_id_, name); trait >= 0) {
         return type_trait(trait);

@@ -1082,6 +1082,13 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                     target.is_slice || target.fn_ty != nullptr) {
                     return std::nullopt;
                 }
+                // `i32(3000000000u32)` keeps the low bits of a value the `i32` fold does not hold.
+                // Same rule as `Checker::fold_int`.
+                if (!inner && !target.elem_bool && (target.elem_bits == 0 || target.elem_bits <= 32)) {
+                    if (const std::optional<WideInt> wide = fold_wide(*node.expr)) {
+                        inner = static_cast<int32_t>(static_cast<uint32_t>(wide->value));
+                    }
+                }
                 // `i32(2.7)` is 2. Same rule as `Checker::fold_int`.
                 if (!inner) {
                     const std::optional<FoldedNumber> number = fold_number(*node.expr);
@@ -1307,9 +1314,18 @@ std::optional<CodeGen::WideInt> CodeGen::fold_wide(const Expr &expr) const {
                     if (item.op == TokenKind::KwUnsafe) {
                         return self(self, *item.expr, depth + 1, seen);
                     }
-                    const std::optional<WideInt> inner = self(self, *item.expr, depth + 1, seen);
+                    std::optional<WideInt> inner = self(self, *item.expr, depth + 1, seen);
                     if (!inner) {
                         return std::nullopt;
+                    }
+                    // `-250u8` is the `i32` -250, as C promotes the operand first.
+                    if (inner->bits < 32 && item.op != TokenKind::Plus) {
+                        if (!inner->is_unsigned && ((inner->value >> (inner->bits - 1)) & 1u) != 0) {
+                            inner->value |= ~wide_mask(inner->bits);
+                        }
+                        inner->value &= wide_mask(32);
+                        inner->bits = 32;
+                        inner->is_unsigned = false;
                     }
                     const uint64_t mask = wide_mask(inner->bits);
                     WideInt wide = *inner;
@@ -1362,11 +1378,26 @@ std::optional<CodeGen::WideInt> CodeGen::fold_wide(const Expr &expr) const {
                         }
                         return std::nullopt;
                     };
-                    const std::optional<WideInt> left = piece(*item.lhs);
-                    const std::optional<WideInt> right = piece(*item.rhs);
-                    if (!left || !right) {
+                    // C promotes `u8`, `i8`, `u16`, and `i16` to a signed `i32` first. `100u8 & 4294967295i64`
+                    // is then `i32 & i64`, and `200u8 + 100` is 300.
+                    const auto promote = [](WideInt value) {
+                        if (value.bits < 32) {
+                            if (!value.is_unsigned && ((value.value >> (value.bits - 1)) & 1u) != 0) {
+                                value.value |= ~wide_mask(value.bits);
+                            }
+                            value.value &= wide_mask(32);
+                            value.bits = 32;
+                            value.is_unsigned = false;
+                        }
+                        return value;
+                    };
+                    const std::optional<WideInt> left_raw = piece(*item.lhs);
+                    const std::optional<WideInt> right_raw = piece(*item.rhs);
+                    if (!left_raw || !right_raw) {
                         return std::nullopt;
                     }
+                    const std::optional<WideInt> left = promote(*left_raw);
+                    const std::optional<WideInt> right = promote(*right_raw);
                     const WideInt *kept = nullptr;
                     if (left->bits == right->bits && left->is_unsigned == right->is_unsigned) {
                         kept = &*left;
@@ -1453,6 +1484,63 @@ std::optional<CodeGen::WideInt> CodeGen::fold_wide(const Expr &expr) const {
                     default: return std::nullopt;
                     }
                     return wide;
+                } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                    // `i64(-5)`, `u32(-1)`, and `i32(3000000000u32)`. The operand folds at its own width, or as an
+                    // `i32`, or as a float, and the cast keeps the low bits, sign- or zero-extended to the target.
+                    if (item.indirections != 0 || item.is_struct || item.is_enum || item.is_fn_ptr || !item.type_package.empty() ||
+                        item.expr == nullptr) {
+                        return std::nullopt;
+                    }
+                    int bits = 0;
+                    bool target_unsigned = false;
+                    const std::string &name = item.type_name;
+                    if (name == "i8" || name == "u8") {
+                        bits = 8;
+                    } else if (name == "i16" || name == "u16") {
+                        bits = 16;
+                    } else if (name == "i32" || name == "u32") {
+                        bits = 32;
+                    } else if (name == "i64" || name == "u64") {
+                        bits = 64;
+                    } else {
+                        return std::nullopt;
+                    }
+                    target_unsigned = name[0] == 'u';
+                    std::optional<WideInt> inner = self(self, *item.expr, depth + 1, seen);
+                    if (!inner) {
+                        if (const auto small = fold(*item.expr)) {
+                            WideInt narrow;
+                            narrow.value = static_cast<uint32_t>(*small);
+                            narrow.bits = 32;
+                            narrow.is_unsigned = false;
+                            inner = narrow;
+                        }
+                    }
+                    if (!inner) {
+                        const auto number = fold_number(*item.expr);
+                        if (!number || !number->is_float) {
+                            return std::nullopt;
+                        }
+                        const std::optional<double> whole = truncated_float(number->value, bits, target_unsigned);
+                        if (!whole) {
+                            return std::nullopt;
+                        }
+                        WideInt from_float;
+                        from_float.value = *whole < 0 ? static_cast<uint64_t>(static_cast<int64_t>(*whole))
+                                                      : static_cast<uint64_t>(*whole);
+                        from_float.bits = 64;
+                        from_float.is_unsigned = *whole >= 0;
+                        inner = from_float;
+                    }
+                    uint64_t value = inner->value;
+                    if (!inner->is_unsigned && inner->bits < 64 && ((value >> (inner->bits - 1)) & 1u) != 0) {
+                        value |= ~wide_mask(inner->bits);
+                    }
+                    WideInt cast;
+                    cast.value = value & wide_mask(bits);
+                    cast.bits = bits;
+                    cast.is_unsigned = target_unsigned;
+                    return cast;
                 } else if constexpr (std::is_same_v<T, Expr::Call>) {
                     if (item.comptime_struct == nullptr) {
                         return std::nullopt;

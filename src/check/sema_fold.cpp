@@ -1189,6 +1189,19 @@ std::optional<int> Checker::constant_index(const Expr &expr) {
 
 
 std::optional<Checker::WideInt> Checker::fold_wide_int(const Expr &expr) {
+    if (const auto found = fold_wide_cache_.find(&expr);
+        found != fold_wide_cache_.end() && found->second.first == fold_generation_) {
+        return found->second.second;
+    }
+    const uint64_t generation = fold_generation_;
+    std::optional<WideInt> folded = fold_wide_int_uncached(expr);
+    if (generation == fold_generation_) {
+        fold_wide_cache_[&expr] = {generation, folded};
+    }
+    return folded;
+}
+
+std::optional<Checker::WideInt> Checker::fold_wide_int_uncached(const Expr &expr) {
     // `fold_int` owns a value that fits in signed `i32`. This walk keeps a wider suffix.
     const auto walk = [&](const auto &self, const Expr &node, int depth,
                           std::unordered_set<std::string> &seen) -> std::optional<WideInt> {
@@ -1241,9 +1254,18 @@ std::optional<Checker::WideInt> Checker::fold_wide_int(const Expr &expr) {
                     if (item.postfix || item.expr == nullptr) {
                         return std::nullopt;
                     }
-                    const std::optional<WideInt> inner = self(self, *item.expr, depth + 1, seen);
+                    std::optional<WideInt> inner = self(self, *item.expr, depth + 1, seen);
                     if (!inner) {
                         return std::nullopt;
+                    }
+                    // `-250u8` is the `i32` -250, as C promotes the operand first.
+                    if (inner->bits < 32 && item.op != TokenKind::Plus) {
+                        if (!inner->is_unsigned && ((inner->value >> (inner->bits - 1)) & 1u) != 0) {
+                            inner->value |= ~wide_mask(inner->bits);
+                        }
+                        inner->value &= wide_mask(32);
+                        inner->bits = 32;
+                        inner->is_unsigned = false;
                     }
                     const uint64_t mask = wide_mask(inner->bits);
                     WideInt wide = *inner;
@@ -1300,11 +1322,26 @@ std::optional<Checker::WideInt> Checker::fold_wide_int(const Expr &expr) {
                         }
                         return std::nullopt;
                     };
-                    const std::optional<WideInt> left = piece(*item.lhs);
-                    const std::optional<WideInt> right = piece(*item.rhs);
-                    if (!left || !right) {
+                    // C promotes `u8`, `i8`, `u16`, and `i16` to a signed `i32` first. `100u8 & 4294967295i64`
+                    // is then `i32 & i64`, and `200u8 + 100` is 300.
+                    const auto promote = [](WideInt value) {
+                        if (value.bits < 32) {
+                            if (!value.is_unsigned && ((value.value >> (value.bits - 1)) & 1u) != 0) {
+                                value.value |= ~wide_mask(value.bits);
+                            }
+                            value.value &= wide_mask(32);
+                            value.bits = 32;
+                            value.is_unsigned = false;
+                        }
+                        return value;
+                    };
+                    const std::optional<WideInt> left_raw = piece(*item.lhs);
+                    const std::optional<WideInt> right_raw = piece(*item.rhs);
+                    if (!left_raw || !right_raw) {
                         return std::nullopt;
                     }
+                    const std::optional<WideInt> left = promote(*left_raw);
+                    const std::optional<WideInt> right = promote(*right_raw);
                     // Same suffix, or a signed `i32` converted into the wider operand.
                     const WideInt *kept = nullptr;
                     if (left->bits == right->bits && left->is_unsigned == right->is_unsigned) {
@@ -1398,6 +1435,63 @@ std::optional<Checker::WideInt> Checker::fold_wide_int(const Expr &expr) {
                     default: return std::nullopt;
                     }
                     return wide;
+                } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                    // `i64(-5)`, `u32(-1)`, and `i32(3000000000u32)`. The operand folds at its own width, or as an
+                    // `i32`, or as a float, and the cast keeps the low bits, sign- or zero-extended to the target.
+                    if (item.indirections != 0 || item.is_struct || item.is_enum || !item.type_package.empty() ||
+                        item.expr == nullptr) {
+                        return std::nullopt;
+                    }
+                    int bits = 0;
+                    bool target_unsigned = false;
+                    const std::string &name = item.type_name;
+                    if (name == "i8" || name == "u8") {
+                        bits = 8;
+                    } else if (name == "i16" || name == "u16") {
+                        bits = 16;
+                    } else if (name == "i32" || name == "u32") {
+                        bits = 32;
+                    } else if (name == "i64" || name == "u64") {
+                        bits = 64;
+                    } else {
+                        return std::nullopt;
+                    }
+                    target_unsigned = name[0] == 'u';
+                    std::optional<WideInt> inner = self(self, *item.expr, depth + 1, seen);
+                    if (!inner) {
+                        if (const auto small = fold_int(*item.expr)) {
+                            WideInt narrow;
+                            narrow.value = static_cast<uint32_t>(*small);
+                            narrow.bits = 32;
+                            narrow.is_unsigned = false;
+                            inner = narrow;
+                        }
+                    }
+                    if (!inner) {
+                        const auto number = fold_number(*item.expr);
+                        if (!number || !number->is_float) {
+                            return std::nullopt;
+                        }
+                        const std::optional<double> whole = truncated_float(number->value, bits, target_unsigned);
+                        if (!whole) {
+                            return std::nullopt;
+                        }
+                        WideInt from_float;
+                        from_float.value = *whole < 0 ? static_cast<uint64_t>(static_cast<int64_t>(*whole))
+                                                      : static_cast<uint64_t>(*whole);
+                        from_float.bits = 64;
+                        from_float.is_unsigned = *whole >= 0;
+                        inner = from_float;
+                    }
+                    uint64_t value = inner->value;
+                    if (!inner->is_unsigned && inner->bits < 64 && ((value >> (inner->bits - 1)) & 1u) != 0) {
+                        value |= ~wide_mask(inner->bits);
+                    }
+                    WideInt cast;
+                    cast.value = value & wide_mask(bits);
+                    cast.bits = bits;
+                    cast.is_unsigned = target_unsigned;
+                    return cast;
                 } else if constexpr (std::is_same_v<T, Expr::Call>) {
                     // `wide(0) > 0u64` reads the integer that call kept.
                     if (item.comptime_struct == nullptr) {
@@ -1547,11 +1641,19 @@ bool Checker::wide_operand(const Expr &expr, int depth) {
     if (depth > 64) {
         return false;
     }
+    if (const auto found = wide_operand_cache_.find(&expr);
+        found != wide_operand_cache_.end() && found->second.first == fold_generation_) {
+        return found->second.second;
+    }
+    const auto remember = [&](bool wide) {
+        wide_operand_cache_[&expr] = {fold_generation_, wide};
+        return wide;
+    };
     const auto wide_type = [](const Type &type) {
         const int bits = width_of(type);
         return type.kind == TypeKind::Int && (bits == 64 || (bits == 32 && type.is_unsigned));
     };
-    return std::visit(
+    return remember(std::visit(
         [&](const auto &node) -> bool {
             using T = std::decay_t<decltype(node)>;
             if constexpr (std::is_same_v<T, Expr::Int>) {
@@ -1593,7 +1695,7 @@ bool Checker::wide_operand(const Expr &expr, int depth) {
                 return false;
             }
         },
-        expr.data);
+        expr.data));
 }
 
 std::optional<int> Checker::fold_int_binary(const Expr &expr, TokenKind op, int lhs, int rhs) {
@@ -1802,6 +1904,12 @@ std::optional<int> Checker::fold_int(const Expr &expr) {
                             return std::nullopt;
                         }
                         inner = static_cast<int>(*whole);
+                    }
+                }
+                // `i32(3000000000u32)` and `u8(big)` keep the low bits of a value the `i32` fold does not hold.
+                if (!inner && !is_c_enum(named) && named.kind != TypeKind::Bool && width_of(named) <= 32) {
+                    if (const std::optional<WideInt> wide = fold_wide_int(*node.expr)) {
+                        inner = static_cast<int>(static_cast<uint32_t>(wide->value));
                     }
                 }
                 if (!inner || is_c_enum(named)) {
@@ -5492,7 +5600,10 @@ bool Checker::recheck_comptime_copy(FunctionDecl &wrapper, bool force) {
         Checker &self;
         std::vector<Scope> saved;
         std::size_t prefix = 0;
-        explicit FileScopes(Checker &checker) : self(checker), saved(std::move(checker.scopes_)) {
+        // The caller's held names are restored with its scopes. A nested pop would erase them.
+        std::vector<std::pair<std::size_t, std::string>> saved_held;
+        explicit FileScopes(Checker &checker)
+            : self(checker), saved(std::move(checker.scopes_)), saved_held(checker.held_names_) {
             while (prefix < saved.size() && saved[prefix].function_id == 0) {
                 ++prefix;
             }
@@ -5507,6 +5618,7 @@ bool Checker::recheck_comptime_copy(FunctionDecl &wrapper, bool force) {
                 saved[i] = std::move(self.scopes_[i]);
             }
             self.scopes_ = std::move(saved);
+            self.held_names_ = std::move(saved_held);
         }
     } file_scopes(*this);
     const bool saved_quiet = quiet_;

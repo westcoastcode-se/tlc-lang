@@ -1,0 +1,4 @@
+exit: 128
+stderr: panic: index out of range
+main.tlc:3:12: row
+main.tlc:8:12: main

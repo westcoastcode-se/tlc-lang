@@ -1,0 +1,22 @@
+// A generic call checks its copy with other scopes. A held `value := 10` before it is still released when the
+// loop stores into it, so `add(value)` is not folded to the first value.
+comptime func add(n i32) i32 {
+    return n + 32;
+}
+
+func id[T type](v T) T {
+    return v;
+}
+
+func main() i32 {
+    value := 10;
+    var y = id(5);
+    i := 0;
+    s := 0;
+    while (i < 2) {
+        i = i + 1;
+        s = s + add(value);
+        value = 3;
+    }
+    return s + y;
+}

@@ -1,4 +1,5 @@
 // Rename, formatting, code actions, and signature help.
+#include <algorithm>
 #include "lsp/lsp.hpp"
 
 #include "lsp/internal.hpp"
@@ -209,6 +210,14 @@ Json rename_edits(const Doc &doc, const Cursor &cursor, const std::string &new_n
     // declaration and every other importer keep the old name, and the declaration's position names text in
     // that other file, not this one. The server has no text for those files, so it refuses the rename.
     if (!target->uri.empty() && target->uri != doc.uri) {
+        return jnull();
+    }
+    // A package-level name of a package with several files may be used in a sibling file. Renaming it
+    // here only would break those uses, so the rename is refused for the same reason.
+    if (!target->local && !doc.package_name.empty() &&
+        std::any_of(doc.syms.begin(), doc.syms.end(), [&](const Sym &sym) {
+            return !sym.uri.empty() && sym.uri != doc.uri && sym.package_key == target->package_key;
+        })) {
         return jnull();
     }
     std::vector<std::pair<uint32_t, uint32_t>> spans;

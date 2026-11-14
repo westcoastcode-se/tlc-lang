@@ -1592,6 +1592,53 @@ void recheck(Doc &doc, const std::vector<Doc> &docs, const std::string &workspac
     Checked checked = check_buffer(doc.path, doc.text, doc.uri, overlays, roots);
     doc.syms = std::move(checked.syms);
     doc.notes = checked.notes;
+    doc.package_name = std::move(checked.package_name);
+    doc.read_paths = std::move(checked.read_paths);
+    // A note or a definition in another open file uses the URI that editor sent, not the canonical
+    // `file:///...` this check built. `file://localhost/...`, a symlinked directory, and `+` spelled
+    // raw are the same file, and publishing both spellings would show each diagnostic twice.
+    std::unordered_map<std::string, std::string> spelled;
+    for (const Doc &other : docs) {
+        if (&other != &doc && !other.path.empty()) {
+            spelled.emplace(other.path, other.uri);
+        }
+    }
+    const auto respell = [&](std::string &uri) {
+        if (uri.empty() || uri == doc.uri) {
+            return;
+        }
+        const auto found = spelled.find(open_path_for(uri_to_path(uri)));
+        if (found != spelled.end()) {
+            uri = found->second;
+        }
+    };
+    for (Note &note : doc.notes) {
+        respell(note.uri);
+    }
+    for (Sym &sym : doc.syms) {
+        respell(sym.uri);
+    }
+}
+
+std::vector<std::size_t> dependents(const std::vector<Doc> &docs, const std::string &changed_uri,
+                                    const std::string &changed_path, const std::string &changed_package) {
+    std::vector<std::size_t> out;
+    const std::string dir = std::filesystem::path(changed_path).parent_path().string();
+    for (std::size_t i = 0; i < docs.size(); ++i) {
+        const Doc &other = docs[i];
+        if (other.uri == changed_uri) {
+            continue;
+        }
+        const bool read = std::find(other.read_paths.begin(), other.read_paths.end(), changed_path) !=
+                          other.read_paths.end();
+        // A new file of the package is not in the sibling's last check. Its directory and package say it is.
+        const bool same_package = !changed_package.empty() && !dir.empty() && other.package_name == changed_package &&
+                                  std::filesystem::path(other.path).parent_path().string() == dir;
+        if (read || same_package) {
+            out.push_back(i);
+        }
+    }
+    return out;
 }
 
 const Json *text_document(const Json &params) {

@@ -949,6 +949,10 @@ struct FunctionDecl {
     // `(a, b) { ... }` takes its parameter and result types from the expected function pointer.
     bool inferred = false;
     bool elaborated = false;
+    // An inferred literal elaborated for a C function pointer, `outer((cb) { ... })`. A parameter whose
+    // wanted type was a C function pointer keeps that type, so a call through it uses the C convention.
+    std::vector<uint8_t> c_abi_params;
+    bool c_abi_result = false;
     // Scope id of this function while it is checked. Zero before that.
     int function_id = 0;
     // Function pointers read from an enclosing function, in first-use order.

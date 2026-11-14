@@ -439,6 +439,9 @@ class Checker {
     void pop();
     bool captured(const Symbol &symbol) const;
     bool fn_pointer(const Type &type) const;
+    // An enum type that carries its underlying width in `rank` and `is_unsigned`. `same_type` compares only
+    // the id. The C convention reads the width: `enum(u8)` is a byte that C zero-extends.
+    Type enum_type(int id) const;
     // A tlc function named where a C function pointer is expected. Marks the name for a C wrapper.
     bool c_thunk(const Expr &expr, const Type &want);
     // The C integer extension of a signature: the result, then each parameter. See `Expr::Name::c_ext`.
@@ -943,6 +946,11 @@ class Checker {
     // `u32` and 64-bit operands fold at their width. The other operands keep `eval_int_op`.
     bool wide_operand(const Expr &expr, int depth = 0);
     std::optional<int> fold_int_binary(const Expr &expr, TokenKind op, int lhs, int rhs);
+    // `check_expr` folds every sub-expression, and each fold of a long `1u32 + 1u32 + ...` walked the whole
+    // chain again. These remember the answer per node while no scope changes. A declaration, a push, or a
+    // pop starts a new generation, so a name is never read with an old meaning.
+    uint64_t fold_generation_ = 1;
+    std::unordered_map<const Expr *, std::pair<uint64_t, bool>> wide_operand_cache_;
     // `3000000000u32 + 1u32`. The width is the suffix. A value `fold_int` holds is not one.
     struct WideInt {
         uint64_t value = 0;
@@ -950,6 +958,8 @@ class Checker {
         bool is_unsigned = false;
     };
     std::optional<WideInt> fold_wide_int(const Expr &expr);
+    std::optional<WideInt> fold_wide_int_uncached(const Expr &expr);
+    std::unordered_map<const Expr *, std::pair<uint64_t, std::optional<WideInt>>> fold_wide_cache_;
     // File-scope `const k = 3000000000u32`, `3000000000`, or `4u64`. A local `const` is not.
     std::optional<WideInt> file_scope_const_wide(const Expr &expr);
     // Replace that sum with the wrapped literal. False when `fold_int` already holds it.

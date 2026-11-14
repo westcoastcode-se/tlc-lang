@@ -14,6 +14,9 @@ bool same_default_shape(const FunctionDecl &lhs, const FunctionDecl &rhs);
 
 void Checker::check_isolated(uint32_t file, const FunctionDecl &fn) {
     auto saved_scopes = std::move(scopes_);
+    // The nested check pops its own scopes. The caller's held names survive it.
+    auto saved_held = std::move(held_names_);
+    held_names_.clear();
     const uint32_t saved_file = file_id_;
     // The caller may be learning a result type. This body is the real check of the specialization.
     const bool saved_quiet = quiet_;
@@ -63,6 +66,7 @@ void Checker::check_isolated(uint32_t file, const FunctionDecl &fn) {
     check_function(fn);
     pop();
     scopes_ = std::move(saved_scopes);
+    held_names_ = std::move(saved_held);
     file_id_ = saved_file;
     quiet_ = saved_quiet;
 }
@@ -746,6 +750,9 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         }
         if (origin == nullptr || !origin->is_union || origin->tag_name.empty()) {
             std::vector<Scope> saved_scopes = std::move(scopes_);
+            // The nested check pops its own scopes. The caller's held names survive it.
+            auto saved_held = std::move(held_names_);
+            held_names_.clear();
             scopes_.clear();
             push();
             if (const auto found = statics_.find(owner); found != statics_.end()) {
@@ -772,6 +779,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             }
             pop();
             scopes_ = std::move(saved_scopes);
+            held_names_ = std::move(saved_held);
         }
         StructDecl arm;
         arm.loc = loc;
@@ -850,6 +858,9 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     if (!spec.is_union || spec.tag_name.empty()) {
         // The value is checked in the struct's file, not in the call that instantiates it.
         std::vector<Scope> saved_scopes = std::move(scopes_);
+        // The nested check pops its own scopes. The caller's held names survive it.
+        auto saved_held = std::move(held_names_);
+        held_names_.clear();
         scopes_.clear();
         push();
         if (const auto found = statics_.find(owner); found != statics_.end()) {
@@ -876,6 +887,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         }
         pop();
         scopes_ = std::move(saved_scopes);
+        held_names_ = std::move(saved_held);
     }
     for (const OwnedFn &owned : owned_fns_) {
         if (owned.file_id != owner || owned.fn.method_struct != templ->name) {

@@ -1,0 +1,22 @@
+// A cast and a narrow literal fold at their own width, the same as at run time. `i64(-5) * 2` is -10,
+// `i32(3000000000u32)` keeps the low bits, and `100u8 & 4294967295i64` promotes the `u8` first.
+const big = 3000000000u32;
+const a1 = i64(-5) * 2;
+const a2 = i64(-5) / 2;
+const a3 = i64(-1) < 0;
+const a4 = u32(-1) == 4294967295u32;
+var a5 = i32(big >> 28);
+var a6 = i32(3000000000u32);
+var a7 = u8(3000000000u32);
+var a8 = u64(3000000000u32);
+const a9 = 100u8 & 4294967295i64;
+const a10 = 100u8 + 4000000000u32;
+const a11 = 200u8 + 100;
+
+func main() i32 {
+    var b = 3000000000u32;
+    if (a1 != i64(-5) * 2 || a2 != i64(-5) / 2 || !a3 || !a4) { return 1; }
+    if (a5 != i32(b >> 28) || a6 != i32(b) || a7 != u8(b) || a8 != u64(b)) { return 2; }
+    if (a9 != 100i64 || a10 != 4000000100u32 || a11 != 300) { return 3; }
+    return 42;
+}

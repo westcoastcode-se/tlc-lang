@@ -1,0 +1,7 @@
+// The outer index of a multi-dimensional array is checked. `a[3]` on `[3][2]i32` panics, as `a[3]` on `[3]i32` does.
+func main() i32 {
+    var a [3][2]i32 = {{1, 2}, {3, 4}, {5, 6}};
+    var k = 3;
+    a[k][1] = 9;
+    return a[2][1];
+}

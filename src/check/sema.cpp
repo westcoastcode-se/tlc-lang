@@ -317,6 +317,10 @@ bool c_same_convention(const Type &signature) {
         if (type.kind == TypeKind::Int || type.kind == TypeKind::Char) {
             return width_of(type) >= 32;
         }
+        // `enum(u8)` and `enum(i16)` are narrow integers to C. `Checker::enum_type` stores that width.
+        if (type.kind == TypeKind::Enum) {
+            return type.rank != 1 && type.rank != 2;
+        }
         return true;
     };
     if (signature.result && !alike(*signature.result)) {

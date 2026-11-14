@@ -120,7 +120,13 @@ A function pointer type written in an `extern(abi="c")` signature, or as a field
 
 C and tlc pass a struct, a union, and an integer narrower than 32 bits differently. Where a signature has one of those, a C function pointer type and the tlc type with the same spelling are different types. `var f func (FI) i32 = get_cb()` is `type mismatch: expected *func(FI) i32, found *extern(abi="c") func(FI) i32`. A signature of pointers, `i32`, `i64`, and floats is passed alike, and the two types are one type.
 
-A tlc function named where C expects such a pointer, `set_cb(mine)`, is passed as a C wrapper. A function literal, `set_cb((v) { return v.a; })`, is too. A tlc function pointer value has no wrapper, and storing it there is `type mismatch`. An `extern(abi="c")` function, with or without a body, is already a C function and is passed as it is.
+A tlc function named where C expects such a pointer, `set_cb(mine)`, is passed as a C wrapper. A static method, `set_cb(Box.run)`, and a function literal, `set_cb((v) { return v.a; })`, are too. A literal whose parameter is a C function pointer calls it the C way. A tlc function pointer value has no wrapper, and storing it there is `type mismatch`. An `extern(abi="c")` function, with or without a body, is already a C function and is passed as it is. For an overloaded name, the `extern(abi="c")` list that matches is passed as it is, and a matching tlc list is wrapped.
+
+Inside an `extern(abi="c")` body, a function pointer parameter and a function pointer result are C function pointers. `return mine` there returns the C wrapper.
+
+`enum(u8)`, `enum(i8)`, `enum(u16)`, and `enum(i16)` are narrow integers to C, and are extended as `u8`, `i8`, `u16`, and `i16` are.
+
+A field of an `extern(abi="c") struct` that is a function pointer with several results is `extern function cannot use several results`.
 
 ```tlc
 extern(abi="c") type FI struct { a i32; b f32; };

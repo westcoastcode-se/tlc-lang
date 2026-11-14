@@ -1,4 +1,5 @@
 #include "driver/driver.hpp"
+#include "battery_run.hpp"
 #include "harness.hpp"
 
 #include <algorithm>

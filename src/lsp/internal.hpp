@@ -494,7 +494,15 @@ struct Doc {
     int version = 0;
     std::vector<Sym> syms;
     std::vector<Note> notes;
+    // From the last check. An edit or a close rechecks the documents whose check read that file.
+    std::string package_name;
+    std::vector<std::string> read_paths;
 };
+
+// The open documents to check again after `changed_path` changed or closed. A document whose check read
+// that file, and an open file of the same package in that directory when `changed_package` is set.
+std::vector<std::size_t> dependents(const std::vector<Doc> &docs, const std::string &changed_uri,
+                                    const std::string &changed_path, const std::string &changed_package);
 
 int completion_kind(Role role);
 int symbol_kind(Role role);
@@ -566,6 +574,9 @@ void index_imports(const PackageGraph &graph, const PackageNode &entry, const st
 struct Checked {
     std::vector<Sym> syms;
     std::vector<Note> notes;
+    // The `package` name the file declares, or empty. Every file the check read, by path.
+    std::string package_name;
+    std::vector<std::string> read_paths;
 };
 
 // `overlays` holds the unsaved text of other open files, by path. `roots` are package search roots

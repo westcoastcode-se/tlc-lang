@@ -9,6 +9,7 @@ int run_pkg_tests();
 int run_program_tests();
 int run_abi_tests();
 int run_lsp_tests();
+int run_battery_tests();
 
 int main() {
     int failed = 0;
@@ -21,6 +22,7 @@ int main() {
     failed += run_program_tests();
     failed += run_abi_tests();
     failed += run_lsp_tests();
+    failed += run_battery_tests();
     if (failed != 0) {
         std::cerr << failed << " check(s) failed\n";
         return 1;

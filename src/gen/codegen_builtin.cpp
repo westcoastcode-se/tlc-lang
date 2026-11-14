@@ -395,7 +395,6 @@ void CodeGen::guard_divisor(SourceLoc loc, llvm::Value *divisor) {
 llvm::Value *CodeGen::emit_shift(SourceLoc loc, bool left, bool is_unsigned, llvm::Value *lhs, llvm::Value *rhs) {
     // An amount at or past the width, or a negative amount, has a defined result. `<<` and an unsigned
     // `>>` give 0. A signed `>>` fills with the sign bit. `--debug` panics with `shift out of range`.
-    // A constant amount was checked by the compiler. A comptime body already faults on a bad amount.
     const auto plain = [&](llvm::Value *amount) -> llvm::Value * {
         if (left) {
             return builder_.CreateShl(lhs, amount);
@@ -403,11 +402,37 @@ llvm::Value *CodeGen::emit_shift(SourceLoc loc, bool left, bool is_unsigned, llv
         return is_unsigned ? builder_.CreateLShr(lhs, amount) : builder_.CreateAShr(lhs, amount);
     };
     auto *type = llvm::dyn_cast<llvm::IntegerType>(lhs->getType());
-    if (type == nullptr || rhs->getType() != lhs->getType() || llvm::isa<llvm::ConstantInt>(rhs) || eval_ ||
-        function_ == nullptr || terminated()) {
+    if (type == nullptr || rhs->getType() != lhs->getType() || function_ == nullptr || terminated()) {
         return plain(rhs);
     }
     const unsigned width = type->getBitWidth();
+    // A constant past the width was reported by the checker. A comptime body faults with the call stack.
+    // Either way the result is the defined one, never a poison shift. `x <<= 4294967296u64` is this case.
+    if (const auto *amount = llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
+        if (amount->getValue().uge(width)) {
+            if (eval_) {
+                install_eval_fault();
+                eval_fail(loc, 2);
+            } else {
+                error(loc, "shift out of range");
+            }
+            // Both branches report an error, so this value is never run. A fault may already end the block.
+            return llvm::ConstantInt::get(type, 0);
+        }
+        return plain(rhs);
+    }
+    // A comptime body faults on a bad amount, as on a division by zero, for `<<` and for `<<=` alike.
+    if (eval_) {
+        install_eval_fault();
+        llvm::Value *bad = builder_.CreateICmpUGE(rhs, llvm::ConstantInt::get(type, width));
+        auto *fail = llvm::BasicBlock::Create(context_, "shift.fail", function_);
+        auto *ok = llvm::BasicBlock::Create(context_, "shift.ok", function_);
+        builder_.CreateCondBr(bad, fail, ok);
+        builder_.SetInsertPoint(fail);
+        eval_fail(loc, 2);
+        builder_.SetInsertPoint(ok);
+        return plain(rhs);
+    }
     llvm::Value *bad = builder_.CreateICmpUGE(rhs, llvm::ConstantInt::get(type, width));
     if (checks_) {
         auto *fail = llvm::BasicBlock::Create(context_, "shift.fail", function_);

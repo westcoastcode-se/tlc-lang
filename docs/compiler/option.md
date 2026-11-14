@@ -20,7 +20,7 @@ tlc --help
 | `--check` | Parse and typecheck. Emit no code. |
 | `--emit-llvm` | Print LLVM IR. |
 | `--emit-obj` | Write an object file. The name is `a.o` when `-o` is absent. |
-| `--run` | Compile, link, and run. |
+| `--run` | Compile, link, and run. The program uses this terminal's stdin, stdout, and stderr. |
 | `--test` | Compile, link, and run every `test`. `main` is not called. Bare `new` and `delete` use `debug.DebugAllocator`. This is a debug build. |
 | `--debug` | A null postfix `!` calls `builtin.panic("null pointer")`. A race on a global is reported. `tlc --test` does this too. A release build leaves both checks out. |
 | `--allocator <type>` | Type that bare `new` and `delete` use. `Malloc` is the default and calls `malloc` and `free`. `pkg.Name` is a struct in that package, and it satisfies `Allocator`. `tlc --test` uses `debug.DebugAllocator` unless this flag names a type. |

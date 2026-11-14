@@ -406,9 +406,17 @@ Type Checker::elaborate_inferred(FunctionDecl &fn, const Type &want) {
         spelled.type_name = type_desc(type);
         return spelled;
     };
+    const auto c_pointer = [](const Type &type) {
+        return type.kind == TypeKind::Pointer && type.pointee != nullptr && type.pointee->kind == TypeKind::Function &&
+               type.pointee->c_abi;
+    };
+    fn.c_abi_params.assign(fn.params.size(), 0);
     for (std::size_t i = 0; i < fn.params.size(); ++i) {
         apply_spelling(fn.params[i], spell(spell, signature->params[i]));
+        // A spelling has no C function pointer. The flag keeps it for `function_signature` and the body.
+        fn.c_abi_params[i] = c_pointer(signature->params[i]) ? 1 : 0;
     }
+    fn.c_abi_result = c_pointer(*signature->result);
     fn.results.clear();
     if (signature->result->kind == TypeKind::Tuple) {
         for (const Type &part : signature->result->results) {
@@ -1295,6 +1303,12 @@ std::string Checker::c_ext_of(const Type &signature) const {
     // C extends an integer narrower than `int` in the register. `i8` and `i16` sign-extend.
     // `u8`, `u16`, `bool`, and a plain `char` zero-extend.
     const auto one = [](const Type &type) -> char {
+        if (type.kind == TypeKind::Enum) {
+            if (type.rank != 1 && type.rank != 2) {
+                return 'n';
+            }
+            return type.is_unsigned ? 'z' : 's';
+        }
         if (type.kind != TypeKind::Int && type.kind != TypeKind::Char && type.kind != TypeKind::Bool) {
             return 'n';
         }
@@ -1347,10 +1361,12 @@ bool Checker::c_thunk(const Expr &expr, const Type &want) {
     const Symbol *symbol = nullptr;
     bool *flag = nullptr;
     std::string *ext = nullptr;
+    const FunctionDecl **overload = nullptr;
     if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
         symbol = lookup(named->text);
         flag = &named->c_thunk;
         ext = &named->c_ext;
+        overload = &named->overload;
     } else if (const auto *selector = std::get_if<Expr::Selector>(&expr.data);
                selector != nullptr && selector->base != nullptr) {
         const auto *base = std::get_if<Expr::Name>(&selector->base->data);
@@ -1359,14 +1375,72 @@ bool Checker::c_thunk(const Expr &expr, const Type &want) {
             symbol = find_export(package->package_file, selector->field);
             flag = &selector->c_thunk;
             ext = &selector->c_ext;
+            overload = &selector->overload;
+        } else {
+            // `Box.run` and `pkg.Box.run` name a static method. It is a function, the same as a name.
+            int struct_id = -1;
+            if (base != nullptr) {
+                if (package == nullptr) {
+                    struct_id = find_tag(file_id_, base->text);
+                }
+            } else if (const auto *inner = std::get_if<Expr::Selector>(&selector->base->data);
+                       inner != nullptr && inner->base != nullptr) {
+                const auto *pkg = std::get_if<Expr::Name>(&inner->base->data);
+                const Symbol *pkg_symbol = pkg == nullptr ? nullptr : lookup(pkg->text);
+                if (pkg_symbol != nullptr && pkg_symbol->is_package) {
+                    struct_id = find_tag(pkg_symbol->package_file, inner->field);
+                }
+            }
+            if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
+                return false;
+            }
+            const StructInfo &info = structs_[static_cast<std::size_t>(struct_id)];
+            bool hidden = false;
+            const MethodInfo *method = find_visible_method(info.file_id, info.name, selector->field, hidden);
+            if (method == nullptr || !method->is_static || !method->more.empty() || method->extern_c ||
+                method->type.kind != TypeKind::Function || method->type.c_abi ||
+                !same_type(method->type, tlc_signature)) {
+                return false;
+            }
+            check_expr(expr, true);
+            selector->c_thunk = true;
+            selector->c_ext = c_ext_of(*want.pointee);
+            return true;
         }
     }
     if (symbol == nullptr || !symbol->is_function || flag == nullptr) {
         return false;
     }
     if (symbol->lists.size() > 1) {
-        if (!pick_overload(const_cast<Expr &>(expr), tlc_signature)) {
+        // Each list is matched on its own. An `extern(abi="c")` list is already the C function and is passed
+        // as it is. A tlc list matches the tlc form and is passed through its wrapper. Anything else falls
+        // through to the ordinary check, which reports the mismatch.
+        const FunctionDecl *chosen = nullptr;
+        bool chosen_c = false;
+        int matches = 0;
+        for (const FnList &list : symbol->lists) {
+            if (list.type.kind != TypeKind::Function || list.type.result == nullptr || list.decl == nullptr) {
+                continue;
+            }
+            if (same_type(list.type, *want.pointee)) {
+                chosen = list.decl;
+                chosen_c = true;
+                ++matches;
+            } else if (!list.type.c_abi && same_type(list.type, tlc_signature)) {
+                chosen = list.decl;
+                chosen_c = false;
+                ++matches;
+            }
+        }
+        if (matches != 1 || chosen == nullptr || overload == nullptr) {
             return false;
+        }
+        if (!allow_unsafe_fn(chosen->unsafe, expr_loc(expr))) {
+            return true;
+        }
+        *overload = chosen;
+        if (chosen_c) {
+            return true;
         }
     } else {
         // An `extern(abi="c")` function is already a C function. It matches without a wrapper.

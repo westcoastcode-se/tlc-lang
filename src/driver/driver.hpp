@@ -42,6 +42,9 @@ struct Options {
     // `--allocator`. Empty keeps `Malloc`, except `tlc --test`, which uses `debug.DebugAllocator`.
     std::string allocator;
     std::string error;
+    // `--run` and `--test` from the command line. The program writes to this process's own stdout and
+    // stderr as it runs, and reads its stdin. Otherwise its output is collected into `CompileOutput`.
+    bool inherit_output = false;
 };
 
 struct CompileOutput {

@@ -926,6 +926,20 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         error(node.loc, "type mismatch");
                         return type_invalid();
                     }
+                    // `x <<= 4294967296u64` is past every width. The `i32` fold does not hold that amount.
+                    if (node.rhs != nullptr && (node.op == TokenKind::LtLtEq || node.op == TokenKind::GtGtEq) &&
+                        !fold_int(*node.rhs)) {
+                        if (const std::optional<WideInt> wide = fold_wide_int(*node.rhs)) {
+                            const int width = std::max(integer_width(place), integer_width(usual(place, rhs)));
+                            const bool negative = !wide->is_unsigned && wide->bits <= 64 &&
+                                                  ((wide->value >> (wide->bits - 1)) & 1u) != 0;
+                            if ((negative || wide->value >= static_cast<uint64_t>(width)) &&
+                                constant_faults_.insert(&expr).second) {
+                                error(node.loc, "shift out of range");
+                                return type_invalid();
+                            }
+                        }
+                    }
                     if (node.rhs != nullptr) {
                         if (const std::optional<int> amount = fold_int(*node.rhs)) {
                             const bool div = node.op == TokenKind::SlashEq || node.op == TokenKind::PercentEq;
@@ -1608,7 +1622,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 if (source.kind == TypeKind::Struct && source.struct_id >= 0 &&
                                     source.struct_id < static_cast<int>(structs_.size()) &&
                                     structs_[static_cast<std::size_t>(source.struct_id)].tag_enum == enum_id) {
-                                    return type_enum(enum_id);
+                                    return enum_type(enum_id);
                                 }
                                 if (source.kind != TypeKind::Invalid) {
                                     error(node.loc, "type mismatch");
@@ -1630,7 +1644,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                         if (enum_id >= 0 && source.kind == TypeKind::Struct && source.struct_id >= 0 &&
                                             source.struct_id < static_cast<int>(structs_.size()) &&
                                             structs_[static_cast<std::size_t>(source.struct_id)].tag_enum == enum_id) {
-                                            return type_enum(enum_id);
+                                            return enum_type(enum_id);
                                         }
                                         if (source.kind != TypeKind::Invalid) {
                                             error(node.loc, "type mismatch");
@@ -2313,7 +2327,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (node.base != nullptr) {
                     const int enum_id = enum_designator(*node.base);
                     if (enum_id >= 0 && find_enum_member(enum_id, node.field) != nullptr) {
-                        return type_enum(enum_id);
+                        return enum_type(enum_id);
                     }
                     Type assoc;
                     if (assoc_from_selector(node, assoc)) {

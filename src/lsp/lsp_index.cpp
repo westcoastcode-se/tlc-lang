@@ -1555,6 +1555,14 @@ Checked check_buffer(const std::string &path, const std::string &text, const std
         }
         checked.notes.push_back(std::move(note));
     }
+    if (entry != nullptr && entry->unit.package) {
+        checked.package_name = entry->unit.package->name;
+    }
+    for (const PackageNode &node : graph.nodes) {
+        if (!node.path.empty()) {
+            checked.read_paths.push_back(node.path);
+        }
+    }
     return checked;
 }
 

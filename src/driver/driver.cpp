@@ -9,6 +9,7 @@
 #include "llvm/Config/llvm-config.h"
 
 #include <cerrno>
+#include <csignal>
 #include <cstdlib>
 #include <filesystem>
 #include <system_error>
@@ -442,6 +443,65 @@ ProcessOutput run_process(const std::vector<std::string> &args) {
     return result;
 }
 
+// The program `run_inherited` waits for. A signal that reaches this process is passed on to it.
+volatile sig_atomic_t running_child = 0;
+
+void forward_signal(int sig) {
+    if (running_child > 0) {
+        kill(static_cast<pid_t>(running_child), sig);
+    }
+}
+
+// Runs the program with this process's stdin, stdout, and stderr. Its output appears as it is written,
+// in the order it is written. SIGINT, SIGTERM, SIGQUIT, and SIGHUP are passed on to the program, and this
+// process waits for it, so the temporary executable is still removed. A signal is exit 128, as with
+// `run_process`.
+int run_inherited(const std::vector<std::string> &args) {
+    std::cout.flush();
+    std::cerr.flush();
+    constexpr int kForwarded[] = {SIGINT, SIGTERM, SIGQUIT, SIGHUP};
+    struct sigaction forward {};
+    forward.sa_handler = forward_signal;
+    sigemptyset(&forward.sa_mask);
+    struct sigaction saved[4] {};
+    const auto restore = [&]() {
+        for (int n = 0; n < 4; ++n) {
+            sigaction(kForwarded[n], &saved[n], nullptr);
+        }
+    };
+    for (int n = 0; n < 4; ++n) {
+        sigaction(kForwarded[n], &forward, &saved[n]);
+    }
+    const pid_t pid = fork();
+    if (pid < 0) {
+        restore();
+        std::cerr << "error: fork failed\n";
+        return 127;
+    }
+    if (pid == 0) {
+        restore();
+        std::vector<char *> argv;
+        for (const std::string &arg : args) {
+            argv.push_back(const_cast<char *>(arg.c_str()));
+        }
+        argv.push_back(nullptr);
+        execvp(argv[0], argv.data());
+        _exit(127);
+    }
+    running_child = pid;
+    int status = 0;
+    pid_t waited = -1;
+    do {
+        waited = waitpid(pid, &status, 0);
+    } while (waited < 0 && errno == EINTR);
+    running_child = 0;
+    restore();
+    if (waited < 0) {
+        return 127;
+    }
+    return WIFEXITED(status) ? WEXITSTATUS(status) : 128;
+}
+
 std::string make_temp(const std::string &suffix) {
     std::string pattern = "/tmp/tlcXXXXXX" + suffix;
     const int fd = mkstemps(pattern.data(), static_cast<int>(suffix.size()));
@@ -583,6 +643,10 @@ CompileOutput compile_source(const Options &opt) {
         output.status = 0;
         return output;
     }
+    if (opt.inherit_output) {
+        output.status = run_inherited({exe_path});
+        return output;
+    }
     const ProcessOutput ran = run_process({exe_path});
     output.program_stdout = ran.out;
     output.program_stderr = ran.err;
@@ -613,7 +677,9 @@ int execute(const Options &opt) {
     case Mode::Compile:
     case Mode::Run:
     case Mode::Test: {
-        const CompileOutput output = compile_source(opt);
+        Options streamed = opt;
+        streamed.inherit_output = opt.mode == Mode::Run || opt.mode == Mode::Test;
+        const CompileOutput output = compile_source(streamed);
         if (opt.mode == Mode::EmitLlvm) {
             std::cout << output.ir;
         }

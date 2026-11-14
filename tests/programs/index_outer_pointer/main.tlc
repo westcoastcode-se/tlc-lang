@@ -1,0 +1,7 @@
+// `p[k]` on `*[3][2]i32` is `(*p)[k]`, checked against 3.
+func main() i32 {
+    var g [3][2]i32 = {{1, 2}, {3, 4}, {5, 6}};
+    var p = &g;
+    var k = 3;
+    return p[k][1];
+}

@@ -300,6 +300,51 @@ int run_cli_tests() {
         EXPECT(check, many.code == 0);
         EXPECT(check, took < std::chrono::seconds(10));
     }
+    // `tlc --run` gives the program this process's stdin, stdout, and stderr. Output keeps the order it
+    // was written in, across both streams, and a signal sent to tlc reaches the program.
+    {
+        write_file("stream.tlc",
+                   "extern(abi=\"c\") func write(fd i32, buf *const u8, n i64) i64;\n"
+                   "extern(abi=\"c\") func read(fd i32, buf *u8, n i64) i64;\n"
+                   "func main() i32 {\n"
+                   "    write(1, \"out 1\\n\", 6i64);\n"
+                   "    write(2, \"err 1\\n\", 6i64);\n"
+                   "    write(1, \"out 2\\n\", 6i64);\n"
+                   "    var buf [8]u8;\n"
+                   "    return i32(read(0, &buf[0], 8i64));\n"
+                   "}\n");
+        const std::string stream = (dir.path / "stream.tlc").string();
+        const tlc::test::Proc merged =
+            tlc::test::spawn({"sh", "-c", "printf hello | '" + bin + "' --run '" + stream + "' -lc 2>&1"});
+        EXPECT(check, merged.code == 5);
+        EXPECT_EQ(check, merged.out, std::string("out 1\nerr 1\nout 2\n"));
+        write_file("slow.tlc",
+                   "extern(abi=\"c\") func sleep(s u32) u32;\n"
+                   "func main() i32 {\n"
+                   "    sleep(30u32);\n"
+                   "    return 0;\n"
+                   "}\n");
+        const std::string slow = (dir.path / "slow.tlc").string();
+        const auto start = std::chrono::steady_clock::now();
+        const tlc::test::Proc stopped = tlc::test::spawn(
+            {"sh", "-c", "'" + bin + "' --run '" + slow + "' -lc & pid=$!; sleep 3; kill -TERM $pid; wait $pid"});
+        const auto took = std::chrono::steady_clock::now() - start;
+        EXPECT(check, stopped.code == 128);
+        EXPECT(check, took < std::chrono::seconds(20));
+    }
+    // A long `u32` sum folds without walking the chain again at each node. 400 terms took 8 seconds.
+    {
+        std::string sum = "const c = 1u32";
+        for (int n = 1; n < 600; ++n) {
+            sum += " + 1u32";
+        }
+        write_file("wide_sum.tlc", sum + ";\nfunc main() i32 {\n    return i32(c) - 600;\n}\n");
+        const auto start = std::chrono::steady_clock::now();
+        const tlc::test::Proc folded = tlc::test::spawn({bin, "--run", (dir.path / "wide_sum.tlc").string()});
+        const auto took = std::chrono::steady_clock::now() - start;
+        EXPECT(check, folded.code == 0);
+        EXPECT(check, took < std::chrono::seconds(10));
+    }
     // The command line lists 100 diagnostics. A 101st is replaced by `too many errors`.
     {
         std::string exact = "func main() i32 {\n    return 0;\n}\n";

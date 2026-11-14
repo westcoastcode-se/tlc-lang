@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <optional>
+#include <set>
 #include <string_view>
 #include <system_error>
 #include <unordered_map>
@@ -507,30 +508,85 @@ class Resolver {
     }
 
     // The entry's directory is its package. Each other source file there joins it under the directory key.
+    // A file is a sibling when it declares the same package. A file of another package in that directory
+    // is not part of this one. An open buffer not saved yet is a sibling too. A `_unix` or `_windows`
+    // entry takes the siblings of its own family, not the host's.
     void load_entry_siblings(const fs::path &entry, std::size_t entry_index) {
         const fs::path dir = entry.parent_path();
+        const std::string name = entry.filename().string();
+        const auto family_of = [](const std::string &file) -> std::string {
+            if (ends_with(file, "_unix.tlc")) {
+                return "unix";
+            }
+            if (ends_with(file, "_windows.tlc")) {
+                return "windows";
+            }
+            return {};
+        };
+        const std::string entry_family = family_of(name);
+        const auto wanted = [&](const fs::path &file) {
+            const std::string family = family_of(file.filename().string());
+            if (family.empty()) {
+                return true;
+            }
+            return entry_family.empty() ? family_source(file) : family == entry_family;
+        };
+        std::set<std::string> candidates;
+        std::error_code dir_ec;
+        for (fs::directory_iterator it(dir, dir_ec), end; !dir_ec && it != end; it.increment(dir_ec)) {
+            std::error_code file_ec;
+            if (it->is_regular_file(file_ec) && !file_ec && it->path().extension() == ".tlc" && wanted(it->path())) {
+                std::error_code canon_ec;
+                const fs::path canonical = fs::canonical(it->path(), canon_ec);
+                candidates.insert((canon_ec ? it->path() : canonical).string());
+            }
+        }
+        for (const auto &[path, text] : overlays_) {
+            (void)text;
+            const fs::path file(path);
+            if (file.parent_path() == dir && file.extension() == ".tlc" && wanted(file)) {
+                candidates.insert(file.string());
+            }
+        }
+        const std::string package = graph_.nodes[entry_index].unit.package->name;
+        // The `package` line is read on its own. A file of another package adds no source and no diagnostic.
+        const auto declared = [&](const std::string &path) -> std::string {
+            std::optional<std::string> text;
+            if (const auto over = overlays_.find(path); over != overlays_.end()) {
+                text = over->second;
+            } else {
+                text = read_file(path);
+            }
+            if (!text) {
+                return {};
+            }
+            SourceSet scratch;
+            DiagnosticEngine quiet(scratch);
+            SourceFile &file = scratch.add(path, std::move(*text));
+            Lexer lexer(file, quiet);
+            const std::vector<Token> tokens = lexer.tokenize();
+            if (tokens.size() >= 2 && tokens[0].kind == TokenKind::KwPackage &&
+                tokens[1].kind == TokenKind::Identifier) {
+                return tokens[1].text;
+            }
+            return {};
+        };
         std::vector<std::size_t> members{entry_index};
-        for (const fs::path &file : source_files(dir)) {
-            std::error_code ec;
-            const fs::path canonical = fs::canonical(file, ec);
-            if (ec || canonical == entry || by_path_.contains(canonical.string())) {
+        for (const std::string &candidate : candidates) {
+            if (candidate == entry.string() || by_path_.contains(candidate) || declared(candidate) != package) {
                 continue;
             }
-            const std::size_t index = load_new(canonical);
+            const std::size_t index = load_new(fs::path(candidate));
             if (index != kMissing) {
                 members.push_back(index);
             }
         }
-        const SourceLoc loc = graph_.nodes[entry_index].unit.package->loc;
-        const std::string qualifier = choose_qualifier(members, dir, loc);
-        const bool compiler_builtin = directory_is_std_builtin(dir);
-        const bool iteration_package = directory_is_std_seq(dir);
         for (const std::size_t index : members) {
             PackageNode &node = graph_.nodes[index];
             node.package_key = dir.string();
-            node.qualifier = qualifier;
-            node.compiler_builtin = compiler_builtin;
-            node.iteration_package = iteration_package;
+            node.qualifier = package;
+            node.compiler_builtin = directory_is_std_builtin(dir);
+            node.iteration_package = directory_is_std_seq(dir);
         }
     }
 

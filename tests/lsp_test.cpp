@@ -626,6 +626,89 @@ void check_package_siblings(tlc::test::Check &check, const std::string &bin) {
     fs::remove_all(root, ec);
 }
 
+// A sibling is a file of the same package. An unsaved new file of the package counts, a file of another
+// package in that directory does not, and closing a sibling checks the others against its saved text.
+void check_package_buffers(tlc::test::Check &check, const std::string &bin) {
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / ("tlc-lsp-buffers-" + std::to_string(getpid()));
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    fs::create_directories(root / "p", ec);
+    const std::string a_source = "package p;\n\nfunc helper() i32 {\n    return 1;\n}\n";
+    const std::string b_source = "package p;\n\nexport func f() i32 {\n    return helper();\n}\n";
+    const std::string other = "package q;\n\nfunc helper() i32 {\n    return 2;\n}\n";
+    {
+        std::ofstream(root / "p" / "a.tlc") << a_source;
+        std::ofstream(root / "p" / "b.tlc") << b_source;
+        std::ofstream(root / "p" / "q.tlc") << other;
+    }
+    int to_child[2] = {-1, -1};
+    int from_child[2] = {-1, -1};
+    EXPECT(check, ::pipe(to_child) == 0);
+    EXPECT(check, ::pipe(from_child) == 0);
+    const pid_t pid = ::fork();
+    EXPECT(check, pid >= 0);
+    if (pid == 0) {
+        ::dup2(to_child[0], STDIN_FILENO);
+        ::dup2(from_child[1], STDOUT_FILENO);
+        ::close(to_child[0]);
+        ::close(to_child[1]);
+        ::close(from_child[0]);
+        ::close(from_child[1]);
+        ::execl(bin.c_str(), bin.c_str(), "lsp", nullptr);
+        _exit(127);
+    }
+    ::close(to_child[0]);
+    ::close(from_child[1]);
+    const auto uri = [&](const std::string &name) { return std::string("file://") + (root / "p" / name).string(); };
+    const auto open = [&](const std::string &name, const std::string &text) {
+        send_json(to_child[1],
+                  std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                      uri(name) + R"(","languageId":"tlc","version":1,"text":")" + json_escape(text) + R"("}}})");
+    };
+    int request = 10;
+    const auto barrier = [&]() {
+        const std::string id = std::to_string(++request);
+        send_json(to_child[1], R"({"jsonrpc":"2.0","id":)" + id + R"(,"method":"shutdown"})");
+        return read_until(from_child[0], "\"id\":" + id, 4000);
+    };
+    send_json(to_child[1],
+              R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"capabilities":{},"rootUri":null}})");
+    EXPECT_HAS(check, read_message(from_child[0], 3000), "completionProvider");
+    // `q.tlc` declares `package q`. Its own `helper` is not a redefinition, and nothing reports a mismatch.
+    open("b.tlc", b_source);
+    std::string seen = barrier();
+    EXPECT(check, seen.find("redefinition") == std::string::npos);
+    EXPECT(check, seen.find("package") == std::string::npos);
+    EXPECT(check, seen.find("undeclared identifier") == std::string::npos);
+    // An unsaved new file of the package declares `fresh`. `b` may call it.
+    open("c.tlc", "package p;\n\nfunc fresh() i32 {\n    return 3;\n}\n");
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")") +
+                  uri("b.tlc") + R"(","version":2},"contentChanges":[{"text":")" +
+                  json_escape("package p;\n\nexport func f() i32 {\n    return helper() + fresh();\n}\n") + R"("}]}})");
+    seen = barrier();
+    EXPECT(check, seen.find("undeclared identifier") == std::string::npos);
+    // `a` renames `helper` without saving, so `b` breaks. Closing `a` reads the saved `helper` again.
+    open("a.tlc", a_source);
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")") +
+                  uri("a.tlc") + R"(","version":2},"contentChanges":[{"text":")" +
+                  json_escape("package p;\n\nfunc helper2() i32 {\n    return 1;\n}\n") + R"("}]}})");
+    EXPECT_HAS(check, barrier(), "undeclared identifier");
+    send_json(to_child[1], std::string(R"({"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":")") +
+                               uri("a.tlc") + R"("}}})");
+    seen = barrier();
+    EXPECT_HAS(check, seen, std::string(R"("uri":")") + uri("b.tlc") + R"(","version":2,"diagnostics":[])");
+    ::close(to_child[1]);
+    ::close(from_child[0]);
+    ::kill(pid, SIGKILL);
+    int status = 0;
+    ::waitpid(pid, &status, 0);
+    pending.clear();
+    fs::remove_all(root, ec);
+}
+
 } // namespace
 
 int run_lsp_tests() {
@@ -638,6 +721,7 @@ int run_lsp_tests() {
     check_localhost_uri(check, bin);
     check_close_keeps_other(check, bin);
     check_package_siblings(check, bin);
+    check_package_buffers(check, bin);
 
     char path[] = "/tmp/tlc-lsp-XXXXXX.tlc";
     const int file = ::mkstemps(path, 4);
