@@ -886,7 +886,24 @@ const FunctionDecl *Checker::comptime_callee(const Expr::Call &call) {
         return nullptr;
     }
     const FunctionDecl *decl = symbol->lists.front().decl;
-    if (decl == nullptr || !decl->is_comptime) {
+    if (decl == nullptr) {
+        return nullptr;
+    }
+    // An ordinary function whose body needs a parameter as a generic value, `width[n]()`, has no runtime
+    // body. With an integer or `bool` result it folds like a `comptime func`. `[n]i32` is specialized instead.
+    const auto scalar_result = [](const FunctionDecl &fn) {
+        if (fn.results.size() != 1 || fn.body == nullptr) {
+            return false;
+        }
+        const ResultSlot &slot = fn.results.front();
+        const std::string &name = slot.type_name;
+        const bool scalar = name == "bool" || name == "i32" || !sized_value_type(name).empty();
+        return scalar && fn.return_type == name && slot.type_package.empty() && !slot.is_struct && !slot.is_enum &&
+               slot.indirections == 0 && slot.optional == 0 && !slot.is_array && !slot.is_fn_ptr &&
+               slot.const_pointee == 0;
+    };
+    const bool folds = decl->pending_generic && scalar_result(*decl);
+    if (!decl->is_comptime && !folds) {
         return nullptr;
     }
     return decl;
@@ -4147,7 +4164,8 @@ bool Checker::bind_generic_values(Stmt &stmt, const std::vector<std::string> &na
             if (active[i] != arg.type_name || values[i] == nullptr) {
                 continue;
             }
-            const std::optional<int> value = fold_int(*values[i]);
+            // The parameter's value, up to the `i64` range. The generic it reaches checks it against `N`.
+            const std::optional<int64_t> value = value_arg_wide(*values[i]);
             if (!value) {
                 return;
             }

@@ -2252,48 +2252,6 @@ void Checker::prepare_written(std::string &type_name, std::string &type_package,
     type_args.clear();
 }
 
-namespace {
-
-// The range of a value parameter's written type. `int`, `char`, `short`, `long`, and no name keep the `i32`
-// rule. A `u64` holds what fits in `i64`.
-struct ValueRange {
-    int64_t low = -2147483648LL;
-    int64_t high = 2147483647LL;
-    int bits = 32;
-    bool is_unsigned = false;
-};
-
-ValueRange value_range(const std::string &type) {
-    ValueRange range;
-    if (type == "i8") {
-        range = {-128, 127, 8, false};
-    } else if (type == "u8") {
-        range = {0, 255, 8, true};
-    } else if (type == "i16") {
-        range = {-32768, 32767, 16, false};
-    } else if (type == "u16") {
-        range = {0, 65535, 16, true};
-    } else if (type == "u32") {
-        range = {0, 4294967295LL, 32, true};
-    } else if (type == "i64") {
-        range = {INT64_MIN, INT64_MAX, 64, false};
-    } else if (type == "u64") {
-        range = {0, INT64_MAX, 64, true};
-    }
-    return range;
-}
-
-// `N u8` is that type. The keyword forms are the old `i32` parameter.
-std::string written_value_type(const TypeParam &param) {
-    const std::string &name = param.constraint;
-    if (name == "i8" || name == "u8" || name == "i16" || name == "u16" || name == "u32" || name == "i64" ||
-        name == "u64") {
-        return name;
-    }
-    return {};
-}
-
-} // namespace
 
 std::optional<int64_t> Checker::value_arg_wide(const Expr &expr) {
     if (const std::optional<int> narrow = fold_int(expr)) {

@@ -1704,6 +1704,8 @@ When every parameter is `comptime` and the body is one `return` of a constant `i
 
 The compiler still compiles that function.
 
+When every parameter is `comptime` and the body uses one as a generic value, `func wide(comptime n i64) i64 { return width[n](); }`, the body runs at each call and the call is that result. The result may be `i32`, `bool`, or any integer type. The parameter keeps its written type: `comptime n i64` takes 3000000000, and `comptime n u8` takes 0 through 255. A value that does not fit is `value does not fit`.
+
 A mix of a `comptime` parameter and a runtime parameter is specialized per constant.
 
 The compiler does not pass the comptime parameter.

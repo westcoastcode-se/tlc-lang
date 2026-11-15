@@ -3004,10 +3004,13 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
 
 namespace {
 
+// `comptime n i32`, `comptime n i64`, `comptime n u8`. Each specializes on the value, which keeps its type.
 bool comptime_i32_param(const Param &param) {
+    const std::string &type = param.type_name;
+    const bool integer = type == "i32" || !sized_value_type(type).empty();
     return !param.is_array && param.indirections == 0 && param.optional == 0 && param.const_pointee == 0 &&
            !param.elem_const && !param.elem_slice && param.shells.empty() && !param.is_struct && !param.is_enum &&
-           !param.is_fn_ptr && !param.is_tuple && param.type_name == "i32" && param.type_package.empty() &&
+           !param.is_fn_ptr && !param.is_tuple && integer && param.type_package.empty() &&
            param.array_len == 0 && param.array_len_name.empty() && param.type_args.empty();
 }
 
@@ -3116,9 +3119,13 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
         SpecArg bound;
         std::string piece;
         if (comptime_i32_param(param)) {
-            std::optional<int> number = fold_int(*call.args[i - skip]);
+            const std::string value_type = sized_value_type(param.type_name);
+            const ValueRange range = value_range(value_type);
+            std::optional<int64_t> number = value_arg_wide(*call.args[i - skip]);
             if (!number) {
-                number = folded_local_int(*call.args[i - skip]);
+                if (const std::optional<int> local = folded_local_int(*call.args[i - skip])) {
+                    number = *local;
+                }
             }
             if (!number) {
                 if (fold_wide_int(*call.args[i - skip])) {
@@ -3126,8 +3133,13 @@ bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, 
                 }
                 return false;
             }
+            if (*number < range.low || *number > range.high) {
+                error(expr_loc(*call.args[i - skip]), "value does not fit");
+                return false;
+            }
             bound.is_value = true;
             bound.value = *number;
+            bound.value_type = value_type;
             piece = std::to_string(*number);
             if (!piece.empty() && piece.front() == '-') {
                 piece[0] = 'n';
@@ -3338,7 +3350,7 @@ bool Checker::comptime_arg_specializes(const Param &param, const Expr &arg) {
         return false;
     }
     if (comptime_i32_param(param)) {
-        return fold_int(arg).has_value() || folded_local_int(arg).has_value();
+        return value_arg_wide(arg).has_value() || folded_local_int(arg).has_value();
     }
     if (comptime_text_param(param)) {
         std::unordered_set<std::string> seen;

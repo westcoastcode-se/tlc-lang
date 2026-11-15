@@ -1341,13 +1341,19 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             const Param &param = fn->params[i];
                             // A `comptime func` takes every parameter as a compile-time value.
                             // `comptime n i32` on an ordinary function is the same slot.
-                            const bool i32_param = (fn->is_comptime || param.is_comptime) && param.type_name == "i32" &&
+                            const bool int_param = (fn->is_comptime || param.is_comptime) &&
+                                                   (param.type_name == "i32" || !sized_value_type(param.type_name).empty()) &&
                                                    param.type_package.empty() && param.indirections == 0 &&
                                                    param.optional == 0 && !param.is_array && !param.is_tuple &&
                                                    !param.is_struct && !param.is_enum && param.shells.empty();
-                            if (diags_.size() == before && i32_param && !fold_int(*node.args[i]) &&
-                                !folded_local_int(*node.args[i]) && fold_wide_int(*node.args[i])) {
-                                error(expr_loc(*node.args[i]), "value does not fit");
+                            // `300` for `comptime n u8` and `3000000000` for `comptime n i32` do not fit.
+                            if (diags_.size() == before && int_param && !folded_local_int(*node.args[i]) &&
+                                fold_wide_int(*node.args[i])) {
+                                const ValueRange range = value_range(sized_value_type(param.type_name));
+                                const std::optional<int64_t> value = value_arg_wide(*node.args[i]);
+                                if (!value || *value < range.low || *value > range.high) {
+                                    error(expr_loc(*node.args[i]), "value does not fit");
+                                }
                             }
                             if (diags_.size() == before &&
                                 (unmarked_comptime_arg(*node.args[i]) ||

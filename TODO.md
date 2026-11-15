@@ -15,11 +15,12 @@ These were found by review and have a repro. They are not fixed yet.
 - A file-scope `comptime const k = f(2)` used as an array length in a struct field, `type S struct { buf [k]u8; }`, is `not supported yet` twice. Types are resolved before the call runs. A `const` or a `var` that names `k` binds it first.
 - A C function pointer type that differs from the tlc one has no spelling of its own. A local or a tlc struct field holds it only by inference, `var f = get_cb()`. A generic parameter `func (T) i32` is a tlc type, so a C pointer that passes a struct is `type mismatch` there.
 - Each `if` in a function with held `k := i` locals copies and merges every held name, so a function with H held names and B branches costs H times B. 1500 of each take 0.8 seconds in a release build, 3000 take 3.6, and 6000 take 15. Before, each merge also scanned both arms for each name, and 1500 took 57 seconds in a debug build. Recording each change to a held name, instead of copying them all, would make an `if` cost only what its arms change. There are 31 places that change that state.
-- A `comptime func` that passes its own parameter as a generic value argument, `width[n]()` inside `comptime func get(n i64)`, is `not supported yet`, for `N i32` too.
 - A negative literal is not a generic value argument. `width[-5]()` is `expected a type`. A negative constant, `width[m]()`, works.
 - An array length is a literal or a name. `[sizeof(Pair) + 1]u8` is `expected ']'`.
 - `?func` is not allowed as an array element, `[2]?func (i32) i32`, or behind a pointer, `*?func (i32) i32`. The cast form `?func (i32) i32(x)` is `expected an expression`.
 - Deeply nested blocks check in quadratic time. In a release build 2000 nested `if` take 33 ms, 4000 take 98 ms, and 8000 take 0.35 seconds. The nesting limit stays at 10000 levels.
+- A file-scope array with an initializer list is built one element at a time, zeros included. `var arr [2147483647]i32 = {1, 2, 3}` needs 8 GiB in the compiler and stops at `--max-memory`. A comptime call builds every global of the program the same way, also one whose type was already `array too large`. Found by `build/verify/sem.py`.
+- When `--max-memory` stops the compiler, the diagnostics reported before are not printed. The watchdog exits at once, so `array too large` on the line that caused the large array is lost and only `compile-time memory limit exceeded` shows.
 
 ### Runtime
 

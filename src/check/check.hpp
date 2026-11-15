@@ -1471,6 +1471,9 @@ class Checker {
     std::optional<int64_t> array_length_wide(const std::string &name);
     // A value argument folded to `i64`. Empty when it does not fold, or is a `u64` past `i64`.
     std::optional<int64_t> value_arg_wide(const Expr &expr);
+    // A literal of `param`'s written integer type for `arg`, `comptime n i64` or `comptime n u8`. Null for an
+    // `i32`, a `bool`, any other parameter, or a value that does not fold or fit.
+    std::unique_ptr<Expr> sized_param_arg(const Param &param, const Expr &arg, SourceLoc loc);
     // A file-scope `const` of `i8`, `u8`, `i16`, or `u16` used as `[n]T`.
     // A generic value argument does not use this.
     std::optional<int> narrow_file_length(const std::string &name);

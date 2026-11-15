@@ -318,4 +318,47 @@ inline bool lvalue_form(const Expr &expr) {
     return false;
 }
 
+// The range of a value parameter's written type. `int`, `char`, `short`, `long`, and no name keep the `i32`
+// rule. A `u64` holds what fits in `i64`.
+struct ValueRange {
+    int64_t low = -2147483648LL;
+    int64_t high = 2147483647LL;
+    int bits = 32;
+    bool is_unsigned = false;
+};
+
+inline ValueRange value_range(const std::string &type) {
+    ValueRange range;
+    if (type == "i8") {
+        range = {-128, 127, 8, false};
+    } else if (type == "u8") {
+        range = {0, 255, 8, true};
+    } else if (type == "i16") {
+        range = {-32768, 32767, 16, false};
+    } else if (type == "u16") {
+        range = {0, 65535, 16, true};
+    } else if (type == "u32") {
+        range = {0, 4294967295LL, 32, true};
+    } else if (type == "i64") {
+        range = {INT64_MIN, INT64_MAX, 64, false};
+    } else if (type == "u64") {
+        range = {0, INT64_MAX, 64, true};
+    }
+    return range;
+}
+
+// `u8` and `i64` name their own range. `i32`, the keyword forms, and any other name are the `i32` rule.
+inline std::string sized_value_type(const std::string &name) {
+    if (name == "i8" || name == "u8" || name == "i16" || name == "u16" || name == "u32" || name == "i64" ||
+        name == "u64") {
+        return name;
+    }
+    return {};
+}
+
+// `N u8` is that type. The keyword forms are the old `i32` parameter.
+inline std::string written_value_type(const TypeParam &param) {
+    return sized_value_type(param.constraint);
+}
+
 } // namespace tlc

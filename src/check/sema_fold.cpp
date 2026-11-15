@@ -396,6 +396,54 @@ std::unique_ptr<Expr> folded_scalar_arg(const Param &param, int number, SourceLo
     return folded_int(number, loc);
 }
 
+} // namespace
+
+std::unique_ptr<Expr> Checker::sized_param_arg(const Param &param, const Expr &arg, SourceLoc loc) {
+    if (param.type_package.empty() == false || param.indirections != 0 || param.optional != 0 || param.is_array ||
+        param.is_struct || param.is_enum || param.is_fn_ptr || !param.shells.empty()) {
+        return nullptr;
+    }
+    const std::string type = sized_value_type(param.type_name);
+    if (type.empty()) {
+        return nullptr;
+    }
+    std::optional<int64_t> value = value_arg_wide(arg);
+    if (!value) {
+        if (const std::optional<int> local = folded_local_int(arg)) {
+            value = *local;
+        }
+    }
+    const ValueRange range = value_range(type);
+    if (!value || *value < range.low || *value > range.high) {
+        return nullptr;
+    }
+    IntSuffix suffix;
+    suffix.bits = range.bits;
+    suffix.is_unsigned = range.is_unsigned;
+    // INT64_MIN has no positive magnitude in `i64`. It stays the unfolded call.
+    if (*value == INT64_MIN) {
+        return nullptr;
+    }
+    auto literal = std::make_unique<Expr>();
+    Expr::Int number;
+    number.loc = loc;
+    number.value = static_cast<uint64_t>(*value < 0 ? -*value : *value);
+    number.suffix = suffix;
+    literal->data = std::move(number);
+    if (*value >= 0) {
+        return literal;
+    }
+    auto negated = std::make_unique<Expr>();
+    Expr::Unary unary;
+    unary.loc = loc;
+    unary.op = TokenKind::Minus;
+    unary.expr = std::move(literal);
+    negated->data = std::move(unary);
+    return negated;
+}
+
+namespace {
+
 const Expr *single_return_expr(const FunctionDecl &fn) {
     if (fn.body == nullptr) {
         return nullptr;
@@ -3511,7 +3559,10 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
         }
         const SourceLoc loc = expr_loc(*call.args[i]);
         std::unique_ptr<Expr> literal;
-        if (const std::optional<int> number = fold_int(*call.args[i])) {
+        // `comptime n i64` and `comptime n u8` keep that type and the whole range in the body.
+        if (std::unique_ptr<Expr> sized = sized_param_arg(fn->params[i], *call.args[i], loc)) {
+            literal = std::move(sized);
+        } else if (const std::optional<int> number = fold_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *number, loc);
         } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *local, loc);
@@ -3709,7 +3760,10 @@ bool Checker::fold_comptime_wide(const Expr::Call &call) {
         }
         const SourceLoc loc = expr_loc(*call.args[i]);
         std::unique_ptr<Expr> literal;
-        if (const std::optional<int> number = fold_int(*call.args[i])) {
+        // `comptime n i64` and `comptime n u8` keep that type and the whole range in the body.
+        if (std::unique_ptr<Expr> sized = sized_param_arg(fn->params[i], *call.args[i], loc)) {
+            literal = std::move(sized);
+        } else if (const std::optional<int> number = fold_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *number, loc);
         } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *local, loc);
@@ -3770,7 +3824,8 @@ bool Checker::fold_comptime_wide(const Expr::Call &call) {
             }
         }
     }
-    if (!fn->is_comptime || !comptime_folding_.insert(fn).second) {
+    // A body that needs a parameter as a generic value runs here too, the same as the `i32` result.
+    if ((!fn->is_comptime && !fn->pending_generic) || !comptime_folding_.insert(fn).second) {
         return false;
     }
     struct Leave {
@@ -3906,7 +3961,10 @@ bool Checker::fold_comptime_f64(const Expr::Call &call) {
         }
         const SourceLoc loc = expr_loc(*call.args[i]);
         std::unique_ptr<Expr> literal;
-        if (const std::optional<int> number = fold_int(*call.args[i])) {
+        // `comptime n i64` and `comptime n u8` keep that type and the whole range in the body.
+        if (std::unique_ptr<Expr> sized = sized_param_arg(fn->params[i], *call.args[i], loc)) {
+            literal = std::move(sized);
+        } else if (const std::optional<int> number = fold_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *number, loc);
         } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *local, loc);
@@ -3959,7 +4017,8 @@ bool Checker::fold_comptime_f64(const Expr::Call &call) {
             }
         }
     }
-    if (!fn->is_comptime || !comptime_folding_.insert(fn).second) {
+    // A body that needs a parameter as a generic value runs here too, the same as the `i32` result.
+    if ((!fn->is_comptime && !fn->pending_generic) || !comptime_folding_.insert(fn).second) {
         return false;
     }
     struct Leave {
@@ -4102,7 +4161,10 @@ bool Checker::fold_comptime_enum(const Expr::Call &call) {
         }
         const SourceLoc loc = expr_loc(*call.args[i]);
         std::unique_ptr<Expr> literal;
-        if (const std::optional<int> number = fold_int(*call.args[i])) {
+        // `comptime n i64` and `comptime n u8` keep that type and the whole range in the body.
+        if (std::unique_ptr<Expr> sized = sized_param_arg(fn->params[i], *call.args[i], loc)) {
+            literal = std::move(sized);
+        } else if (const std::optional<int> number = fold_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *number, loc);
         } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *local, loc);
@@ -4157,7 +4219,8 @@ bool Checker::fold_comptime_enum(const Expr::Call &call) {
             }
         }
     }
-    if (!fn->is_comptime || !comptime_folding_.insert(fn).second) {
+    // A body that needs a parameter as a generic value runs here too, the same as the `i32` result.
+    if ((!fn->is_comptime && !fn->pending_generic) || !comptime_folding_.insert(fn).second) {
         return false;
     }
     struct Leave {
@@ -4276,7 +4339,10 @@ bool Checker::fold_comptime_string(const Expr::Call &call) {
         }
         const SourceLoc loc = expr_loc(*call.args[i]);
         std::unique_ptr<Expr> literal;
-        if (const std::optional<int> number = fold_int(*call.args[i])) {
+        // `comptime n i64` and `comptime n u8` keep that type and the whole range in the body.
+        if (std::unique_ptr<Expr> sized = sized_param_arg(fn->params[i], *call.args[i], loc)) {
+            literal = std::move(sized);
+        } else if (const std::optional<int> number = fold_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *number, loc);
         } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *local, loc);
@@ -4521,7 +4587,10 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
         }
         const SourceLoc loc = expr_loc(*call.args[i]);
         std::unique_ptr<Expr> literal;
-        if (const std::optional<int> number = fold_int(*call.args[i])) {
+        // `comptime n i64` and `comptime n u8` keep that type and the whole range in the body.
+        if (std::unique_ptr<Expr> sized = sized_param_arg(fn->params[i], *call.args[i], loc)) {
+            literal = std::move(sized);
+        } else if (const std::optional<int> number = fold_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *number, loc);
         } else if (const std::optional<int> local = folded_local_int(*call.args[i])) {
             literal = folded_scalar_arg(fn->params[i], *local, loc);
@@ -4547,7 +4616,8 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
         exprs.push_back(item.get());
     }
     ComptimeEval chain(*this, *fn, call);
-    if (!fn->is_comptime || !comptime_folding_.insert(fn).second) {
+    // A body that needs a parameter as a generic value runs here too, the same as the `i32` result.
+    if ((!fn->is_comptime && !fn->pending_generic) || !comptime_folding_.insert(fn).second) {
         return kept;
     }
     struct Leave {
