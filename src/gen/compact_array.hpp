@@ -138,6 +138,33 @@ bool CodeGen::set_global_initializer(llvm::GlobalVariable *global, llvm::Constan
     return true;
 }
 
+void CodeGen::struct_fills(int struct_id, uint64_t base, std::vector<PendingFill> &out, int depth) {
+    if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size()) || depth > 64) {
+        return;
+    }
+    const StructLayout &layout = structs_[static_cast<std::size_t>(struct_id)];
+    if (layout.type == nullptr || layout.is_union || !layout.type->isSized()) {
+        return;
+    }
+    const llvm::StructLayout *offsets = module_.getDataLayout().getStructLayout(layout.type);
+    for (std::size_t index = 0; index < layout.fields.size() && index < layout.type->getNumElements(); ++index) {
+        const FieldLayout &field = layout.fields[index];
+        // A field with its own value is that value, not the element defaults.
+        if (field.init != nullptr || field.depth != 0 || field.is_slice || field.struct_id < 0) {
+            continue;
+        }
+        const uint64_t at = base + offsets->getElementOffset(static_cast<unsigned>(index));
+        if (field.is_array) {
+            if (big_default_array(field.type, field.struct_id)) {
+                const StructLayout &leaf = structs_[static_cast<std::size_t>(field.struct_id)];
+                out.push_back(PendingFill{nullptr, field.struct_id, leaf_count(field.type, leaf.type), at});
+            }
+            continue;
+        }
+        struct_fills(field.struct_id, at, out, depth + 1);
+    }
+}
+
 llvm::Function *CodeGen::emit_fill_function() {
     if (fill_fn_ != nullptr || pending_fills_.empty()) {
         return fill_fn_;
@@ -161,7 +188,11 @@ llvm::Function *CodeGen::emit_fill_function() {
         if (image == nullptr || image->getType() != layout.type) {
             continue;
         }
-        store_each_element(fill.global, const_len(static_cast<int64_t>(fill.count)), layout.type, image);
+        llvm::Value *raw = fill.global;
+        if (fill.offset != 0) {
+            raw = builder_.CreateConstInBoundsGEP1_64(i8(), fill.global, fill.offset);
+        }
+        store_each_element(raw, const_len(static_cast<int64_t>(fill.count)), layout.type, image);
     }
     builder_.CreateRetVoid();
     builder_.restoreIP(saved);

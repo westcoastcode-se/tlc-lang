@@ -379,6 +379,7 @@ void CodeGen::declare_globals(const PackageNode &node) {
             continue;
         }
         llvm::GlobalVariable *global = existing;
+        std::vector<PendingFill> field_fills;
         if (global == nullptr) {
             llvm::Constant *init = nullptr;
             if (!var->is_extern) {
@@ -392,8 +393,16 @@ void CodeGen::declare_globals(const PackageNode &node) {
                     // Zero here. `tlc.fill` writes the defaults at start, after the global exists.
                     init = llvm::ConstantAggregateZero::get(ty);
                 } else if (low.is_array || (low.depth == 0 && low.struct_id >= 0)) {
-                    // Unset fields are zero, or the field's default.
+                    // Unset fields are zero, or the field's default. A large array of defaulted structs among
+                    // a struct global's fields is zero here, and `tlc.fill` writes it at start.
+                    if (!low.is_array && !var->is_const_decl && var->init == nullptr && !low.is_slice &&
+                        !pointer_shell(low.shells)) {
+                        struct_fills(low.struct_id, 0, field_fills, 0);
+                    }
+                    const bool saved_skip = skip_big_defaults_;
+                    skip_big_defaults_ = !field_fills.empty();
                     init = bare_initializer(low, ty);
+                    skip_big_defaults_ = saved_skip;
                 } else {
                     init = llvm::Constant::getNullValue(ty);
                 }
@@ -411,6 +420,10 @@ void CodeGen::declare_globals(const PackageNode &node) {
             if (!var->is_extern && !low.is_slice && fills_at_start(*var, low, ty)) {
                 pending_fills_.push_back(
                     PendingFill{global, low.struct_id, leaf_count(ty, structs_[static_cast<std::size_t>(low.struct_id)].type)});
+            }
+            for (PendingFill &fill : field_fills) {
+                fill.global = global;
+                pending_fills_.push_back(fill);
             }
             debug_global(key, global, var->loc, low, var->is_static);
         }

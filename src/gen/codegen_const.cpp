@@ -456,13 +456,20 @@ llvm::Constant *CodeGen::default_array(llvm::Type *type, int struct_id, std::uno
     if (array == nullptr || struct_id < 0) {
         return nullptr;
     }
+    // A field of a struct global that `tlc.fill` writes at start. Inside another array it is a copy of each
+    // element and stays built here.
+    if (skip_big_defaults_ && default_array_depth_ == 0 && big_default_array(type, struct_id)) {
+        return llvm::ConstantAggregateZero::get(array);
+    }
     llvm::Type *elem = array->getElementType();
     llvm::Constant *one = nullptr;
+    ++default_array_depth_;
     if (elem->isArrayTy()) {
         one = default_array(elem, struct_id, stack);
     } else {
         one = default_struct_into(struct_id, stack);
     }
+    --default_array_depth_;
     if (one == nullptr || one->getType() != elem) {
         return nullptr;
     }

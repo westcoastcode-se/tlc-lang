@@ -46,7 +46,7 @@ A long run of those zeros costs the compiler nothing. `var arr [2147483647]i32 =
 
 The same holds for an array field of a file-scope struct, `var h = H{.raw = {1, 0...}}`, and for a field's default value, `raw [100000000]u8 = {7, 8, 0...}`.
 
-A file-scope `var` array of 4096 or more structs whose fields have defaults, `var pts [100000000]Point;`, is zero in the binary. The defaults are written into each element when the program starts, before any initializer that runs before `main`, and when a `comptime` call starts. A smaller one, and an array inside a struct, is a constant with every element's defaults. A local array of 64 or more such structs is filled by one loop.
+A file-scope `var` array of 4096 or more structs whose fields have defaults, `var pts [100000000]Point;`, is zero in the binary. The defaults are written into each element when the program starts, before any initializer that runs before `main`, and when a `comptime` call starts. A field of a struct global, `var w World;` where `World` has `pts [100000000]Point`, is written the same way, also through a nested struct field. The rest of that struct is its constant, so a non-zero field elsewhere keeps the struct, zeros included, in the binary. A smaller array, and one inside another array, such as `var worlds [10]World;`, is a constant with every element's defaults. A local array of 64 or more such structs is filled by one loop.
 
 The compiler reports a file-scope shorter list, without `0...`, as `global initializer is not a constant` when code is emitted. `--check` accepts that list.
 

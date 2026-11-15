@@ -1853,7 +1853,27 @@ class CodeGen {
         llvm::GlobalVariable *global = nullptr;
         int struct_id = -1;
         uint64_t count = 0;
+        // Bytes from the global's start. A field `pts [N]Point` of a struct global is not at 0.
+        uint64_t offset = 0;
     };
+    // Set while a struct global's defaults are built. A large array of defaulted structs among its fields,
+    // not inside another array, is zero there. `struct_fills` names each one, and `tlc.fill` writes it.
+    bool skip_big_defaults_ = false;
+    int default_array_depth_ = 0;
+    // Each field of `struct_id`, through nested struct fields, that is such an array. `base` is the byte offset.
+    void struct_fills(int struct_id, uint64_t base, std::vector<PendingFill> &out, int depth = 0);
+    // A large array whose leaf is a struct with field defaults, `kCompactTail` elements or more.
+    bool big_default_array(llvm::Type *type, int struct_id) {
+        if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
+            return false;
+        }
+        const StructLayout &leaf = structs_[static_cast<std::size_t>(struct_id)];
+        if (leaf.type == nullptr || leaf.is_union) {
+            return false;
+        }
+        std::unordered_set<int> seen;
+        return struct_has_default(struct_id, seen) && leaf_count(type, leaf.type) >= kCompactTail;
+    }
     std::vector<PendingFill> pending_fills_;
     llvm::Function *fill_fn_ = nullptr;
     // Elements of `leaf` in `type`, through nested arrays. Zero when the leaf is another type.

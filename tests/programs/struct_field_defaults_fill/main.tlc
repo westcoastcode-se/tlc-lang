@@ -1,0 +1,35 @@
+// A large array of defaulted structs among a struct global's fields, through a nested struct too, is
+// written at start and when a comptime call starts. A small one and a local are filled as before.
+type Point struct {
+    x i32 = 3;
+    y i32 = 4;
+}
+type World struct {
+    n i32 = 7;
+    pts [100000]Point;
+    tail i32 = 9;
+}
+type Outer struct {
+    tag i32 = 1;
+    world World;
+}
+type Small struct {
+    few [2]Point;
+}
+var w World;
+var o Outer;
+var s Small;
+comptime func peek() i32 {
+    return w.pts[99999].y;
+}
+func main() i32 {
+    var bad = 0;
+    if (w.n != 7 || w.tail != 9 || w.pts[0].x != 3 || w.pts[99999].y != 4) { bad |= 1; }
+    if (o.tag != 1 || o.world.n != 7 || o.world.pts[50000].x != 3 || o.world.tail != 9) { bad |= 2; }
+    if (s.few[1].y != 4) { bad |= 4; }
+    comptime const p = peek();
+    if (p != 4) { bad |= 8; }
+    var local World;
+    if (local.pts[99999].x != 3 || local.tail != 9) { bad |= 16; }
+    return bad == 0 ? 42 : bad;
+}

@@ -19,7 +19,8 @@ These were found by review and have a repro. They are not fixed yet.
 - An array length is a literal or a name. `[sizeof(Pair) + 1]u8` is `expected ']'`.
 - `?func` is not allowed as an array element, `[2]?func (i32) i32`, or behind a pointer, `*?func (i32) i32`. The cast form `?func (i32) i32(x)` is `expected an expression`.
 - Deeply nested blocks check in quadratic time. In a release build 2000 nested `if` take 33 ms, 4000 take 98 ms, and 8000 take 0.35 seconds. The nesting limit stays at 10000 levels.
-- An array of structs with field defaults inside a file-scope struct, `var w World;` where `World` has `pts [100000000]Point`, is still one constant per element. A file-scope array of them is zero and is filled at start.
+- An array of structs with field defaults inside another array of structs, `var worlds [10]World;` where `World` has `pts [100000000]Point`, is still one constant per element. A struct global's own field, `var w World;`, is filled at start.
+- A struct global with a literal, `var w = World{.n = 1};`, builds the omitted large array field of defaulted structs one constant per element. With no initializer, `var w World;`, that field is filled at start.
 - A copy of a global set at start from another file of the same package, `var copy = h` where `var h = make()` is in a sibling file, stays `global initializer is not a constant`. Files start in path order, so `h` may not be set yet.
 
 ### Runtime
