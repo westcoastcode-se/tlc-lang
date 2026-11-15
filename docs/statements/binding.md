@@ -265,6 +265,8 @@ retq                             # return
 
 A local array takes a brace list with one value per element: `var row [3]i32 = {10, 20, 12}`.
 
+A local is at most 1 MiB. A larger one is reported as `array too large for the stack: use a global or new`, as described in [Arrays](../types/array.md#size-limits).
+
 The compiler reports a different count as `type mismatch`.
 
 `row[0]` reads an element.

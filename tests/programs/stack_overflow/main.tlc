@@ -1,0 +1,10 @@
+// Recursion with no end runs past the stack. The trace keeps the 32 outermost calls.
+func down(n i32) i32 {
+    var frame [4096]u8;
+    frame[0] = u8(n & 1);
+    return down(n + 1) + i32(frame[0]);
+}
+
+func main() i32 {
+    return down(0);
+}

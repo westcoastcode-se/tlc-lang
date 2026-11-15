@@ -755,6 +755,7 @@ void CodeGen::emit(const PackageGraph &graph) {
     if (checks_) {
         emit_races();
     }
+    apply_stack_probes();
     if (di_builder_ != nullptr) {
         finish_debug();
     }
@@ -838,6 +839,7 @@ void CodeGen::emit_tests() {
     llvm::FunctionCallee printf_fn = module_.getOrInsertFunction("printf", printf_type);
     llvm::BasicBlock *block = llvm::BasicBlock::Create(context_, "entry", main);
     builder_.SetInsertPoint(block);
+    emit_guard_start();
     llvm::Value *failed = const_i32(0);
     for (const TestFn &test : tests) {
         llvm::BasicBlock *from = builder_.GetInsertBlock();

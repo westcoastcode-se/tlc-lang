@@ -14,6 +14,8 @@ This page describes `builtin.panic`, which prints a message and aborts the proce
 
 `new [n]T` calls it with `size does not fit` when the byte count does not fit.
 
+A stack overflow is reported as `stack overflow`, as described in [Stack overflow](#stack-overflow).
+
 Postfix `!` calls it with `null pointer` when that pointer is `null`. A debug build emits that call. `tlc --debug` and `tlc --test` are debug builds. A release build does not.
 
 The message is `*const u8`.
@@ -43,6 +45,26 @@ The stack is the calls of the thread that called `builtin.panic`.
 A null pointer is printed as `(null)`.
 
 At most 32 calls are kept.
+
+## Stack overflow
+
+A thread that runs past its stack prints `panic: stack overflow` and its call stack, then aborts. Every build does this, not only a debug build. Deep recursion and a chain of large frames are the usual causes.
+
+```text
+panic: stack overflow
+main.tlc:5:12: down
+main.tlc:5:12: down
+...
+main.tlc:9:12: main
+```
+
+The stack lines are the same as for `builtin.panic`. Only the 32 outermost calls are kept, so deep recursion prints the first 32 calls and not the last.
+
+Before its first statement, `main` installs a `SIGSEGV` handler that runs on a 64 KiB signal stack. A thread started with `pthread_create`, including `thread.spawn`, gets its own signal stack. A function with a frame larger than a page touches each page in order, so an overflow always reaches the guard page below the stack.
+
+A `SIGSEGV` that is not an overflow goes to the handler that was installed before `main`. A null pointer read in C is one. With no earlier handler, the default action ends the process.
+
+This works on Linux on x86-64 and AArch64. A thread that a C library starts on its own and that then calls back into tlc has no signal stack, and an overflow there ends the process with `SIGSEGV`.
 
 ## Rejected calls
 

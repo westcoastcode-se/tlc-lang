@@ -1,0 +1,7 @@
+// The global is fine. `:=` copies it into a local, and that copy is past the limit.
+var screen [1048577]u8;
+
+func main() i32 {
+    copy := screen;
+    return 0;
+}

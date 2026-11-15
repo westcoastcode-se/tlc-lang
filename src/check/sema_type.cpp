@@ -1667,9 +1667,16 @@ int Checker::min_align_of(const Type &type) const {
     return 1;
 }
 
-std::optional<int64_t> Checker::type_size(const Type &type) const {
-    auto align_up = [](int64_t offset, int64_t align) {
+std::optional<int64_t> Checker::type_size(const Type &type, bool *overflow) const {
+    constexpr int64_t kMax = 9223372036854775807LL;
+    bool overflowed = false;
+    // A size past `i64` sets `overflowed`. The result is then empty, the same as an unknown size.
+    auto align_up = [&overflowed](int64_t offset, int64_t align) {
         if (align <= 1) {
+            return offset;
+        }
+        if (offset > kMax - (align - 1)) {
+            overflowed = true;
             return offset;
         }
         return (offset + align - 1) / align * align;
@@ -1714,7 +1721,11 @@ std::optional<int64_t> Checker::type_size(const Type &type) const {
                 return 0;
             }
             const std::optional<int64_t> element = self(self, *current.element);
-            if (!element || *element > 9223372036854775807LL / current.length) {
+            if (!element) {
+                return std::nullopt;
+            }
+            if (*element > kMax / current.length) {
+                overflowed = true;
                 return std::nullopt;
             }
             return *element * current.length;
@@ -1741,7 +1752,12 @@ std::optional<int64_t> Checker::type_size(const Type &type) const {
                     return std::nullopt;
                 }
                 const int part_align = std::max(min_align_of(part), 1);
-                size = align_up(size, part_align) + *part_size;
+                size = align_up(size, part_align);
+                if (overflowed || size > kMax - *part_size) {
+                    overflowed = true;
+                    return std::nullopt;
+                }
+                size += *part_size;
                 align = std::max(align, part_align);
             }
             return align_up(size, align);
@@ -1813,7 +1829,16 @@ std::optional<int64_t> Checker::type_size(const Type &type) const {
             const int tag_align = std::max(min_align_of(tag), 1);
             const int align = std::max(tag_align, std::max(payload_align, info.align));
             // The payload starts at offset 0. The enum tag is placed after it.
-            return align_up(align_up(payload, tag_align) + *tag_size, align);
+            payload = align_up(payload, tag_align);
+            if (overflowed || payload > kMax - *tag_size) {
+                overflowed = true;
+                return std::nullopt;
+            }
+            const int64_t whole = align_up(payload + *tag_size, align);
+            if (overflowed) {
+                return std::nullopt;
+            }
+            return whole;
         }
         int64_t offset = 0;
         int align = 1;
@@ -1824,15 +1849,27 @@ std::optional<int64_t> Checker::type_size(const Type &type) const {
             }
             const int field_align = std::max(min_align_of(field.type), 1);
             offset = align_up(offset, field_align);
-            if (offset > 2147483647 - *field_size) {
+            if (overflowed || offset > kMax - *field_size) {
+                overflowed = true;
                 return std::nullopt;
             }
             offset += *field_size;
             align = std::max(align, field_align);
         }
-        return align_up(offset, std::max(align, info.align));
+        const int64_t whole = align_up(offset, std::max(align, info.align));
+        if (overflowed) {
+            return std::nullopt;
+        }
+        return whole;
     };
-    return walk(walk, type);
+    std::optional<int64_t> size = walk(walk, type);
+    if (overflowed) {
+        size.reset();
+    }
+    if (overflow != nullptr) {
+        *overflow = overflowed;
+    }
+    return size;
 }
 
 bool Checker::struct_has_field(const std::string &type_name, const std::string &field) const {
@@ -3100,6 +3137,102 @@ Type Checker::object_type(const std::string &name, int indirections, bool is_arr
                           bool parameter, const std::string &package, bool is_struct, bool is_enum, bool receiver,
                           uint32_t optional, uint32_t const_pointee, bool allow_incomplete, bool elem_const,
                           bool elem_slice, const std::vector<TypeShell> &shells, bool variable) {
+    return fit_type(object_type_unchecked(name, indirections, is_array, array_len, loc, parameter, package, is_struct,
+                                          is_enum, receiver, optional, const_pointee, allow_incomplete, elem_const,
+                                          elem_slice, shells, variable),
+                    loc);
+}
+
+bool Checker::type_overflows(const Type &type) const {
+    const auto walk = [&](const auto &self, const Type &current, int depth) -> bool {
+        // A pointer chain is short. The bound stops a malformed cycle.
+        if (depth > 64) {
+            return false;
+        }
+        switch (current.kind) {
+        case TypeKind::Pointer:
+            return current.pointee != nullptr && self(self, *current.pointee, depth + 1);
+        case TypeKind::Array:
+            if (current.element == nullptr) {
+                return false;
+            }
+            if (current.length < 0) {
+                return self(self, *current.element, depth + 1);
+            }
+            break;
+        case TypeKind::Tuple:
+            break;
+        default:
+            return false;
+        }
+        bool overflow = false;
+        (void)type_size(current, &overflow);
+        return overflow;
+    };
+    return walk(walk, type, 0);
+}
+
+Type Checker::fit_type(Type type, SourceLoc loc) {
+    if (type.kind == TypeKind::Invalid || !type_overflows(type)) {
+        return type;
+    }
+    error(loc, "array too large");
+    return type_invalid();
+}
+
+void Checker::check_stack_local(const Type &type, SourceLoc loc) {
+    if (type.kind == TypeKind::Invalid) {
+        return;
+    }
+    const std::optional<int64_t> size = type_size(type);
+    if (size && *size > kMaxStackLocal) {
+        error(loc, "array too large for the stack: use a global or new");
+    }
+}
+
+void Checker::check_struct_sizes() {
+    for (std::size_t id = 0; id < structs_.size(); ++id) {
+        check_struct_size(id);
+    }
+}
+
+void Checker::check_struct_size(std::size_t id) {
+    {
+        if (id >= structs_.size()) {
+            return;
+        }
+        StructInfo &info = structs_[id];
+        if (!info.complete || info.size_checked) {
+            return;
+        }
+        info.size_checked = true;
+        Type type;
+        type.kind = TypeKind::Struct;
+        type.struct_id = static_cast<int>(id);
+        bool overflow = false;
+        (void)type_size(type, &overflow);
+        if (!overflow) {
+            return;
+        }
+        // The first field whose own size is past `i64`, or the struct when only the sum is.
+        SourceLoc at = info.loc;
+        for (const StructInfo::Field &field : info.fields) {
+            bool inner = false;
+            (void)type_size(field.type, &inner);
+            if (inner) {
+                at = field.loc.valid() ? field.loc : info.loc;
+                break;
+            }
+        }
+        error(at, "array too large");
+    }
+}
+
+Type Checker::object_type_unchecked(const std::string &name, int indirections, bool is_array, int64_t array_len,
+                                    SourceLoc loc, bool parameter, const std::string &package, bool is_struct,
+                                    bool is_enum, bool receiver, uint32_t optional, uint32_t const_pointee,
+                                    bool allow_incomplete, bool elem_const, bool elem_slice,
+                                    const std::vector<TypeShell> &shells, bool variable) {
     if (!receiver) {
         note_struct_use(is_struct, name, loc);
     }

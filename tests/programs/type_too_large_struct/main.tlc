@@ -1,0 +1,10 @@
+// Each field fits. Their sum is past `i64`.
+type Huge struct {
+    low [4611686018427387904]u8;
+    high [4611686018427387904]u8;
+}
+
+func main() i32 {
+    var p ?*Huge = null;
+    return p == null ? 0 : 1;
+}

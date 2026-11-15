@@ -1,0 +1,8 @@
+// `for (var row : rows)` copies each row into a local.
+var rows [2][1048577]u8;
+
+func main() i32 {
+    for (var row : rows) {
+    }
+    return 0;
+}

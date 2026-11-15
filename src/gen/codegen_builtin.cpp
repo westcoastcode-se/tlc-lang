@@ -1,5 +1,6 @@
 // Builtin trace, panic, and new and delete.
 #include "gen/gen.hpp"
+#include "gen/stack_guard.hpp"
 
 namespace tlc {
 
@@ -1044,8 +1045,14 @@ void CodeGen::emit_builtin_panic() {
     if (function == nullptr || !function->empty() || function->arg_empty()) {
         return;
     }
+    fill_panic(function);
+}
+
+void CodeGen::fill_panic(llvm::Function *function) {
     ensure_trace();
     const llvm::IRBuilderBase::InsertPoint saved = builder_.saveIP();
+    const llvm::DebugLoc saved_loc = builder_.getCurrentDebugLocation();
+    builder_.SetCurrentDebugLocation(llvm::DebugLoc());
     auto *entry = llvm::BasicBlock::Create(context_, "entry", function);
     auto *head = llvm::BasicBlock::Create(context_, "head", function);
     auto *body = llvm::BasicBlock::Create(context_, "frame", function);
@@ -1084,6 +1091,7 @@ void CodeGen::emit_builtin_panic() {
     builder_.CreateCall(abort_type, abort_fn.getCallee());
     builder_.CreateUnreachable();
     builder_.restoreIP(saved);
+    builder_.SetCurrentDebugLocation(saved_loc);
 }
 
 

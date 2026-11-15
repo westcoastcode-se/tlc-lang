@@ -2049,6 +2049,7 @@ void Checker::analyze(const TranslationUnit &unit) {
     define_trait_fields();
     link_parent_fields();
     check_unions();
+    check_struct_sizes();
     publish_exports(unit, 0);
     analyze_unit(unit, 0, nullptr);
     flush_appends();
@@ -2606,6 +2607,7 @@ void Checker::analyze_graph(const PackageGraph &graph, std::string_view default_
     define_trait_fields();
     link_parent_fields();
     check_unions();
+    check_struct_sizes();
     for (const PackageNode &node : graph.nodes) {
         publish_exports(node.unit, node.file_id);
     }

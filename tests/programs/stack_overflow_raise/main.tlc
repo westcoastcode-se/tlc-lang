@@ -1,0 +1,7 @@
+// A SIGSEGV that is not an overflow keeps its default action. The program dies with no panic.
+extern(abi="c") func raise(sig i32) i32;
+
+func main() i32 {
+    raise(11);
+    return 0;
+}

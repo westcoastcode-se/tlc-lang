@@ -1,0 +1,6 @@
+// 2^62 rows of 4 bytes is 2^64 bytes, past `i64`.
+var cells [4611686018427387904][4]u8;
+
+func main() i32 {
+    return 0;
+}

@@ -1,0 +1,1 @@
+compile-error: main.tlc:3:9: error: array too large

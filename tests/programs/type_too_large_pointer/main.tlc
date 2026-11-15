@@ -1,0 +1,5 @@
+// A pointer to a type past `i64` names that type. It is rejected the same way.
+func main() i32 {
+    var p ?*[4611686018427387904][4]u8 = null;
+    return p == null ? 0 : 1;
+}

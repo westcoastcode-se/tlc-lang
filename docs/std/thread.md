@@ -18,6 +18,8 @@ On windows each of those functions calls `builtin.panic("not supported yet")`.
 
 The pointer is the function's argument.
 
+A stack overflow on the new thread is `panic: stack overflow` with that thread's calls, as described in [panic](../builtin/panic.md#stack-overflow).
+
 `thread.join` waits for the thread and returns the pointer the function returned.
 
 The thread's writes happen before `join` reads them.

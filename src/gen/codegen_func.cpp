@@ -257,6 +257,13 @@ void CodeGen::emit_function_body(const FunctionDecl &fn, llvm::Function *functio
     llvm::BasicBlock *entry = llvm::BasicBlock::Create(context_, "entry", function);
     builder_.SetInsertPoint(entry);
     debug_begin_function(fn, function);
+    // The program's `main` installs the stack overflow handler before its first statement.
+    if (function->getName() == "main" && function->hasExternalLinkage()) {
+        const llvm::DebugLoc saved_loc = builder_.getCurrentDebugLocation();
+        builder_.SetCurrentDebugLocation(llvm::DebugLoc());
+        emit_guard_start();
+        builder_.SetCurrentDebugLocation(saved_loc);
+    }
     push();
     if (abi_body) {
         const ExternLayout &layout = abi_layout;

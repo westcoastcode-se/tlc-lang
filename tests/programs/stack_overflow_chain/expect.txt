@@ -1,0 +1,3 @@
+link: -lc
+exit: 7
+stderr: c handler

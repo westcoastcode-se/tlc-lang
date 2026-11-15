@@ -1,0 +1,18 @@
+// A local of exactly 1 MiB is allowed. A larger array is a global or comes from `new`.
+var global_rows [2][1048577]u8;
+
+func fill(rows *[1048576]u8) i32 {
+    rows[1048575] = 40;
+    return i32(rows[1048575]);
+}
+
+func main() i32 {
+    var local [1048576]u8;
+    var got = fill(&local);
+    global_rows[1][1048576] = 1;
+    var heap = new [1048577]u8;
+    heap[1048576] = 1;
+    got += i32(global_rows[1][1048576]) + i32(heap[1048576]);
+    delete heap;
+    return got;
+}

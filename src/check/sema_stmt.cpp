@@ -391,6 +391,9 @@ void Checker::check_for_each(const Stmt::For &node) {
     }
     symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
     symbol.loc = node.each_name_loc;
+    if (symbol.function_id != 0) {
+        check_stack_local(symbol.type, node.each_name_loc);
+    }
     if (declare(std::move(symbol), node.each_name_loc)) {
         if (Symbol *live = lookup(node.each_name); live != nullptr && !node.each_const) {
             init_open(*live);
@@ -3626,6 +3629,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     } else if (node.is_define && node.names.size() == 1 && node.value != nullptr) {
                         note_held(symbol, *node.value);
                     }
+                    if (!node.is_comptime && symbol.function_id != 0) {
+                        check_stack_local(symbol.type, loc);
+                    }
                     declare(std::move(symbol), loc);
                     if (!node.is_const && node.names.size() == 1 && node.value != nullptr) {
                         if (Symbol *live = in_current(node.names[index])) {
@@ -3660,6 +3666,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     symbol.loc = loc;
                     if (node.is_define && node.names.size() == 1 && node.value != nullptr) {
                         note_held(symbol, *node.value);
+                    }
+                    if (!node.is_comptime && symbol.function_id != 0) {
+                        check_stack_local(symbol.type, loc);
                     }
                     shadow(std::move(symbol), loc);
                     if (node.names.size() == 1 && node.value != nullptr) {
@@ -3765,6 +3774,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                     Symbol *live = nullptr;
                     // `var _ i32 = close(fd)` evaluates the call and does not declare `_`.
                     const bool discard = !var.is_const_decl && !var.is_extern && var.owner.empty() && var.name == "_";
+                    if (!discard && !var.is_comptime && !var.is_extern && !var.is_static && symbol.function_id != 0) {
+                        check_stack_local(symbol.type, var.loc);
+                    }
                     if (!discard && declare(std::move(symbol), var.loc)) {
                         live = lookup(var.name);
                     }

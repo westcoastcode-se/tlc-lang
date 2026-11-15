@@ -629,6 +629,9 @@ class CodeGen {
     llvm::ArrayType *trace_stack_type_ = nullptr;
     llvm::GlobalVariable *trace_depth_ = nullptr;
     llvm::GlobalVariable *trace_stack_ = nullptr;
+    // `tlc.guard.*`, made on first use by `guard_function`.
+    llvm::Function *guard_start_ = nullptr;
+    llvm::GlobalVariable *guard_low_ = nullptr;
     uint32_t current_file_ = 0;
     // Comptime funcs on the fold stack. A cycle folds as not a constant.
     mutable std::unordered_set<const FunctionDecl *> comptime_folding_;
@@ -1645,6 +1648,17 @@ class CodeGen {
     // Debug builds report a race on a shared global. Release builds leave the checks out.
     void emit_races();
     void emit_builtin_panic();
+    // The body of a `void (ptr)` panic: the message, each traced frame, then `abort`.
+    void fill_panic(llvm::Function *function);
+    // Stack overflow is `panic: stack overflow`. Linux on x86-64 and AArch64 only.
+    // A SIGSEGV handler runs on a per-thread signal stack and chains to the handler it replaced.
+    bool stack_guard_enabled() const;
+    // `main` calls this first. It installs the handler and the main thread's signal stack.
+    void emit_guard_start();
+    // Every function body probes each page of a large frame, so an overflow hits the guard page.
+    // Each `pthread_create` call then starts the thread through `tlc.guard.boot`.
+    void apply_stack_probes();
+    llvm::Function *guard_function(const char *name);
     void emit_builtin_heap();
     void prepare_default_allocator();
     llvm::Value *variadic_arg(const TypedValue &value);

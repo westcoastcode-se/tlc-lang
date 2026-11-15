@@ -13,7 +13,9 @@ constexpr int kSlots = 32;
 constexpr int kCells = 64;
 constexpr int kFrames = 8;
 
-bool runtime_fn(llvm::StringRef name) { return name.starts_with("tlc.race"); }
+// The race runtime and the stack guard runtime are not instrumented. `tlc.guard.spawn` keeps its
+// own `pthread_create` call, and the race wrapper's call goes through it.
+bool runtime_fn(llvm::StringRef name) { return name.starts_with("tlc.race") || name.starts_with("tlc.guard"); }
 
 bool watched(const llvm::GlobalVariable *global) {
     if (global == nullptr || global->isConstant() || global->isThreadLocal()) {

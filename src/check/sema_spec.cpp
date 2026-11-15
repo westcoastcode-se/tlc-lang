@@ -855,6 +855,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     if (spec.is_union) {
         bind_union_tag(structs_[static_cast<std::size_t>(id)]);
     }
+    check_struct_size(static_cast<std::size_t>(id));
     if (!spec.is_union || spec.tag_name.empty()) {
         // The value is checked in the struct's file, not in the call that instantiates it.
         std::vector<Scope> saved_scopes = std::move(scopes_);

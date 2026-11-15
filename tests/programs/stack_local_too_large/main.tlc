@@ -1,0 +1,4 @@
+func main() i32 {
+    var bytes [1048577]u8;
+    return 0;
+}

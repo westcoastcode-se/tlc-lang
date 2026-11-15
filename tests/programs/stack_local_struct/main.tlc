@@ -1,0 +1,10 @@
+// The limit counts the whole local. A struct with a 1 MiB field and one more byte is past it.
+type Frame struct {
+    pixels [1048576]u8;
+    tag u8;
+}
+
+func main() i32 {
+    var frame Frame;
+    return 0;
+}

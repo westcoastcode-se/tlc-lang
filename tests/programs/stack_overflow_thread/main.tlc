@@ -1,0 +1,20 @@
+// A thread has its own signal stack. Its overflow reports that thread's calls.
+import "std/thread";
+
+func down(n i32) i32 {
+    var frame [4096]u8;
+    frame[0] = u8(n & 1);
+    return down(n + 1) + i32(frame[0]);
+}
+
+func work(arg *void) *void {
+    var _ = down(0);
+    return arg;
+}
+
+func main() i32 {
+    var n i32 = 1;
+    var t = thread.spawn(work, *void(&n));
+    thread.join(t);
+    return 0;
+}

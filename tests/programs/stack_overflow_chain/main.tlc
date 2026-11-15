@@ -1,0 +1,7 @@
+// C installed a SIGSEGV handler before `main`. A fault that is not an overflow reaches it.
+extern(abi="c") func raise(sig i32) i32;
+
+func main() i32 {
+    raise(11);
+    return 0;
+}

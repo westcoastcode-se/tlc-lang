@@ -158,6 +158,9 @@ struct Scope {
     int function_id = 0;
 };
 
+// The largest local a function may hold, 1 MiB. A thread stack is usually 8 MiB.
+inline constexpr int64_t kMaxStackLocal = int64_t{1} << 20;
+
 class Checker {
   public:
     explicit Checker(DiagnosticEngine &diags) : diags_(diags) {}
@@ -197,6 +200,8 @@ class Checker {
         std::vector<Field> fields;
         bool exported = false;
         bool anonymous = false;
+        // `check_struct_sizes` looked at this struct.
+        bool size_checked = false;
         bool is_extern = false;
         bool extern_c = false;
         int align = 0;
@@ -513,7 +518,19 @@ class Checker {
     // `self_id` is the struct being defined. `sizeof` of that struct does not wait on it.
     bool field_waits(const FieldDecl &field, int self_id = -1) const;
     int min_align_of(const Type &type) const;
-    std::optional<int64_t> type_size(const Type &type) const;
+    // Empty when the size is unknown or past `i64`. `overflow` tells the second case.
+    std::optional<int64_t> type_size(const Type &type, bool *overflow = nullptr) const;
+    // An array, tuple, or struct in `type`, behind pointers too, whose size is past `i64`.
+    // A struct is checked where it is declared, so only its own size counts here.
+    bool type_overflows(const Type &type) const;
+    // `array too large` when `type_overflows`. The type is then invalid.
+    Type fit_type(Type type, SourceLoc loc);
+    // A local, a parameter, or a `comptime func` local larger than `kMaxStackLocal` is
+    // `array too large for the stack: use a global or new`.
+    void check_stack_local(const Type &type, SourceLoc loc);
+    // Each struct declared so far whose size is past `i64` is `array too large`, once.
+    void check_struct_sizes();
+    void check_struct_size(std::size_t id);
     void declare_struct_tags(const TranslationUnit &unit, uint32_t file_id);
     void define_struct_fields();
     // A field of this struct or union. A method of that name is `redefinition`.
@@ -526,7 +543,13 @@ class Checker {
     Type type_of_name(const std::string &name, SourceLoc loc, bool allow_incomplete = false);
     Type with_indirections(Type type, int count, SourceLoc loc, uint32_t optional = 0, uint32_t const_pointee = 0);
     void note_struct_use(bool is_struct, const std::string &name, SourceLoc loc);
+    // `object_type_unchecked`, then `fit_type`.
     Type object_type(const std::string &name, int indirections, bool is_array, int64_t array_len, SourceLoc loc,
+                     bool parameter, const std::string &package = {}, bool is_struct = false, bool is_enum = false,
+                     bool receiver = false, uint32_t optional = 0, uint32_t const_pointee = 0,
+                     bool allow_incomplete = false, bool elem_const = false, bool elem_slice = false,
+                     const std::vector<TypeShell> &shells = {}, bool variable = false);
+    Type object_type_unchecked(const std::string &name, int indirections, bool is_array, int64_t array_len, SourceLoc loc,
                      bool parameter, const std::string &package = {}, bool is_struct = false, bool is_enum = false,
                      bool receiver = false, uint32_t optional = 0, uint32_t const_pointee = 0,
                      bool allow_incomplete = false, bool elem_const = false, bool elem_slice = false,

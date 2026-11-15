@@ -16,12 +16,18 @@ These were found by review and have a repro. They are not fixed yet.
 - A file-scope `comptime const k = f(2)` used as an array length in a struct field, `type S struct { buf [k]u8; }`, is `not supported yet` twice. Types are resolved before the call runs. A `const` or a `var` that names `k` binds it first.
 - A C function pointer type that differs from the tlc one has no spelling of its own. A local or a tlc struct field holds it only by inference, `var f = get_cb()`. A generic parameter `func (T) i32` is a tlc type, so a C pointer that passes a struct is `type mismatch` there.
 - A function with many held `k := i` locals is still quadratic to check. 1500 of them take about 20 seconds.
-- A local array of several GiB, `var a [3000000000]u8`, takes minutes in the checker, and at run time a local past the stack crashes without a message. A limit on array size, for types and for locals, is still to be decided.
+- A local array whose element count is past 1048576 leaves, `var a [2000000]u8`, is tracked as one leaf, so `a[5] = 1` then `a[5]` is `uninitialized`. Such a local is now past the 1 MiB stack limit too, so only the follow-on diagnostic shows. A large `new` array or a struct field is still affected.
 - An integer value parameter of a generic, `Buf[N i32]`, cannot take an array length past `i32`. That call is `type mismatch`.
 - An array length is a literal or a name. `[sizeof(Pair) + 1]u8` is `expected ']'`.
 - `?func` is not allowed as an array element, `[2]?func (i32) i32`, or behind a pointer, `*?func (i32) i32`. The cast form `?func (i32) i32(x)` is `expected an expression`.
 - Deeply nested blocks check in quadratic time. 4000 nested `if` take 1.6 seconds and 10000 take about 10, so the nesting limit stays at 10000 levels.
 - A `comptime func` called with 2147483647 as a length or loop bound takes more than 30 seconds to compile.
+
+### Runtime
+
+- A thread that a C library creates on its own and that then calls a tlc callback has no signal stack. A stack overflow there ends the process with `SIGSEGV` and no message. `pthread_create` called from tlc is covered.
+- A struct passed by value that holds a 64 KiB array, `func take(b Big) i32` with `bytes [65536]u8`, crashes the compiler in LLVM instruction selection. 4 KiB works. The struct is passed as one first-class aggregate. The 1 MiB local limit does not count parameters.
+- The stack overflow handler is Linux on x86-64 and AArch64 only. Other targets crash with no message.
 
 ### Driver and language server
 

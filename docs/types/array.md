@@ -6,7 +6,7 @@ An array stores a fixed number of elements of one type.
 
 ## Element lists
 
-An array length is a decimal `i32` literal. `0` is a length.
+An array length is a decimal literal up to the `i64` maximum. `0` is a length.
 
 A `const` binding whose initializer folds to a non-negative `i32` is a length too.
 
@@ -15,6 +15,16 @@ Inside a `comptime func`, a parameter is that length when the call substitutes i
 `[_]i32{10, 20, 12}` writes the values. `_` stands for the length, which is the number of values, so the type is `[3]i32`.
 
 A file-scope array takes the same lists, including a struct element. `var named [3]i32 = {10, 4, 1}`, `var row = [_]i32{10, 20, 12}`, and `var origin = [_]Point{Point{.x = 1, .y = 2}}` are those lists.
+
+## Size limits
+
+A type whose size in bytes does not fit in `i64` is reported as `array too large` where it is written. `[4611686018427387904][4]u8` is 2^64 bytes. A struct whose fields each fit but whose sum does not is reported at the struct's name. A pointer to such a type is reported the same way.
+
+A local is at most 1 MiB, 1048576 bytes. A larger local is reported as `array too large for the stack: use a global or new`. The limit counts the whole local, so a struct or a tuple that holds a large array counts as one local. `copy := screen` and `for (var row : rows)` make locals of that size too. A local in a `comptime func` has the same limit.
+
+A file-scope array and a `new` array have no such limit. A parameter is not counted.
+
+A thread stack is usually 8 MiB. Locals that fit one at a time can still run past it in deep recursion. That is `panic: stack overflow`, as described in [panic](../builtin/panic.md#stack-overflow).
 
 ## Shorter lists
 

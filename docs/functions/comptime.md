@@ -16,6 +16,8 @@ A `new` or `delete` with no allocator uses the heap. That call is `not supported
 
 `new(&arena)` is allowed when `arena.malloc`, `arena.free`, and `arena.realloc` do not call `malloc`, `realloc`, or `free`. A call that reaches one of those functions is `not supported yet`.
 
+A local is at most 1 MiB, the same as in a runtime function. `var cells [2097152]u8` is `array too large for the stack: use a global or new`.
+
 `from()` returns 42.
 
 ```c

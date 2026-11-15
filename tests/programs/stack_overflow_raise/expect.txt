@@ -1,0 +1,3 @@
+link: -lc
+exit: 128
+stderr:

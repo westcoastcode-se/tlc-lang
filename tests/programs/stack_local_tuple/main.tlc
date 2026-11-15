@@ -1,0 +1,4 @@
+func main() i32 {
+    var pair ([1048576]u8, i32);
+    return 0;
+}
