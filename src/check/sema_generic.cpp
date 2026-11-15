@@ -2252,49 +2252,111 @@ void Checker::prepare_written(std::string &type_name, std::string &type_package,
     type_args.clear();
 }
 
+namespace {
+
+// The range of a value parameter's written type. `int`, `char`, `short`, `long`, and no name keep the `i32`
+// rule. A `u64` holds what fits in `i64`.
+struct ValueRange {
+    int64_t low = -2147483648LL;
+    int64_t high = 2147483647LL;
+    int bits = 32;
+    bool is_unsigned = false;
+};
+
+ValueRange value_range(const std::string &type) {
+    ValueRange range;
+    if (type == "i8") {
+        range = {-128, 127, 8, false};
+    } else if (type == "u8") {
+        range = {0, 255, 8, true};
+    } else if (type == "i16") {
+        range = {-32768, 32767, 16, false};
+    } else if (type == "u16") {
+        range = {0, 65535, 16, true};
+    } else if (type == "u32") {
+        range = {0, 4294967295LL, 32, true};
+    } else if (type == "i64") {
+        range = {INT64_MIN, INT64_MAX, 64, false};
+    } else if (type == "u64") {
+        range = {0, INT64_MAX, 64, true};
+    }
+    return range;
+}
+
+// `N u8` is that type. The keyword forms are the old `i32` parameter.
+std::string written_value_type(const TypeParam &param) {
+    const std::string &name = param.constraint;
+    if (name == "i8" || name == "u8" || name == "i16" || name == "u16" || name == "u32" || name == "i64" ||
+        name == "u64") {
+        return name;
+    }
+    return {};
+}
+
+} // namespace
+
+std::optional<int64_t> Checker::value_arg_wide(const Expr &expr) {
+    if (const std::optional<int> narrow = fold_int(expr)) {
+        return *narrow;
+    }
+    const std::optional<WideInt> wide = fold_wide_int(expr);
+    if (!wide || (wide->bits == 64 && wide->is_unsigned && wide->value > 9223372036854775807ULL)) {
+        return std::nullopt;
+    }
+    return static_cast<int64_t>(wide->value);
+}
+
 bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg &out, SourceLoc loc) {
     if (param.is_value) {
-        if (arg.has_value) {
+        const std::string value_type = written_value_type(param);
+        const ValueRange range = value_range(value_type);
+        const SourceLoc at = loc.valid() ? loc : arg.loc;
+        // The value is the parameter's type. One past its range is `type mismatch`, as `3000000000` is for `i32`.
+        const auto bind = [&](int64_t value) {
+            if (value < range.low || value > range.high) {
+                error(at, "type mismatch");
+                return false;
+            }
             out = {};
             out.is_value = true;
-            out.value = arg.value;
+            out.value = value;
+            out.value_type = value_type;
             return true;
+        };
+        if (arg.has_value) {
+            // `4i64` and `4u32` are that value when it fits. A suffix narrower than 32 bits names its own
+            // type, so `4i8` binds only `N i8`.
+            const IntSuffix suffix = arg.value_suffix;
+            if (suffix.bits != 0 && suffix.bits < 32 &&
+                (suffix.bits != range.bits || suffix.is_unsigned != range.is_unsigned)) {
+                error(at, "type mismatch");
+                return false;
+            }
+            return bind(arg.value);
         }
         if (arg.value_expr != nullptr) {
             const Type got = check_expr(*arg.value_expr, true);
             if (got.kind == TypeKind::Invalid) {
                 return false;
             }
-            const std::optional<int> folded = fold_int(*arg.value_expr);
+            const std::optional<int64_t> folded = value_arg_wide(*arg.value_expr);
             if (!folded) {
-                error(loc.valid() ? loc : arg.loc, "not supported yet");
+                error(at, "not supported yet");
                 return false;
             }
-            out = {};
-            out.is_value = true;
-            out.value = *folded;
-            return true;
+            return bind(*folded);
         }
         if (!arg.type_name.empty() && arg.type_package.empty() && arg.indirections == 0 && arg.args.empty() && !arg.is_array) {
             if (const std::optional<int> value = lookup_const_value(arg.type_name)) {
-                out = {};
-                out.is_value = true;
-                out.value = *value;
-                return true;
+                return bind(*value);
             }
-            // A local `const` whose initializer folds to i32, and a local `comptime const`.
-            // A `var` is not this value. The local hides a file-scope const of the same name.
-            if (const std::optional<int> value = array_length_value(arg.type_name)) {
-                out = {};
-                out.is_value = true;
-                out.value = *value;
-                return true;
+            // A local `const` whose initializer folds, and a local `comptime const`. A `var` is not this
+            // value. The local hides a file-scope const of the same name. An `i64` constant is that value.
+            if (const std::optional<int64_t> value = array_length_wide(arg.type_name)) {
+                return bind(*value);
             }
             if (const Symbol *symbol = lookup(arg.type_name); symbol != nullptr && symbol->folded_local) {
-                out = {};
-                out.is_value = true;
-                out.value = symbol->const_value;
-                return true;
+                return bind(symbol->const_value);
             }
         }
         // `width[made.x]` is that integer. `made.x` is parsed as a dotted name.
@@ -2320,18 +2382,15 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
                     return false;
                 }
                 if (!is_integer(got)) {
-                    error(loc.valid() ? loc : arg.loc, "type mismatch");
+                    error(at, "type mismatch");
                     return false;
                 }
-                const std::optional<int> folded = fold_int(selector);
+                const std::optional<int64_t> folded = value_arg_wide(selector);
                 if (!folded) {
-                    error(loc.valid() ? loc : arg.loc, "not supported yet");
+                    error(at, "not supported yet");
                     return false;
                 }
-                out = {};
-                out.is_value = true;
-                out.value = *folded;
-                return true;
+                return bind(*folded);
             }
         }
         // `repeat[n]` and `Buf[n]` while `n` is still a parameter. The call writes the integer.
@@ -2976,15 +3035,23 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                         expr.data = std::move(text);
                         return;
                     }
-                    const int value = bound->value;
+                    // The literal carries `N`'s written type, so `N u8` is a `u8` and `N i64` an `i64` in the body.
+                    // `N i32` stays the unsuffixed literal.
+                    const int64_t value = bound->value;
+                    IntSuffix suffix{};
+                    if (!bound->value_type.empty()) {
+                        suffix.is_unsigned = bound->value_type[0] == 'u';
+                        suffix.bits = std::stoi(bound->value_type.substr(1));
+                    }
                     if (value < 0) {
-                        if (value == -2147483647 - 1) {
+                        if (value == (suffix.bits == 64 ? INT64_MIN : -2147483648LL)) {
                             error(loc, "not supported yet");
                             return;
                         }
                         Expr::Int inner;
                         inner.loc = loc;
                         inner.value = static_cast<uint64_t>(-value);
+                        inner.suffix = suffix;
                         auto literal = std::make_unique<Expr>();
                         literal->data = std::move(inner);
                         Expr::Unary unary;
@@ -2997,6 +3064,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                     Expr::Int literal;
                     literal.loc = loc;
                     literal.value = static_cast<uint64_t>(value);
+                    literal.suffix = suffix;
                     expr.data = std::move(literal);
                     return;
                 }

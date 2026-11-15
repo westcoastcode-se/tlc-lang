@@ -2186,12 +2186,12 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
                 const TypeArg &arg = param.type_args[arg_i];
                 const SpecArg &bound = info.spec_args[arg_i];
                 if (arg.has_value || arg.is_value || bound.is_value) {
-                    int written = arg.value;
+                    int64_t written = arg.value;
                     bool known = arg.has_value || (arg.is_value && arg.value_expr == nullptr);
                     if (arg.value_expr != nullptr) {
                         const bool saved = quiet_;
                         quiet_ = true;
-                        if (const std::optional<int> folded = fold_int(*arg.value_expr)) {
+                        if (const std::optional<int64_t> folded = value_arg_wide(*arg.value_expr)) {
                             written = *folded;
                             known = true;
                         }

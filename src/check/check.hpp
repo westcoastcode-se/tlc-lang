@@ -23,7 +23,10 @@ inline constexpr const char kArrayTooLarge[] = "array too large";
 
 struct SpecArg {
     bool is_value = false;
-    int value = 0;
+    // The integer bound to `N`, in the range of `value_type`.
+    int64_t value = 0;
+    // The written type of `N`: `i32`, `u8`, `i64`. Empty is `i32`.
+    std::string value_type;
     // A constant `[]const u8` bound to a comptime parameter. Not a type.
     bool is_text = false;
     std::string text;
@@ -1466,6 +1469,8 @@ class Checker {
     // The length a name gives an array, at 64 bits. `comptime const big = 3000000000` is that `i64`.
     // An integer value parameter of a generic keeps `array_length_value`, since it is an `i32`.
     std::optional<int64_t> array_length_wide(const std::string &name);
+    // A value argument folded to `i64`. Empty when it does not fold, or is a `u64` past `i64`.
+    std::optional<int64_t> value_arg_wide(const Expr &expr);
     // A file-scope `const` of `i8`, `u8`, `i16`, or `u16` used as `[n]T`.
     // A generic value argument does not use this.
     std::optional<int> narrow_file_length(const std::string &name);

@@ -1,0 +1,8 @@
+// A suffix narrower than 32 bits names its own type. `4i8` binds `N i8`, not `N u8`.
+func small[N u8]() u8 {
+    return N;
+}
+
+func main() i32 {
+    return i32(small[4i8]());
+}

@@ -55,7 +55,10 @@ struct TypeArg {
     SourceLoc loc{};
     bool is_value = false;
     bool has_value = false;
-    int value = 0;
+    // The integer, up to the `i64` range. The checker checks it against the parameter's type.
+    int64_t value = 0;
+    // The literal's suffix, `4u8` or `4i64`. Zero bits when it had none or was not a literal.
+    IntSuffix value_suffix{};
     std::string type_name;
     std::string type_package;
     bool is_struct = false;

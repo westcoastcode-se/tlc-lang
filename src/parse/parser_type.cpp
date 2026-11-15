@@ -1976,15 +1976,12 @@ TypeArg Parser::parse_one_type_arg() {
     if (check(TokenKind::IntLiteral)) {
         arg.is_value = true;
         const Token &number = peek();
-        // `width[4]` is that `i32`. `width[4i64]()` and `repeat[4u32]` are the same value when it
-        // fits. `3000000000`, `i8`, and `i16` stay `type mismatch`.
-        const bool plain = !number.suffix.is_unsigned && number.suffix.bits != 8 && number.suffix.bits != 16 &&
-                           number.suffix.bits != 64 && number.int_value <= 2147483647ULL;
-        const bool wide = (number.suffix.bits == 64 || (number.suffix.bits == 32 && number.suffix.is_unsigned)) &&
-                          number.int_value <= 2147483647ULL;
-        if (plain || wide) {
+        // The checker decides whether the value fits the parameter, `N i32` or `N u8`. A value past
+        // the `i64` range fits none.
+        if (number.int_value <= 9223372036854775807ULL) {
             arg.has_value = true;
-            arg.value = static_cast<int>(number.int_value);
+            arg.value = static_cast<int64_t>(number.int_value);
+            arg.value_suffix = number.suffix;
         } else {
             diags_.error(number.loc, "type mismatch");
         }
