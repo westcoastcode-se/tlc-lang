@@ -1,0 +1,28 @@
+// `grow` may change the object, so `*const Shape` cannot call it. `area` only reads.
+type Shape trait {
+    func area(self *const this) i32;
+    func grow(n i32) void;
+};
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+func Rect::area(self this) i32 {
+    return self.w * self.h;
+}
+
+func Rect::grow(self *this, n i32) void {
+    self.w = self.w + n;
+}
+
+func use(s *const Shape) i32 {
+    s.grow(41);
+    return s.area();
+}
+
+func main() i32 {
+    const r Rect = {.w = 1, .h = 1};
+    return use(&r);
+}

@@ -1,0 +1,18 @@
+// A trait method that writes `self this` or `self *const this` only reads. `*const Shape` and a const
+// struct may call it. `grow` takes `self *this`, the same as no receiver, and changes the object.
+type Shape trait {
+    func area(self *const this) i32;
+    func scale(self this) i32;
+    func grow(self *this, n i32) void;
+};
+type Rect struct { w i32; h i32; };
+func Rect::area(self *const this) i32 { return self.w * self.h; }
+func Rect::scale(self this) i32 { return 2; }
+func Rect::grow(self *this, n i32) void { self.w = self.w + n; }
+func measure(s *const Shape) i32 { return s.area() + s.scale(); }
+func change(s *Shape) i32 { s.grow(1); return measure(s); }
+func main() i32 {
+    var r Rect = {.w = 4, .h = 8};
+    const c Rect = {.w = 1, .h = 1};
+    return change(&r) - 34 + measure(&c) - 3 + 34;
+}

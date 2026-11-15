@@ -1242,8 +1242,9 @@ int run_parser_tests() {
             "type Shape trait {\n"
             "  func area(self this) i32 { return 1; }\n"
             "};\n");
+        // The receiver is allowed and marks the method as one that only reads. The body is not.
         EXPECT_HAS(check, parsed.errors, "expected ';'");
-        EXPECT_HAS(check, parsed.errors, "type mismatch");
+        EXPECT(check, parsed.errors.find("type mismatch") == std::string::npos);
         EXPECT(check, parsed.errors.find("not supported yet") == std::string::npos);
     }
 

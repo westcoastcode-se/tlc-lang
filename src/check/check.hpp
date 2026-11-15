@@ -266,6 +266,8 @@ class Checker {
             bool iteration_ref = false;
             // The iteration trait's element method. Its result is the element type.
             bool iteration_element = false;
+            // Written `self this` or `self *const this`. `*const Shape` may call it.
+            bool reads_only = false;
         };
         struct Field {
             std::string name;
@@ -533,6 +535,24 @@ class Checker {
     // Each struct declared so far whose size is past `i64` is `array too large`, once.
     void check_struct_sizes();
     void check_struct_size(std::size_t id);
+    // `*const Shape`, or a const trait value. Only a method that reads may be called on it.
+    static bool const_trait_object(const Type &base) {
+        if (base.kind == TypeKind::Pointer) {
+            return base.pointee != nullptr && base.pointee->kind == TypeKind::Trait && base.pointee->is_const;
+        }
+        return base.kind == TypeKind::Trait && base.is_const;
+    }
+    // `type mismatch: expected *Shape, found *const Shape`, the struct rule's message.
+    void report_const_trait_call(SourceLoc loc, int trait_id) {
+        Type trait = type_trait(trait_id);
+        trait.is_const = false;
+        Type frozen = trait;
+        frozen.is_const = true;
+        error(loc, "type mismatch: expected " + type_desc(type_pointer(trait)) + ", found " +
+                       type_desc(type_pointer(frozen)));
+    }
+    // A struct method `self *this` for a trait method that only reads, reported once.
+    std::unordered_set<const FunctionDecl *> reads_only_reported_;
     // `path:line:column` of `loc`, the way a diagnostic prints it.
     std::string memory_place(SourceLoc loc) const;
     void declare_struct_tags(const TranslationUnit &unit, uint32_t file_id);

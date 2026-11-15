@@ -6,7 +6,7 @@ A trait is a list of methods and fields.
 
 ## Writing the trait
 
-The receiver is implicit and is omitted from the trait type.
+The receiver may be omitted. It is then implicit, and the method may change the object, the same as `self *this`.
 
 A method inside the braces ends with `;`.
 
@@ -220,6 +220,49 @@ A different count is reported as `type mismatch`.
 The struct method returns that same list.
 
 A default is `func Pair::both` outside the braces.
+
+## A method that only reads
+
+A trait method may write its receiver, with the spelling of a struct method: `func area(self *const this) i32;` or `func area(self this) i32;`. Either one says that the method only reads the object. `func grow(self *this, n i32) void;` is the same as `func grow(n i32) void;`.
+
+`*const Shape` and a const value of a trait type call only a method that reads. `s.grow(41)` through `*const Shape` is reported as `type mismatch: expected *Shape, found *const Shape`, the same as a `self *this` method on a `*const Rect`. A default method that takes `self *this` is reported the same way.
+
+A struct implements a method that reads with `self this` or `self *const this`. `func Rect::area(self *this) i32` for that method is reported as `type mismatch` on that struct method, once.
+
+`?*this` and `**this` in a trait are reported as `type mismatch`.
+
+```c
+type Shape trait {
+    func area(self *const this) i32;
+    func grow(n i32) void;
+};
+
+type Rect struct {
+    w i32;
+    h i32;
+};
+
+func Rect::area(self *const this) i32 {
+    return self.w * self.h;
+}
+
+func Rect::grow(self *this, n i32) void {
+    self.w = self.w + n;
+}
+
+func measure(s *const Shape) i32 {
+    return s.area();
+}
+
+func main() i32 {
+    var r Rect = {.w = 5, .h = 6};
+    r.grow(2);
+    const frozen Rect = {.w = 1, .h = 2};
+    return measure(&r) - measure(&frozen);
+}
+```
+
+`measure` reads through `*const Shape`, so a const `Rect` may be passed. The program returns 40.
 
 ## Fields
 

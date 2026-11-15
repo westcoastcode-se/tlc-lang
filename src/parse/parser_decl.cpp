@@ -452,10 +452,22 @@ void Parser::parse_type_def(TranslationUnit &unit, bool exported, bool is_extern
                 }
             }
             if (check(TokenKind::KwFunc)) {
+                trait_method_ = true;
                 FunctionDecl method = parse_function(false, false, false, false, false);
+                trait_method_ = false;
                 method.unsafe = unsafe_fn;
                 if (!method.method_struct.empty()) {
                     diags_.error(method.loc, "type mismatch");
+                }
+                // `self this` and `self *const this` only read. `self *this` is the same as no receiver.
+                // `?*this` and `**this` are not receivers. The receiver then leaves the list.
+                if (!method.params.empty() && method.params.front().is_receiver) {
+                    const Param &receiver = method.params.front();
+                    if (receiver.optional != 0 || receiver.indirections > 1) {
+                        diags_.error(receiver.loc, "type mismatch");
+                    }
+                    method.reads_only = receiver.indirections == 0 || receiver.const_pointee != 0;
+                    method.params.erase(method.params.begin());
                 }
                 trait.methods.push_back(std::move(method));
             } else if (check(TokenKind::Identifier)) {

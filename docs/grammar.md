@@ -832,7 +832,7 @@ A struct method with the same parameters wins.
 
 A prototype with no body is reported as `not supported yet`.
 
-The method inside the trait braces has no body and no receiver.
+The method inside the trait braces has no body. Its receiver may be omitted, or written first as `self this`, `self *this`, or `self *const this`. `?*this` and `**this` are reported as `type mismatch`.
 
 A `{` body is reported as `expected ';'`.
 

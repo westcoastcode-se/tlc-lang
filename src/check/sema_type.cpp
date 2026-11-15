@@ -821,6 +821,7 @@ void Checker::register_traits(const TranslationUnit &unit, uint32_t file_id) {
             saved.name = method.name;
             saved.type = std::move(signature);
             saved.unsafe_fn = method.unsafe;
+            saved.reads_only = method.reads_only;
             saved.loc = method.loc;
             saved.home = id;
             traits_[static_cast<std::size_t>(id)].methods.push_back(std::move(saved));
@@ -999,6 +1000,8 @@ bool Checker::require_satisfies(int struct_id, int trait_id, bool through_pointe
         // `Malloc.malloc` is a prototype. Codegen supplies the body, so it still satisfies `Allocator`.
         const bool supplied = info != nullptr && info->name == "Malloc" && is_std_builtin_file(info->file_id) &&
                               (method.name == "malloc" || method.name == "free" || method.name == "realloc");
+        // A trait method that only reads, `func area(self *const this)`, is not `self *this` on the struct.
+        const MethodInfo *writes = nullptr;
         const auto signature_ok = [&](const MethodInfo &candidate) {
             if ((!candidate.has_body && !supplied) || candidate.is_static || candidate.unsafe_fn != method.unsafe_fn ||
                 !trait_method_matches(method.type, candidate.type)) {
@@ -1006,6 +1009,11 @@ bool Checker::require_satisfies(int struct_id, int trait_id, bool through_pointe
             }
             const bool pointer_method = candidate.type.kind == TypeKind::Function && !candidate.type.params.empty() &&
                                         candidate.type.params[0].kind == TypeKind::Pointer;
+            if (method.reads_only && pointer_method && candidate.type.params[0].pointee != nullptr &&
+                !candidate.type.params[0].pointee->is_const) {
+                writes = &candidate;
+                return false;
+            }
             return through_pointer || !pointer_method;
         };
         const MethodInfo *concrete = nullptr;
@@ -1029,7 +1037,14 @@ bool Checker::require_satisfies(int struct_id, int trait_id, bool through_pointe
         for (const MethodInfo &extra : head->more) {
             consider(extra);
         }
-        if (concrete == nullptr) {
+        if (concrete == nullptr && writes != nullptr && writes->decl != nullptr && !hidden) {
+            // Reported once, on the struct's method, however many uses check it. A quiet probe only counts
+            // the failure, so it does not mark the method as reported.
+            if (quiet_ || reads_only_reported_.insert(writes->decl).second) {
+                error(writes->decl->loc, "type mismatch");
+            }
+            ok = false;
+        } else if (concrete == nullptr) {
             error(loc, hidden ? method.name + " is not exported" : (mismatched ? "type mismatch" : "undeclared identifier"));
             ok = false;
         }

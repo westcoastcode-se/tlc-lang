@@ -1376,6 +1376,7 @@ FunctionDecl clone_function(const FunctionDecl &fn) {
     copy.body_checked = fn.body_checked;
     copy.is_macro = fn.is_macro;
     copy.unsafe = fn.unsafe;
+    copy.reads_only = fn.reads_only;
     copy.is_static = fn.is_static;
     copy.is_extern = fn.is_extern;
     copy.extern_c = fn.extern_c;

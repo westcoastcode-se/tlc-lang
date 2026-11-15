@@ -1,0 +1,16 @@
+// A default that takes `self *this` changes the object. `*const Shape` cannot call it.
+type Shape trait {
+    func area(self *const this) i32;
+};
+func Shape::bump(self *this) void { }
+func Shape::twice(self *const this) i32 { return self.area() * 2; }
+type Rect struct { w i32; };
+func Rect::area(self *const this) i32 { return self.w; }
+func use(s *const Shape) i32 {
+    s.bump();
+    return s.twice();
+}
+func main() i32 {
+    var r Rect = {.w = 21};
+    return use(&r);
+}

@@ -1094,7 +1094,9 @@ std::vector<Param> Parser::parse_params(bool &variadic, const std::string &metho
     std::vector<Param> params;
     variadic = false;
     expect(TokenKind::LParen, "expected '('");
-    const bool method = !method_struct.empty();
+    // A trait method may write its receiver. A function type among its parameters may not.
+    const bool trait_method = std::exchange(trait_method_, false);
+    const bool method = !method_struct.empty() || trait_method;
     auto receiver_form = [&]() {
         if (!check(TokenKind::Identifier)) {
             return false;

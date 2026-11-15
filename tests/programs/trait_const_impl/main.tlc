@@ -1,0 +1,13 @@
+// The trait says `area` only reads. A struct method that takes `self *this` is reported once, on that
+// method, however many uses check it.
+type Shape trait {
+    func area(self *const this) i32;
+};
+type Rect struct { w i32; };
+func Rect::area(self *this) i32 { return self.w; }
+func one(s *Shape) i32 { return s.area(); }
+func two(s *Shape) i32 { return s.area(); }
+func main() i32 {
+    var r Rect = {.w = 4};
+    return one(&r) + two(&r);
+}

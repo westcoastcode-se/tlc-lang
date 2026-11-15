@@ -187,6 +187,7 @@ std::string Checker::specialize_trait(const TraitDecl &templ, uint32_t owner, co
         saved.name = method.name;
         saved.type = std::move(signature);
         saved.unsafe_fn = method.unsafe;
+        saved.reads_only = method.reads_only;
         saved.loc = method.loc;
         saved.home = id;
         saved.iteration_ref = kind == IterationMethod::Ref;

@@ -930,6 +930,10 @@ struct FunctionDecl {
     bool is_macro = false;
     // The body is an unsafe context. A call must be written `unsafe name(...)`.
     bool unsafe = false;
+    // A trait method written `func area(self this)` or `func area(self *const this)`. It only reads, so
+    // `*const Shape` may call it, and a struct must not take `self *this` for it. The parser drops the
+    // receiver from `params`, the same as an omitted one.
+    bool reads_only = false;
     bool is_static = false;
     bool is_extern = false;
     // `extern(abi="c")` uses the C ABI. The object name is `link_name` when that is set.

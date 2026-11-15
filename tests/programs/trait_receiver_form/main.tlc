@@ -1,0 +1,6 @@
+// A trait receiver is `self this`, `self *this`, or `self *const this`.
+type Shape trait {
+    func area(self ?*this) i32;
+    func more(self **this) i32;
+};
+func main() i32 { return 0; }

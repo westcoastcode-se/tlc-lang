@@ -1960,6 +1960,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                 if (deferring) {
                                     error(node.loc, "not supported yet");
                                 }
+                                // A default that takes `self *this` changes the object.
+                                if (!chosen->params.empty() && chosen->params.front().is_receiver &&
+                                    chosen->params.front().indirections > 0 && chosen->params.front().const_pointee == 0 &&
+                                    const_trait_object(base)) {
+                                    report_const_trait_call(node.loc, trait_id);
+                                }
                                 for (std::size_t i = 0; i < node.args.size(); ++i) {
                                     check_call_arg(*node.args[i], chosen_tail.params[i]);
                                 }
@@ -1968,6 +1974,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             require_unsafe_call(method->unsafe_fn, node.loc);
                             if (deferring) {
                                 error(node.loc, "not supported yet");
+                            }
+                            // `*const Shape` and a const trait value call only a method that reads.
+                            if (!method->reads_only && const_trait_object(base)) {
+                                report_const_trait_call(node.loc, trait_id);
                             }
                             const std::size_t arity = method->type.params.size();
                             const bool count_ok = node.args.size() == arity;

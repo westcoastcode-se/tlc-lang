@@ -390,6 +390,8 @@ class Parser {
     std::unordered_set<std::string> type_names_;
     // Set by `extern(abi="compiler")` until the next top-level declaration.
     bool extern_compiler_ = false;
+    // Set while the parameter list of a trait method is read. Its first parameter may be the receiver.
+    bool trait_method_ = false;
     // Type parameters of the function whose body is being parsed. Value parameters stay out.
     std::vector<std::string> open_type_params_;
 };

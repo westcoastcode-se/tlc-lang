@@ -1,0 +1,1 @@
+compile-error: main.tlc:7:12: error: type mismatch
