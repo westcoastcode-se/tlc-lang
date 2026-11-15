@@ -1457,12 +1457,31 @@ bool Checker::constant_array_source(const Expr &expr, std::unordered_set<std::st
     return ok;
 }
 
+bool Checker::copies_startup_global(const Expr &expr, const TranslationUnit &unit) const {
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return false;
+    }
+    // Only a global of this file. Files of one package start in path order, so another file's global may
+    // not be set yet. A global declared later is already `undeclared identifier`.
+    for (const TopDecl &decl : unit.decls) {
+        if (const auto *var = std::get_if<VarDecl>(&decl.data);
+            var != nullptr && var->name == named->text && var->owner.empty() && var->runtime_init) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Checker::accept_array_copy(VarDecl &var) {
     if (var.init == nullptr || std::holds_alternative<Expr::Init>(var.init->data)) {
         return true;
     }
     // `var copy [2]i32 = give()` runs before `main`. A `const` stays a constant, so a call there must fold.
-    if (!var.is_const_decl && !var.is_extern && startup_call(*var.init)) {
+    // `var copy = g` after `var g = give()` in the same file runs then too.
+    if (!var.is_const_decl && !var.is_extern &&
+        (startup_call(*var.init) ||
+         (find_node(file_id_) != nullptr && copies_startup_global(*var.init, find_node(file_id_)->unit)))) {
         var.runtime_init = true;
         return true;
     }
@@ -1726,6 +1745,10 @@ void Checker::check_globals(const TranslationUnit &unit) {
     std::unordered_set<std::string> tests;
     // A folded `mem.memeql` or `mem.memcmp` is the value stored in the global.
     auto runs_at_startup = [&](const Expr &expr) {
+        // `var copy = h` after `var h = make()` in this file runs at start too, after `h`.
+        if (copies_startup_global(expr, unit)) {
+            return true;
+        }
         if (!startup_call(expr)) {
             return false;
         }

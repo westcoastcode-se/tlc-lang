@@ -1,0 +1,12 @@
+// A `const` is a constant. A copy of a global set at start is not one.
+type H struct {
+    tag i32;
+}
+func make() H {
+    return H{.tag = 30};
+}
+var h = make();
+const frozen = h;
+func main() i32 {
+    return frozen.tag;
+}

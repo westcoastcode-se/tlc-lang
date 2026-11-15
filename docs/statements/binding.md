@@ -311,7 +311,9 @@ A later store into the parameter does not change `kept`.
 
 A file-scope `var copy = row`, `const copy = row`, and `var copy [2]i32 = row` copy that array into the binary.
 
-A file-scope `var copy = h` and `const frozen = h` copy that struct the same way, including a copy of a copy and a struct whose fields have defaults. A source whose value comes from a call, `var h = make()`, has no constant, and the copy is `global initializer is not a constant`, for an array too.
+A file-scope `var copy = h` and `const frozen = h` copy that struct the same way, including a copy of a copy and a struct whose fields have defaults.
+
+When the source's value comes from a call, `var h = make()`, the copy `var copy = h` runs before `main` too, after `h`. That holds for a struct, an array, and a scalar, and for a copy of that copy. The source must be in the same file. A `const frozen = h` is `global initializer is not a constant`, since a `const` is a constant.
 
 ## A length written as `_`
 
@@ -1204,7 +1206,9 @@ The compiler reports `const item = call_func()` as `global initializer is not a 
 
 The same diagnostic is reported for `var n = call_func() + 1`, and for a call inside an array or a struct literal.
 
-It is also reported for `new`, and for `var copied = item` when `item` was initialized by a call.
+It is also reported for `new`.
+
+`var copied = item`, when `item` in the same file was initialized by a call, runs before `main` too, right after `item`. A `const copied = item` is reported as `global initializer is not a constant`.
 
 Calls in one file run in source order, so a later call reads an earlier variable that a call already stored.
 

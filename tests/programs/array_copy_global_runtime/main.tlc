@@ -1,3 +1,4 @@
+// `copy` runs before `main`, right after `live`, so it holds the values `give` returned.
 func give() [2]i32 {
     var out = [_]i32{4, 6};
     return out;

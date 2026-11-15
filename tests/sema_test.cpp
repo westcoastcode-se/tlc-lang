@@ -8480,7 +8480,8 @@ int run_sema_tests() {
             "var x = one();\n"
             "var copied = x;\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "global initializer is not a constant");
+        // The copy runs before `main`, after `x`.
+        EXPECT(check, errors.find("global initializer is not a constant") == std::string::npos);
     }
 
     {

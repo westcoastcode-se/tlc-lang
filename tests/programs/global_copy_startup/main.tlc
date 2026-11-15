@@ -1,0 +1,31 @@
+// A copy of a global whose value comes from a call runs at start, after that global: a struct, a chain,
+// an array, and a scalar. The copy is its own.
+type H struct {
+    tag i32;
+    raw [4]u8;
+}
+func make() H {
+    return H{.tag = 30, .raw = {2, 0...}};
+}
+func row() [2]i32 {
+    return {5, 1};
+}
+func number() i32 {
+    return 3;
+}
+var h = make();
+var copy = h;
+var chain = copy;
+var g = row();
+var gcopy = g;
+var n = number();
+var m = n;
+func main() i32 {
+    var bad = 0;
+    if (copy.tag != 30 || copy.raw[0] != 2u8 || chain.tag != 30) { bad |= 1; }
+    if (gcopy[0] != 5 || gcopy[1] != 1) { bad |= 2; }
+    if (m != 3) { bad |= 4; }
+    copy.tag = 0;
+    if (h.tag != 30) { bad |= 8; }
+    return bad == 0 ? chain.tag + gcopy[0] + gcopy[1] + m + i32(copy.raw[0]) + 1 : bad;
+}

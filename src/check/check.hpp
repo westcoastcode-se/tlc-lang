@@ -560,6 +560,8 @@ class Checker {
     std::unordered_map<const FunctionDecl *, bool> body_ok_;
     // The body has errors of its own, so a comptime call does not run it.
     bool comptime_body_broken(const FunctionDecl &fn);
+    // `expr` names a global of `unit` whose value is set at start, `var h = make()`.
+    bool copies_startup_global(const Expr &expr, const TranslationUnit &unit) const;
     // Calls not run for that reason. Their body's errors are the report, so the call adds none.
     std::unordered_set<const Expr::Call *> broken_calls_;
     // `path:line:column` of `loc`, the way a diagnostic prints it.

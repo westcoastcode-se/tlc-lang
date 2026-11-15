@@ -503,7 +503,7 @@ A file-scope `var copy = row`, `const copy = row`, and `var copy [2]i32 = row` c
 
 `const frozen [2]i32 = held`, `var whole [2][2]i32 = grid`, and `var line [2]i32 = grid[1]` copy the same way.
 
-`var copy [2]i32 = give()` and `var copy [2]i32 = unsafe give()` run that call before `main`. A source that is not a constant array in this file, and not a call, is reported as `global initializer is not a constant`.
+`var copy [2]i32 = give()` and `var copy [2]i32 = unsafe give()` run that call before `main`. `var copy [2]i32 = live`, when `live` in this file is set by a call, copies it before `main`, after `live`. A source that is not a constant array in this file, not a call, and not such a global is reported as `global initializer is not a constant`.
 
 An element copies the same way. `var row = [_][2]i32{inner}` copies that array. `const inner = [_]i32{1, 2}` before that var is that copy. `[_][2]i32{grid[1]}` copies that row.
 
