@@ -12,10 +12,12 @@
 #pragma once
 
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/CodeGen.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -54,6 +56,72 @@ class LazyGlobals {
     std::vector<std::pair<void *, std::size_t>> maps_;
 };
 
+// Writes plain data, an integer, a float, or an array or struct of them, at `dest`. False for a pointer or
+// any other constant that needs a relocation. A zero part is already zero in a fresh mapping.
+inline bool write_constant(const llvm::Constant *value, char *dest, const llvm::DataLayout &layout) {
+    if (value->isNullValue()) {
+        return true;
+    }
+    if (const auto *number = llvm::dyn_cast<llvm::ConstantInt>(value)) {
+        const uint64_t bytes = layout.getTypeStoreSize(number->getType());
+        const uint64_t bits = number->getZExtValue();
+        for (uint64_t i = 0; i < bytes && i < 8; ++i) {
+            dest[i] = static_cast<char>((bits >> (8 * i)) & 0xffU);
+        }
+        return number->getBitWidth() <= 64 && layout.isLittleEndian();
+    }
+    if (const auto *real = llvm::dyn_cast<llvm::ConstantFP>(value)) {
+        const llvm::APInt bits = real->getValueAPF().bitcastToAPInt();
+        const uint64_t raw = bits.getZExtValue();
+        const uint64_t bytes = layout.getTypeStoreSize(real->getType());
+        for (uint64_t i = 0; i < bytes && i < 8; ++i) {
+            dest[i] = static_cast<char>((raw >> (8 * i)) & 0xffU);
+        }
+        return bits.getBitWidth() <= 64 && layout.isLittleEndian();
+    }
+    if (const auto *data = llvm::dyn_cast<llvm::ConstantDataSequential>(value)) {
+        const llvm::StringRef raw = data->getRawDataValues();
+        std::copy(raw.begin(), raw.end(), dest);
+        return layout.isLittleEndian();
+    }
+    if (const auto *array = llvm::dyn_cast<llvm::ConstantArray>(value)) {
+        const uint64_t step = layout.getTypeAllocSize(array->getType()->getElementType());
+        for (unsigned i = 0; i < array->getNumOperands(); ++i) {
+            if (!write_constant(array->getOperand(i), dest + step * i, layout)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (const auto *record = llvm::dyn_cast<llvm::ConstantStruct>(value)) {
+        const llvm::StructLayout *fields = layout.getStructLayout(record->getType());
+        for (unsigned i = 0; i < record->getNumOperands(); ++i) {
+            if (!write_constant(record->getOperand(i), dest + fields->getElementOffset(i), layout)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+// A constant `write_constant` can write: no pointer, no expression, nothing that needs a relocation.
+inline bool write_constant_probe(const llvm::Constant *value) {
+    if (value->isNullValue() || llvm::isa<llvm::ConstantInt>(value) || llvm::isa<llvm::ConstantFP>(value) ||
+        llvm::isa<llvm::ConstantDataSequential>(value)) {
+        return !value->getType()->isPointerTy();
+    }
+    if (llvm::isa<llvm::ConstantArray>(value) || llvm::isa<llvm::ConstantStruct>(value)) {
+        for (const llvm::Use &operand : value->operands()) {
+            if (!write_constant_probe(llvm::cast<llvm::Constant>(operand.get()))) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
 inline void prepare_comptime_machine(llvm::orc::JITTargetMachineBuilder &machine) {
     machine.setCodeModel(llvm::CodeModel::Large);
 }
@@ -67,15 +135,23 @@ inline llvm::Error add_comptime_module(llvm::orc::LLJIT &jit, std::unique_ptr<ll
     int index = 0;
     for (llvm::GlobalVariable &global : module->globals()) {
         if (global.isDeclaration() || global.isThreadLocal() || !global.hasInitializer() ||
-            !global.getInitializer()->isNullValue() || global.getAlign().valueOrOne().value() > 4096) {
+            global.getAlign().valueOrOne().value() > 4096) {
             continue;
         }
         const uint64_t size = layout.getTypeAllocSize(global.getValueType());
         if (size < kLazyGlobalBytes) {
             continue;
         }
+        // A zero global, or a short list and a zero tail. Only the list's bytes are written.
+        const llvm::Constant *init = global.getInitializer();
+        if (!init->isNullValue() && !write_constant_probe(init)) {
+            continue;
+        }
         void *address = lazy.map(static_cast<std::size_t>(size));
         if (address == nullptr) {
+            continue;
+        }
+        if (!write_constant(init, static_cast<char *>(address), layout)) {
             continue;
         }
         // A name of its own, so no other definition or host symbol can answer for it.

@@ -515,6 +515,10 @@ class CodeGen {
   public:
     CodeGen(llvm::LLVMContext &context, llvm::Module &module, DiagnosticEngine &diags)
         : context_(context), module_(module), diags_(diags), builder_(context) {}
+    // A comptime module is built in a scope. Its compact globals are swapped in when that scope ends.
+    ~CodeGen() { finish_compact_globals(); }
+    CodeGen(const CodeGen &) = delete;
+    CodeGen &operator=(const CodeGen &) = delete;
 
     void emit(const PackageGraph &graph);
     void enable_tests() { testing_ = true; }
@@ -1786,8 +1790,53 @@ class CodeGen {
     std::optional<int64_t> folded_sizeof_wide(const Expr::Sizeof &node) const;
     llvm::Constant *const_array(const Expr::Init &init, const Binding &dest);
     // `zero_pad` stores 0 after a short list in a file-scope value, `{4}` and `{4, 0...}` alike.
+    // `compact` lets a long zero tail be one `zeroinitializer`, so the result may be the struct of
+    // `compact_array` instead of `array_ty`. Only a file-scope array's own initializer asks for it.
     llvm::Constant *fill_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags,
-                               bool zero_pad = false);
+                               bool zero_pad = false, bool compact = false);
+    // The type's size fits in LLVM's bit count, `2^61` bytes. A comptime module skips a global past it.
+    // The checker already rejected that type as `array too large`.
+    bool fits_in_memory(llvm::Type *type) const {
+        constexpr uint64_t limit = uint64_t{1} << 61;
+        if (auto *array = llvm::dyn_cast<llvm::ArrayType>(type)) {
+            const uint64_t count = array->getNumElements();
+            if (count == 0) {
+                return true;
+            }
+            if (!fits_in_memory(array->getElementType())) {
+                return false;
+            }
+            const uint64_t each = module_.getDataLayout().getTypeAllocSize(array->getElementType());
+            return each == 0 || count <= limit / each;
+        }
+        if (auto *record = llvm::dyn_cast<llvm::StructType>(type)) {
+            uint64_t total = 0;
+            for (llvm::Type *field : record->elements()) {
+                if (!fits_in_memory(field)) {
+                    return false;
+                }
+                const uint64_t size = module_.getDataLayout().getTypeAllocSize(field);
+                if (size > limit - total) {
+                    return false;
+                }
+                total += size;
+            }
+        }
+        return true;
+    }
+    // A zero tail this long is one `zeroinitializer`. A shorter one is spelled out, as before.
+    static constexpr uint64_t kCompactTail = 4096;
+    // The same bytes, size, and alignment. A compact array has the layout of its `[N x T]`.
+    bool same_layout(llvm::Type *got, llvm::Type *want) const;
+    // `listed` then zeros, to `array_ty`'s length, as one struct.
+    llvm::Constant *compact_array(llvm::ArrayType *array_ty, const std::vector<llvm::Constant *> &listed);
+    // Element `index` of an array constant, plain or compact. Null past its length.
+    llvm::Constant *array_element(llvm::Constant *array, uint64_t index);
+    // The global's initializer. A compact value waits in `compact_inits_`. False when the layouts differ.
+    bool set_global_initializer(llvm::GlobalVariable *global, llvm::Constant *value);
+    // Replace each global that waits for a compact initializer with one of that type.
+    void finish_compact_globals();
+    std::unordered_map<llvm::GlobalVariable *, llvm::Constant *> compact_inits_;
     // The constant array stored by `expr`, using that array's own global when `expr` is a name.
     llvm::Constant *const_array_base(const Expr &expr);
     // `expr` copied into `dest`. A list is filled as `dest`. A name or an index must match `dest`.

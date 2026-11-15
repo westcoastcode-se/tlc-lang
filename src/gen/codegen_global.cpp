@@ -374,6 +374,10 @@ void CodeGen::declare_globals(const PackageNode &node) {
                 }
             }
         }
+        // A comptime run cannot hold a global past 2^61 bytes. Its type was `array too large`.
+        if (eval_ && !fits_in_memory(ty)) {
+            continue;
+        }
         llvm::GlobalVariable *global = existing;
         if (global == nullptr) {
             llvm::Constant *init = nullptr;
@@ -759,6 +763,8 @@ void CodeGen::emit(const PackageGraph &graph) {
     if (di_builder_ != nullptr) {
         finish_debug();
     }
+    // Nothing reads a binding after this. A compact array's global gets its own type now.
+    finish_compact_globals();
     graph_ = nullptr;
 }
 void CodeGen::emit_tests() {

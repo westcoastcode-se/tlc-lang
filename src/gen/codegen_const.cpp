@@ -1,5 +1,6 @@
 // Constant initializers and stores into arrays.
 #include "gen/gen.hpp"
+#include "gen/compact_array.hpp"
 
 #include "gen/detail.hpp"
 
@@ -861,7 +862,7 @@ const VarDecl *CodeGen::global_decl(const std::string &name) const {
 }
 
 llvm::Constant *CodeGen::fill_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags,
-                                    bool zero_pad) {
+                                    bool zero_pad, bool compact) {
     if (array_ty == nullptr || !init.fields.empty() || init.elements.size() > array_ty->getNumElements()) {
         return nullptr;
     }
@@ -891,7 +892,7 @@ llvm::Constant *CodeGen::fill_array(const Expr::Init &init, llvm::ArrayType *arr
                 row.array_len = static_cast<int>(inner->getNumElements());
                 row.inner_array_len = 0;
                 row.value = nullptr;
-                value = fill_array(*nested, inner, row, zero_pad);
+                value = fill_array(*nested, inner, row, zero_pad, compact);
             } else {
                 // `[_][2]i32{inner}` and `[_][2]i32{grid[1]}` copy that constant row.
                 value = const_array_base(*item);
@@ -904,13 +905,33 @@ llvm::Constant *CodeGen::fill_array(const Expr::Init &init, llvm::ArrayType *arr
             one.value = nullptr;
             value = const_initializer(*item, one);
         }
-        if (value == nullptr || value->getType() != element) {
+        // A compact row has the row's layout, not its type.
+        if (value == nullptr || (value->getType() != element && !(compact && same_layout(value->getType(), element)))) {
             return nullptr;
         }
         values.push_back(value);
     }
+    bool exact = true;
+    for (llvm::Constant *value : values) {
+        exact = exact && value->getType() == element;
+    }
+    const uint64_t total = array_ty->getNumElements();
+    // A long zero tail, or a compact row among the elements, makes this array compact too.
+    if (compact && pad && values.size() < total && (total - values.size() >= kCompactTail || !exact)) {
+        return compact_array(array_ty, values);
+    }
+    if (!exact) {
+        if (values.size() != total) {
+            return compact_array(array_ty, values);
+        }
+        std::vector<llvm::Type *> types;
+        for (llvm::Constant *value : values) {
+            types.push_back(value->getType());
+        }
+        return llvm::ConstantStruct::get(llvm::StructType::get(context_, types), values);
+    }
     if (pad) {
-        while (values.size() < array_ty->getNumElements()) {
+        while (values.size() < total) {
             values.push_back(llvm::Constant::getNullValue(element));
         }
     }
@@ -926,7 +947,7 @@ llvm::Constant *CodeGen::const_array(const Expr::Init &init, const Binding &dest
     if (array_ty == nullptr) {
         return nullptr;
     }
-    return fill_array(init, array_ty, dest, true);
+    return fill_array(init, array_ty, dest, true, true);
 }
 
 llvm::Constant *CodeGen::const_array_base(const Expr &expr) {
@@ -939,15 +960,8 @@ llvm::Constant *CodeGen::const_array_base(const Expr &expr) {
         if (!at || *at < 0) {
             return nullptr;
         }
-        llvm::Constant *base = const_array_base(*index->base);
-        if (base == nullptr || !base->getType()->isArrayTy()) {
-            return nullptr;
-        }
-        auto *array_ty = llvm::cast<llvm::ArrayType>(base->getType());
-        if (static_cast<uint64_t>(*at) >= array_ty->getNumElements()) {
-            return nullptr;
-        }
-        return base->getAggregateElement(static_cast<unsigned>(*at));
+        // The base may be compact. Its element is found the same way.
+        return array_element(const_array_base(*index->base), static_cast<uint64_t>(*at));
     }
     const auto *named = std::get_if<Expr::Name>(&expr.data);
     if (named == nullptr) {
@@ -984,7 +998,7 @@ llvm::Constant *CodeGen::const_array_copied(const Expr &expr, const Binding &des
         return const_array(*init, dest);
     }
     llvm::Constant *value = const_array_base(expr);
-    if (value == nullptr || value->getType() != slot->getValueType()) {
+    if (value == nullptr || !same_layout(value->getType(), slot->getValueType())) {
         return nullptr;
     }
     return value;
@@ -2144,20 +2158,20 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         if (found != file.globals.end() && found->second.is_array && var.init != nullptr && global != nullptr &&
             !std::holds_alternative<Expr::Init>(var.init->data)) {
             llvm::Constant *copied = const_array_copied(*var.init, found->second);
-            if (copied == nullptr || copied->getType() != global->getValueType()) {
+            // A compact array is accepted. It waits for the global of its own type.
+            if (copied == nullptr || !set_global_initializer(global, copied)) {
                 error(var.loc, "global initializer is not a constant");
                 return;
             }
-            global->setInitializer(copied);
             file.folded.insert(key);
             return;
         }
         llvm::Constant *value = var.init == nullptr || global == nullptr ? nullptr : const_initializer(*var.init, found->second);
-        if (value == nullptr || value->getType() != global->getValueType()) {
+        // A compact array is accepted. It waits for the global of its own type.
+        if (value == nullptr || !set_global_initializer(global, value)) {
             error(var.loc, "global initializer is not a constant");
             return;
         }
-        global->setInitializer(value);
         file.folded.insert(key);
         return;
     }
@@ -2184,11 +2198,11 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         llvm::Constant *value = type_kind_ptr(kind->canonical, kind->type_arm, kind->type_has_this, kind->type_generic,
                                               kind->type_variadic);
         auto *global = llvm::dyn_cast<llvm::GlobalVariable>(found_early->second.value);
-        if (value == nullptr || global == nullptr || value->getType() != global->getValueType()) {
+        // A compact array is accepted. It waits for the global of its own type.
+        if (value == nullptr || global == nullptr || !set_global_initializer(global, value)) {
             error(var.loc, "global initializer is not a constant");
             return;
         }
-        global->setInitializer(value);
         file.folded.insert(key);
         return;
     }
@@ -2211,7 +2225,10 @@ void CodeGen::apply_initializer(const VarDecl &var) {
                 error(var.loc, "global initializer is not a constant");
                 return;
             }
-            llvm::cast<llvm::GlobalVariable>(found_early->second.value)->setInitializer(value);
+            if (!set_global_initializer(llvm::cast<llvm::GlobalVariable>(found_early->second.value), value)) {
+                error(var.loc, "global initializer is not a constant");
+                return;
+            }
             file.folded.insert(key);
             return;
         }
@@ -2244,11 +2261,11 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         !std::holds_alternative<Expr::Init>(var.init->data)) {
         llvm::Constant *copied = const_array_copied(*var.init, found_early->second);
         auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found_early->second.value);
-        if (copied == nullptr || global == nullptr || copied->getType() != global->getValueType()) {
+        // A compact array is accepted. It waits for the global of its own type.
+        if (copied == nullptr || global == nullptr || !set_global_initializer(global, copied)) {
             error(var.loc, "global initializer is not a constant");
             return;
         }
-        global->setInitializer(copied);
         file.folded.insert(key);
         return;
     }
@@ -2267,11 +2284,11 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         found_early->second.depth == 0) {
         auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found_early->second.value);
         llvm::Constant *value = global == nullptr ? nullptr : const_initializer(*var.init, found_early->second);
-        if (value == nullptr || global == nullptr || value->getType() != global->getValueType()) {
+        // A compact array is accepted. It waits for the global of its own type.
+        if (value == nullptr || global == nullptr || !set_global_initializer(global, value)) {
             error(var.loc, "global initializer is not a constant");
             return;
         }
-        global->setInitializer(value);
         file.folded.insert(key);
         return;
     }

@@ -257,21 +257,45 @@ int run_cli_tests() {
     const auto limit = earlier_over.err.find(earlier + ":12:24: error: compile-time memory limit exceeded");
     EXPECT(check, first != std::string::npos && limit != std::string::npos && first < limit);
     std::remove(earlier.c_str());
-    // Outside a comptime call there is no place to name.
+    // Outside a comptime call there is no place to name. A list of a million elements is that much syntax.
     const std::string big_init = "/tmp/tlc-init-memory.tlc";
     {
         std::ofstream out(big_init);
-        out << "var table [100000000]u8 = {1, 2, 3, 0...};\n"
+        out << "var table [1000000]i32 = {";
+        for (int i = 0; i < 1000000; ++i) {
+            out << (i == 0 ? "" : ", ") << (i % 97);
+        }
+        out << "};\n"
                "\n"
                "func main() i32 {\n"
-               "    return i32(table[2]);\n"
+               "    return table[2];\n"
                "}\n";
     }
-    const tlc::test::Proc init_over = tlc::test::spawn({bin, "--max-memory", "32M", "--emit-obj", "-o", "/tmp/tlc-init-memory.o", big_init});
+    const tlc::test::Proc init_over = tlc::test::spawn({bin, "--max-memory", "32M", "--check", big_init});
     EXPECT(check, init_over.code == 1);
     EXPECT_EQ(check, init_over.err, std::string("error: compile-time memory limit exceeded\n"));
     std::remove(big_init.c_str());
-    std::remove("/tmp/tlc-init-memory.o");
+    // A short list in a large array costs the list, not the array. 2^31 `i32` is 8 GiB.
+    const std::string compact = "/tmp/tlc-compact-array.tlc";
+    {
+        std::ofstream out(compact);
+        out << "var arr [2147483647]i32 = {1, 2, 39};\n"
+               "\n"
+               "comptime func third() i32 {\n"
+               "    return arr[2] + 3;\n"
+               "}\n"
+               "\n"
+               "func main() i32 {\n"
+               "    comptime const v = third();\n"
+               "    return v + arr[0] - 1;\n"
+               "}\n";
+    }
+    const tlc::test::Proc compact_ir = tlc::test::spawn({bin, "--max-memory", "128M", "--emit-llvm", compact});
+    EXPECT(check, compact_ir.code == 0);
+    EXPECT(check, compact_ir.err.empty());
+    EXPECT_HAS(check, compact_ir.out, "[2147483644 x i32] zeroinitializer");
+    EXPECT_HAS(check, compact_ir.out, "store i32 42");
+    std::remove(compact.c_str());
 
     const tlc::test::Proc missing_lsp_lib = tlc::test::spawn({bin, "lsp", "--lib"});
     EXPECT(check, missing_lsp_lib.code != 0);
