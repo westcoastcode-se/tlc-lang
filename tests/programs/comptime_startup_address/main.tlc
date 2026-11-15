@@ -1,0 +1,26 @@
+// Taking the address of a global set at start reads no value. A local of the same name hides the global.
+type H struct {
+    tag i32;
+}
+
+func make() H {
+    return H{.tag = 30};
+}
+
+var h = make();
+
+comptime func addr() i32 {
+    var p = &h;
+    return 40;
+}
+
+comptime func hidden() i32 {
+    var h = 2;
+    return h;
+}
+
+func main() i32 {
+    comptime const a = addr();
+    comptime const b = hidden();
+    return a + b;
+}

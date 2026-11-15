@@ -1,0 +1,24 @@
+// A copy of a global set at start is set at start too. The read in a nested comptime call is reported there.
+type H struct {
+    tag i32;
+}
+
+func make() H {
+    return H{.tag = 30};
+}
+
+var h = make();
+var copy = h;
+
+comptime func inner() i32 {
+    return copy.tag;
+}
+
+comptime func outer() i32 {
+    return inner() + 1;
+}
+
+func main() i32 {
+    comptime const a = outer();
+    return a;
+}

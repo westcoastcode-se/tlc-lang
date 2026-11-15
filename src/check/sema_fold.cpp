@@ -2,6 +2,7 @@
 #include <set>
 #include "check/check.hpp"
 #include "check/check_util.hpp"
+#include "check/startup_read.hpp"
 
 #include "ast/format.hpp"
 #include "diag/memory_limit.hpp"
@@ -3676,6 +3677,10 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
         broken_calls_.insert(&call);
         return std::nullopt;
     }
+    // A read of a global set at start would read 0 here. It is reported with the call chain.
+    if (startup_read_fault(*fn)) {
+        return std::nullopt;
+    }
     if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
         error(call.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
         recheck_fault_.clear();
@@ -3859,6 +3864,10 @@ bool Checker::fold_comptime_wide(const Expr::Call &call) {
     if (comptime_body_broken(*fn)) {
         call.comptime_failed = true;
         broken_calls_.insert(&call);
+        return false;
+    }
+    // A read of a global set at start would read 0 here. It is reported with the call chain.
+    if (startup_read_fault(*fn)) {
         return false;
     }
     if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
@@ -4058,6 +4067,10 @@ bool Checker::fold_comptime_f64(const Expr::Call &call) {
     if (comptime_body_broken(*fn)) {
         call.comptime_failed = true;
         broken_calls_.insert(&call);
+        return false;
+    }
+    // A read of a global set at start would read 0 here. It is reported with the call chain.
+    if (startup_read_fault(*fn)) {
         return false;
     }
     if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
@@ -4268,6 +4281,10 @@ bool Checker::fold_comptime_enum(const Expr::Call &call) {
         broken_calls_.insert(&call);
         return false;
     }
+    // A read of a global set at start would read 0 here. It is reported with the call chain.
+    if (startup_read_fault(*fn)) {
+        return false;
+    }
     if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
         error(call.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
         recheck_fault_.clear();
@@ -4440,6 +4457,10 @@ bool Checker::fold_comptime_string(const Expr::Call &call) {
     if (comptime_body_broken(*fn)) {
         call.comptime_failed = true;
         broken_calls_.insert(&call);
+        return false;
+    }
+    // A read of a global set at start would read 0 here. It is reported with the call chain.
+    if (startup_read_fault(*fn)) {
         return false;
     }
     if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
@@ -4677,6 +4698,10 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
         broken_calls_.insert(&call);
         return kept;
     }
+    // A read of a global set at start would read 0 here. It is reported with the call chain.
+    if (startup_read_fault(*fn)) {
+        return kept;
+    }
     if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
         return kept;
     }
@@ -4696,6 +4721,10 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
     if (comptime_body_broken(*fn)) {
         call.comptime_failed = true;
         broken_calls_.insert(&call);
+        return kept;
+    }
+    // A read of a global set at start would read 0 here. It is reported with the call chain.
+    if (startup_read_fault(*fn)) {
         return kept;
     }
     if (!recheck_comptime_copy(wrapper, true)) {

@@ -330,6 +330,8 @@ retq                             # return
 
 A `comptime func` whose body has an error of its own is not run, wherever it is declared. That error, on the body, is the report, and the call adds none. An error that comes from the arguments, such as `10 / n` when the call passes 0, is found by running the body and is reported as below.
 
+A global whose value is set at start, `var h = make()` or a copy of one, has no value while compiling. A comptime call that reads it, in its own body or in a `comptime func` it calls, is `set at start, not at compile time` on that read, with the call chain below. Taking its address, `&h`, reads no value. A local of the same name hides the global.
+
 A false `assert` is that message, on the `assert`.
 
 An index outside a known length is `index out of range`, on that index.

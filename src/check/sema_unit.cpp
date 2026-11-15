@@ -1457,6 +1457,44 @@ bool Checker::constant_array_source(const Expr &expr, std::unordered_set<std::st
     return ok;
 }
 
+bool Checker::set_at_start(const VarDecl &var, const TranslationUnit &unit, int depth) const {
+    if (var.runtime_init) {
+        return true;
+    }
+    // Declared after the code that reads it, so its flag is not set yet. The initializer tells the same.
+    if (var.is_const_decl || var.is_extern || var.init == nullptr || depth > 64) {
+        return false;
+    }
+    if (startup_call(*var.init)) {
+        const Expr *cursor = var.init.get();
+        while (const auto *unary = std::get_if<Expr::Unary>(&cursor->data)) {
+            cursor = unary->expr.get();
+        }
+        const auto *call = std::get_if<Expr::Call>(&cursor->data);
+        const auto *callee = call == nullptr || call->callee == nullptr ? nullptr
+                                                                         : std::get_if<Expr::Name>(&call->callee->data);
+        // A `comptime func` call is folded. It is no start-time value.
+        if (callee != nullptr) {
+            for (const TopDecl &decl : unit.decls) {
+                if (const auto *fn = std::get_if<FunctionDecl>(&decl.data);
+                    fn != nullptr && fn->name == callee->text && fn->method_struct.empty() && fn->is_comptime) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&var.init->data)) {
+        for (const TopDecl &decl : unit.decls) {
+            if (const auto *source = std::get_if<VarDecl>(&decl.data);
+                source != nullptr && source != &var && source->name == named->text && source->owner.empty()) {
+                return set_at_start(*source, unit, depth + 1);
+            }
+        }
+    }
+    return false;
+}
+
 bool Checker::copies_startup_global(const Expr &expr, const TranslationUnit &unit) const {
     const auto *named = std::get_if<Expr::Name>(&expr.data);
     if (named == nullptr) {
