@@ -1,5 +1,34 @@
+// A count past `i32` reaches the allocator as an `i64` size. `new [3000000000]i32` asks for 12000000000
+// bytes. The arena records the size and hands out one byte it never lets anything touch.
+type Arena struct {
+    asked i64;
+    cell u8;
+};
+
+unsafe func Arena::malloc(self *this, size i64, align i32) ?*u8 {
+    _ = align;
+    self.asked = size;
+    return &self.cell;
+}
+
+func Arena::free(self *this, ptr *u8) void {
+    _ = self;
+    _ = ptr;
+}
+
+unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 {
+    _ = ptr;
+    _ = align;
+    self.asked = size;
+    return &self.cell;
+}
+
 func main() i32 {
+    var arena Arena = {.asked = 0, .cell = 0};
     var n i64 = 3000000000;
-    var buf = new [n]i32;
-    return buf.len;
+    var buf = new(&arena) [n]i32;
+    if (buf.len != 3000000000 || arena.asked != 12000000000) {
+        return 1;
+    }
+    return 42;
 }

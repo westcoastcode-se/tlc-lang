@@ -1563,13 +1563,15 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
                     if (!slot.array_len_name.empty()) {
                         const int len_index = param_index(templ.type_params, slot.array_len_name);
                         if (len_index >= 0 && templ.type_params[static_cast<std::size_t>(len_index)].is_value) {
-                            if (set[static_cast<std::size_t>(len_index)] &&
-                                bounds[static_cast<std::size_t>(len_index)].value != cursor->length) {
+                            // A value parameter is an `i32`. A longer array cannot bind it.
+                            if (cursor->length > 2147483647 ||
+                                (set[static_cast<std::size_t>(len_index)] &&
+                                 bounds[static_cast<std::size_t>(len_index)].value != cursor->length)) {
                                 error(call.loc, "type mismatch");
                                 return std::nullopt;
                             }
                             bounds[static_cast<std::size_t>(len_index)].is_value = true;
-                            bounds[static_cast<std::size_t>(len_index)].value = cursor->length;
+                            bounds[static_cast<std::size_t>(len_index)].value = static_cast<int>(cursor->length);
                             set[static_cast<std::size_t>(len_index)] = 1;
                         }
                     }
@@ -1785,7 +1787,7 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
             }
             // An array or a slice. A decayed `[N]T` parameter is still that array.
             const Type *element = nullptr;
-            int length = -1;
+            int64_t length = -1;
             if (cursor->kind == TypeKind::Array && cursor->element != nullptr) {
                 element = cursor->element.get();
                 length = cursor->length;
@@ -1800,13 +1802,13 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
             if (shell.kind == TypeShell::Kind::Array && !shell.length_name.empty() && length >= 0) {
                 const int len_index = param_index(templ.type_params, shell.length_name);
                 if (len_index >= 0 && templ.type_params[static_cast<std::size_t>(len_index)].is_value) {
-                    if (set[static_cast<std::size_t>(len_index)] &&
-                        bounds[static_cast<std::size_t>(len_index)].value != length) {
+                    if (length > 2147483647 || (set[static_cast<std::size_t>(len_index)] &&
+                                                bounds[static_cast<std::size_t>(len_index)].value != length)) {
                         length_failed = true;
                         break;
                     }
                     bounds[static_cast<std::size_t>(len_index)].is_value = true;
-                    bounds[static_cast<std::size_t>(len_index)].value = length;
+                    bounds[static_cast<std::size_t>(len_index)].value = static_cast<int>(length);
                     set[static_cast<std::size_t>(len_index)] = 1;
                 }
             }
@@ -2060,7 +2062,7 @@ bool Checker::generic_candidate_matches(const FunctionDecl &templ, const Expr::C
                 }
             } else if (param.is_array && param.array_len > 0 && param.indirections == 0) {
                 // `[2][2]T` peels every array. A parameter may already be the decayed outer pointer.
-                const auto peel = [&](int length) -> bool {
+                const auto peel = [&](int64_t length) -> bool {
                     if (core->kind == TypeKind::Array && core->length == length && core->element != nullptr) {
                         core = core->element.get();
                         return true;

@@ -383,16 +383,17 @@ bool CodeGen::define_comptime_string(const PackageGraph &graph, const FunctionDe
     auto *room_bb = llvm::BasicBlock::Create(context_, "room", wrapper);
     auto *copy_bb = llvm::BasicBlock::Create(context_, "copy", wrapper);
     auto *done_bb = llvm::BasicBlock::Create(context_, "done", wrapper);
-    builder_.CreateCondBr(builder_.CreateICmpSLT(len, const_i32(0)), fail_bb, null_bb);
+    // The length is an `i64`. It fits the pool before the `i32` count is stored.
+    builder_.CreateCondBr(builder_.CreateICmpSLT(len, const_len(0)), fail_bb, null_bb);
     builder_.SetInsertPoint(null_bb);
     llvm::Value *null_len = builder_.CreateAnd(builder_.CreateICmpEQ(data, null_ptr()),
-                                               builder_.CreateICmpNE(len, const_i32(0)));
+                                               builder_.CreateICmpNE(len, const_len(0)));
     builder_.CreateCondBr(null_len, fail_bb, room_bb);
     builder_.SetInsertPoint(room_bb);
-    builder_.CreateCondBr(builder_.CreateICmpUGT(len, const_i32(static_cast<int>(kPoolBytes))), fail_bb, copy_bb);
+    builder_.CreateCondBr(builder_.CreateICmpUGT(len, const_len(static_cast<int64_t>(kPoolBytes))), fail_bb, copy_bb);
     builder_.SetInsertPoint(copy_bb);
-    builder_.CreateMemCpy(pool, llvm::Align(1), data, llvm::Align(1), builder_.CreateZExt(len, i64()));
-    builder_.CreateStore(len, used);
+    builder_.CreateMemCpy(pool, llvm::Align(1), data, llvm::Align(1), len);
+    builder_.CreateStore(builder_.CreateTrunc(len, i32()), used);
     builder_.CreateBr(done_bb);
     builder_.SetInsertPoint(fail_bb);
     builder_.CreateStore(const_i32(1), fail);
@@ -2266,18 +2267,19 @@ llvm::Value *CodeGen::retain_eval_slice(llvm::Value *packed, uint64_t elem_size)
     auto *skip_bb = llvm::BasicBlock::Create(context_, "slice.skip", function);
     auto *done_bb = llvm::BasicBlock::Create(context_, "slice.done", function);
     llvm::Value *data = builder_.CreateExtractValue(packed, 0);
+    // The length is an `i64`, so the span is computed at that width. The pool count stays an `i32`.
     llvm::Value *len = builder_.CreateExtractValue(packed, 1);
-    llvm::Value *span = builder_.CreateMul(len, const_i32(static_cast<int>(elem_size)));
-    llvm::Value *used_now = builder_.CreateLoad(i32(), used);
+    llvm::Value *span = builder_.CreateMul(len, const_len(static_cast<int64_t>(elem_size)));
+    llvm::Value *used_now = builder_.CreateZExt(builder_.CreateLoad(i32(), used), i64());
     llvm::Value *next = builder_.CreateAdd(used_now, span);
     llvm::Value *overflow = builder_.CreateOr(builder_.CreateICmpULT(next, used_now),
-                                               builder_.CreateICmpUGT(next, const_i32(static_cast<int>(kPoolBytes))));
-    llvm::Value *bad = builder_.CreateOr(overflow, builder_.CreateICmpSLT(len, const_i32(0)));
+                                               builder_.CreateICmpUGT(next, const_len(static_cast<int64_t>(kPoolBytes))));
+    llvm::Value *bad = builder_.CreateOr(overflow, builder_.CreateICmpSLT(len, const_len(0)));
     builder_.CreateCondBr(bad, skip_bb, copy_bb);
     builder_.SetInsertPoint(copy_bb);
-    llvm::Value *dest = builder_.CreateInBoundsGEP(i8(), pool, builder_.CreateZExt(used_now, i64()));
-    builder_.CreateMemCpy(dest, llvm::Align(1), data, llvm::Align(1), builder_.CreateZExt(span, i64()));
-    builder_.CreateStore(next, used);
+    llvm::Value *dest = builder_.CreateInBoundsGEP(i8(), pool, used_now);
+    builder_.CreateMemCpy(dest, llvm::Align(1), data, llvm::Align(1), span);
+    builder_.CreateStore(builder_.CreateTrunc(next, i32()), used);
     llvm::Value *kept = builder_.CreateInsertValue(packed, dest, 0);
     builder_.CreateBr(done_bb);
     builder_.SetInsertPoint(skip_bb);

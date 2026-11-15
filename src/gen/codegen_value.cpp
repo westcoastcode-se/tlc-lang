@@ -124,7 +124,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     // `array_len` keeps N so `(*p)[i:j]` can build the slice. Depth is one above the element.
                     if (inner.ptr_to_array ||
                         (pointer_shell && inner.shells.size() >= 2 && inner.shells[1].kind == TypeShell::Kind::Array)) {
-                        int length = inner.ptr_array_len;
+                        int64_t length = inner.ptr_array_len;
                         if (length <= 0 && inner.shells.size() >= 2 &&
                             inner.shells[1].kind == TypeShell::Kind::Array) {
                             length = inner.shells[1].length;
@@ -208,7 +208,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         // `*p` on `*[N]T` decays to a pointer to the first element.
                         // The length stays so a range of that array can build the slice.
                         if (peeled.shells.size() == 1 && peeled.shells.front().kind == TypeShell::Kind::Array) {
-                            const int length = peeled.shells.front().length;
+                            const int64_t length = peeled.shells.front().length;
                             peeled.array_len = length;
                             peeled.shells.clear();
                             peeled.ptr_to_array = false;
@@ -1170,20 +1170,20 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 if (node.slice_len) {
                     if (node.len_value >= 0) {
-                        return {const_i32(node.len_value), 0};
+                        return len_value(const_len(node.len_value));
                     }
                     const TypedValue base = node.base != nullptr ? emit_rvalue(*node.base) : TypedValue{};
                     if (base.is_slice && base.value != nullptr) {
-                        return {builder_.CreateExtractValue(base.value, 1), 0};
+                        return len_value(builder_.CreateExtractValue(base.value, 1));
                     }
                     // `var s = cut(40)` keeps the folded array. `.len` is that count.
                     if (base.array_len > 0) {
-                        return {const_i32(base.array_len), 0};
+                        return len_value(const_len(base.array_len));
                     }
                     if (base.value != nullptr) {
                         if (llvm::Type *object = object_type(base.value); object != nullptr && object->isArrayTy()) {
-                            return {const_i32(static_cast<int>(llvm::cast<llvm::ArrayType>(object)->getNumElements())),
-                                    0};
+                            return len_value(
+                                const_len(static_cast<int64_t>(llvm::cast<llvm::ArrayType>(object)->getNumElements())));
                         }
                     }
                     error(node.loc, "type mismatch");
@@ -1777,11 +1777,11 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 }
                 const uint64_t bytes = node.align ? module_.getDataLayout().getABITypeAlign(measured).value()
                                                   : module_.getDataLayout().getTypeAllocSize(measured).getFixedValue();
-                if (bytes > 2147483647ULL) {
+                if (bytes > 9223372036854775807ULL) {
                     error(node.loc, "not supported yet");
                     return {zero(), 0};
                 }
-                return {const_i32(static_cast<int32_t>(bytes)), 0};
+                return len_value(const_len(static_cast<int64_t>(bytes)));
             } else if constexpr (std::is_same_v<T, Expr::New>) {
                 return emit_new(node);
             } else if constexpr (std::is_same_v<T, Expr::Delete>) {
@@ -1945,9 +1945,13 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                             target.elem_bool, target.elem_bits, target.elem_unsigned, target.trait_id, target.elem_float};
                 }
                 if (source.depth > 0 && target.depth == 0 && !target.elem_char && !target.elem_void && target.struct_id < 0 &&
-                    !target.elem_bool && target.elem_bits != 8 && target.elem_bits != 16 && target.elem_bits != 64) {
+                    !target.elem_bool && target.elem_bits != 8 && target.elem_bits != 16) {
                     llvm::IntegerType *intptr = module_.getDataLayout().getIntPtrType(context_, 0);
                     llvm::Value *wide = builder_.CreatePtrToInt(source.value, intptr);
+                    // `i64(p)` is the whole address. `i32(p)` keeps its low bits.
+                    if (target.elem_bits == 64) {
+                        return len_value(wide->getType() == i64() ? wide : builder_.CreateZExtOrTrunc(wide, i64()));
+                    }
                     llvm::Value *narrow = wide->getType() == i32() ? wide : builder_.CreateTrunc(wide, i32());
                     return {narrow, 0};
                 }

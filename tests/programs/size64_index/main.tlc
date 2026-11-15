@@ -1,0 +1,25 @@
+// An index is any integer, used as an `i64`. An unsigned index is zero-extended.
+var row [300]i32;
+
+func main() i32 {
+    var k = 0;
+    while (k < 300) {
+        row[k] = k;
+        k = k + 1;
+    }
+    var a u8 = 200u8;
+    var b u32 = 250u32;
+    var c u64 = 251u64;
+    var d i64 = 252;
+    var e i16 = 253i16;
+    var f = row.len - 1;
+    var s []i32 = row[a:d];
+    var bad = 0;
+    if (row[a] != 200 || row[b] != 250 || row[c] != 251 || row[d] != 252 || row[e] != 253 || row[f] != 299) {
+        bad += 1;
+    }
+    if (s.len != 52 || s[c - 200u64] != 251) {
+        bad += 2;
+    }
+    return bad == 0 ? 42 : bad;
+}

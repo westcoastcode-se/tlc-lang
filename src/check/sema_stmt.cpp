@@ -3597,13 +3597,14 @@ void Checker::check_stmt(const Stmt &stmt) {
                             } else {
                                 error(loc, "not supported yet");
                             }
-                        } else if (plain_int_constant(parts[index]) ||
+                        } else if ((plain_int_constant(parts[index]) && parts[index].rank != 5) ||
                                    (parts[index].kind == TypeKind::Bool && parts[index].alias_id == 0)) {
                             if (const std::optional<int> value = constant_index(*bind.value)) {
                                 symbol.is_constant = true;
                                 ++fold_generation_;
                                 symbol.folded_local = true;
                                 symbol.const_value = parts[index].kind == TypeKind::Bool ? (*value != 0 ? 1 : 0) : *value;
+                                symbol.const_fits = true;
                                 ++fold_generation_;
                                 symbol.const_init = bind.value.get();
                             }
@@ -3611,6 +3612,14 @@ void Checker::check_stmt(const Stmt &stmt) {
                             symbol.is_constant = true;
                             ++fold_generation_;
                             symbol.const_init = bind.value.get();
+                            // `comptime const n = a.len` is an `i64`. A value that fits is also kept exactly.
+                            if (plain_int_constant(parts[index])) {
+                                if (const std::optional<int> fitted = folded_wide_i32(*bind.value)) {
+                                    symbol.folded_local = true;
+                                    symbol.const_value = *fitted;
+                                    symbol.const_fits = true;
+                                }
+                            }
                         }
                     } else if (node.is_const && !node.is_comptime) {
                         note_promotable(symbol, node.value.get());
@@ -3806,13 +3815,14 @@ void Checker::check_stmt(const Stmt &stmt) {
                                     } else {
                                         error(var.loc, "not supported yet");
                                     }
-                                } else if (plain_int_constant(live->type) ||
+                                } else if (int_constant(*live) ||
                                            (live->type.kind == TypeKind::Bool && live->type.alias_id == 0)) {
                                     if (const std::optional<int> value = constant_index(*written.init)) {
                                         live->is_constant = true;
                                         ++fold_generation_;
                                         live->folded_local = true;
                                         live->const_value = live->type.kind == TypeKind::Bool ? (*value != 0 ? 1 : 0) : *value;
+                                        live->const_fits = true;
                                         ++fold_generation_;
                                         live->const_init = written.init.get();
                                     }
@@ -4008,7 +4018,7 @@ bool Checker::bind_array_lengths(Stmt &stmt, const std::vector<std::string> &nam
                                  const std::vector<const Expr *> &exprs, bool &wrote) {
     bool negative = false;
     wrote = false;
-    auto apply = [&](int &length, std::string &length_name, SourceLoc loc) {
+    auto apply = [&](int64_t &length, std::string &length_name, SourceLoc loc) {
         if (length_name.empty() || negative) {
             return;
         }

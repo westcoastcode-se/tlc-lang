@@ -1,5 +1,6 @@
+// The count of `new [n]T` is any integer. A `u64` count is that many elements.
 func main() i32 {
     var n u64 = 4;
     var buf = new [n]i32;
-    return buf.len;
+    return i32(buf.len);
 }

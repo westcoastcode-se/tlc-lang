@@ -98,7 +98,7 @@ A parameter `[N]T` takes that address without a cast.
 
 A string literal is `[]const u8`. It can be passed to `[]const u8` and to `*const u8`. It cannot be passed to `*u8` or `[]u8`.
 
-The index has type `i32`.
+The index is any integer and is used as an `i64`.
 
 `new [n]i32` reserves `n` elements and yields `[]i32`. `buf[i] = 1` writes an element. `buf[i]` is rejected at run time when `i` is outside `n`.
 
@@ -116,9 +116,9 @@ The index has type `i32`.
 
 A range of `[N]Duo` is `[]Duo`, and of `[N][M]Duo` is `[][M]Duo`. A range of `[_][2]i32` is a slice of `[2]i32`. The length counts rows.
 
-`v[i]` reads an element. `v.len` is `i32`.
+`v[i]` reads an element. `v.len` is `i64`.
 
-`row.len` on a sized array is `i32`, the number of elements, with the same spelling. `row.len()` is that same length. An empty array has length 0.
+`row.len` on a sized array is `i64`, the number of elements, with the same spelling. `row.len()` is that same length. An empty array has length 0.
 
 `comptime const row = [_]i32{40, 2}` then `row[1]` is 2. `assert(row[1] == 2, "x")` folds.
 

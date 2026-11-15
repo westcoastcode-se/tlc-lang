@@ -26,7 +26,7 @@ var used i32;
 
 type Arena struct { mark i32; }
 
-unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+unsafe func Arena::malloc(self *this, size i64, align i32) ?*u8 {
     if (used != 0) { return null; }
     used = size;
     return ?*u8(&slot);
@@ -34,7 +34,7 @@ unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 {
 
 func Arena::free(self *this, ptr *u8) void {}
 
-unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 {
     return null;
 }
 

@@ -250,7 +250,7 @@ void CodeGen::emit_stack_trace() {
         builder_.SetInsertPoint(done);
         llvm::Value *slice = llvm::ConstantAggregateZero::get(slice_type());
         slice = builder_.CreateInsertValue(slice, memory, 0);
-        slice = builder_.CreateInsertValue(slice, depth, 1);
+        slice = builder_.CreateInsertValue(slice, to_len(depth), 1);
         llvm::Value *result = builder_.CreateInsertValue(llvm::ConstantAggregateZero::get(trace_layout->type), slice, 0);
         builder_.CreateRet(result);
     }
@@ -546,7 +546,14 @@ void CodeGen::trap_index(llvm::Value *index, llvm::Value *length, SourceLoc loc)
     if (index == nullptr || length == nullptr || terminated() || function_ == nullptr) {
         return;
     }
-    llvm::Value *low_bad = builder_.CreateICmpSLT(index, const_i32(0));
+    // Both are `i64`. A narrower length is widened. A `u64` index past the signed range is negative here.
+    if (index->getType() != len_ty()) {
+        index = builder_.CreateSExtOrTrunc(index, len_ty());
+    }
+    if (length->getType() != len_ty()) {
+        length = builder_.CreateSExtOrTrunc(length, len_ty());
+    }
+    llvm::Value *low_bad = builder_.CreateICmpSLT(index, const_len(0));
     llvm::Value *high_bad = builder_.CreateICmpSGE(index, length);
     llvm::Value *bad = builder_.CreateOr(low_bad, high_bad);
     auto *fail = llvm::BasicBlock::Create(context_, "index.fail", function_);
@@ -595,13 +602,7 @@ llvm::Value *CodeGen::heap_alloc(const Expr::New &node, llvm::Value *receiver, l
         error(node.loc, "undeclared identifier");
         return nullptr;
     }
-    // The trait method takes an i32 byte count.
-    llvm::BasicBlock *big = llvm::BasicBlock::Create(context_, "new.big", function_);
-    llvm::BasicBlock *fit = llvm::BasicBlock::Create(context_, "new.fit", function_);
-    builder_.CreateCondBr(builder_.CreateICmpUGT(bytes, llvm::ConstantInt::get(i64(), 2147483647)), big, fit);
-    builder_.SetInsertPoint(big);
-    abort_panic(node.loc, "size does not fit");
-    builder_.SetInsertPoint(fit);
+    // The trait method takes an `i64` byte count.
     const uint32_t method_file = bare ? default_alloc_file_ : node.alloc_file;
     const std::string &method_type = bare ? default_alloc_type_ : node.alloc_name;
     llvm::Function *method = allocator_method(method_file, method_type, "malloc");
@@ -614,7 +615,7 @@ llvm::Value *CodeGen::heap_alloc(const Expr::New &node, llvm::Value *receiver, l
         return nullptr;
     }
     return call_traced(node.loc, method->getFunctionType(), method,
-                      {receiver, builder_.CreateTrunc(bytes, i32()), const_i32(static_cast<int>(align))});
+                      {receiver, alloc_arg(method, 1, bytes), alloc_arg(method, 2, const_len(static_cast<int64_t>(align)))});
 }
 
 llvm::Value *CodeGen::call_malloc(const Expr::New &node, uint64_t size, uint64_t align) {
@@ -624,7 +625,7 @@ llvm::Value *CodeGen::call_malloc(const Expr::New &node, uint64_t size, uint64_t
             error(node.loc, "undeclared identifier");
             return nullptr;
         }
-        if (size > 2147483647ULL || align > 2147483647ULL) {
+        if (size > 9223372036854775807ULL || align > 2147483647ULL) {
             error(node.loc, "not supported yet");
             return nullptr;
         }
@@ -635,8 +636,8 @@ llvm::Value *CodeGen::call_malloc(const Expr::New &node, uint64_t size, uint64_t
         }
         const uint64_t bytes = size == 0 ? 1 : size;
         return call_traced(node.loc, method->getFunctionType(), method,
-                          {default_alloc_global_, const_i32(static_cast<int32_t>(bytes)),
-                           const_i32(static_cast<int32_t>(align))});
+                          {default_alloc_global_, alloc_arg(method, 1, const_len(static_cast<int64_t>(bytes))),
+                           alloc_arg(method, 2, const_len(static_cast<int64_t>(align)))});
     }
     if (node.builtin_alloc) {
         uint64_t bytes = size == 0 ? 1 : size;
@@ -663,13 +664,14 @@ llvm::Value *CodeGen::call_malloc(const Expr::New &node, uint64_t size, uint64_t
     if (receiver == nullptr) {
         return nullptr;
     }
-    if (size > 2147483647ULL || align > 2147483647ULL) {
+    if (size > 9223372036854775807ULL || align > 2147483647ULL) {
         error(node.loc, "not supported yet");
         return nullptr;
     }
     auto *fn_type = method->getFunctionType();
     return call_traced(node.loc, fn_type, method,
-                      {receiver, const_i32(static_cast<int32_t>(size)), const_i32(static_cast<int32_t>(align))});
+                      {receiver, alloc_arg(method, 1, const_len(static_cast<int64_t>(size))),
+                       alloc_arg(method, 2, const_len(static_cast<int64_t>(align)))});
 }
 
 void CodeGen::call_free(const Expr::Delete &node, llvm::Value *pointer, llvm::Value *receiver) {
@@ -724,18 +726,18 @@ void CodeGen::fill_new_buffer(llvm::Value *raw, llvm::Value *count, const Lowere
         if (terminated() || value.value == nullptr) {
             return;
         }
-        llvm::AllocaInst *step = alloca_typed(i32(), "new.i");
-        builder_.CreateStore(const_i32(0), step);
+        llvm::AllocaInst *step = alloca_typed(len_ty(), "new.i");
+        builder_.CreateStore(const_len(0), step);
         llvm::BasicBlock *cond = llvm::BasicBlock::Create(context_, "new.rep", function_);
         llvm::BasicBlock *body = llvm::BasicBlock::Create(context_, "new.rep.body", function_);
         llvm::BasicBlock *done = llvm::BasicBlock::Create(context_, "new.rep.done", function_);
         builder_.CreateBr(cond);
         builder_.SetInsertPoint(cond);
-        llvm::Value *index = builder_.CreateLoad(i32(), step);
-        builder_.CreateCondBr(builder_.CreateICmpSLT(index, count), body, done);
+        llvm::Value *index = builder_.CreateLoad(len_ty(), step);
+        builder_.CreateCondBr(builder_.CreateICmpSLT(index, to_len(count)), body, done);
         builder_.SetInsertPoint(body);
         store_new_element(raw, index, low, value, expr_loc(*init.elements.front()));
-        builder_.CreateStore(builder_.CreateAdd(index, const_i32(1)), step);
+        builder_.CreateStore(builder_.CreateAdd(index, const_len(1)), step);
         builder_.CreateBr(cond);
         builder_.SetInsertPoint(done);
         return;
@@ -853,22 +855,12 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
         builder_.SetInsertPoint(empty);
         empty_slice = llvm::ConstantAggregateZero::get(slice_type());
         empty_slice = builder_.CreateInsertValue(empty_slice, null_ptr(), 0);
-        empty_slice = builder_.CreateInsertValue(empty_slice, const_i32(0), 1);
+        empty_slice = builder_.CreateInsertValue(empty_slice, const_len(0), 1);
         builder_.CreateBr(have_slice);
         builder_.SetInsertPoint(ready);
-        if (count_int->getBitWidth() > 32) {
-            llvm::BasicBlock *big = llvm::BasicBlock::Create(context_, "new.bigcount", function_);
-            llvm::BasicBlock *fits = llvm::BasicBlock::Create(context_, "new.fitcount", function_);
-            llvm::Value *limit = llvm::ConstantInt::get(count_int, 2147483647);
-            builder_.CreateCondBr(builder_.CreateICmpSGT(count_value.value, limit), big, fits);
-            builder_.SetInsertPoint(big);
-            abort_panic(node.loc, "size does not fit");
-            builder_.SetInsertPoint(fits);
-            element_count = builder_.CreateTrunc(count_value.value, i32());
-        } else if (count_int->getBitWidth() < 32) {
-            element_count = builder_.CreateSExt(count_value.value, i32());
-        }
-        llvm::Value *wide = builder_.CreateZExt(element_count, i64());
+        // The count is an `i64`, the length of the slice. It is positive here.
+        element_count = to_len(count_value.value, count_value.elem_unsigned);
+        llvm::Value *wide = element_count;
         if (size == 0) {
             buffer_bytes = llvm::ConstantInt::get(i64(), 1);
         } else {
@@ -958,7 +950,7 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
         // `new [n]T` is `[]T`. The length is the element count.
         llvm::Value *packed = llvm::ConstantAggregateZero::get(slice_type());
         packed = builder_.CreateInsertValue(packed, raw, 0);
-        packed = builder_.CreateInsertValue(packed, element_count, 1);
+        packed = builder_.CreateInsertValue(packed, to_len(element_count), 1);
         result.value = packed;
         result.is_slice = true;
         result.depth = low.depth;

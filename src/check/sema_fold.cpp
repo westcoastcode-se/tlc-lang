@@ -689,7 +689,7 @@ std::optional<int> Checker::fold_runtime_const(const Expr &expr, int depth) {
             using T = std::decay_t<decltype(item)>;
             if constexpr (std::is_same_v<T, Expr::Name>) {
                 const Symbol *symbol = lookup(item.text);
-                if (symbol == nullptr || !symbol->runtime_const || !plain_int_constant(symbol->type)) {
+                if (symbol == nullptr || !symbol->runtime_const || !int_constant(*symbol)) {
                     return std::nullopt;
                 }
                 // `const n = a` keeps the value from that declaration.
@@ -1164,11 +1164,11 @@ std::optional<int> Checker::constant_index(const Expr &expr) {
                         return std::nullopt;
                     }
                     if (symbol->folded_local ||
-                        (symbol->folded_init && symbol->runtime_const && plain_int_constant(symbol->type))) {
+                        (symbol->folded_init && symbol->runtime_const && int_constant(*symbol))) {
                         return symbol->const_value;
                     }
                     // `const i = 0` then `t[i]`. A `var` has no folded initializer.
-                    if (symbol->promote_init != nullptr && plain_int_constant(symbol->type)) {
+                    if (symbol->promote_init != nullptr && int_constant(*symbol)) {
                         return self(self, *symbol->promote_init, depth + 1);
                     }
                     return std::nullopt;
@@ -1259,7 +1259,7 @@ std::optional<Checker::WideInt> Checker::fold_wide_int_uncached(const Expr &expr
                     if (symbol != nullptr && symbol->is_constant && symbol->const_init != nullptr) {
                         folded = self(self, *symbol->const_init, depth + 1, seen);
                     }
-                    if (!folded && symbol != nullptr && plain_int_constant(symbol->type) &&
+                    if (!folded && symbol != nullptr && int_constant(*symbol) &&
                         (symbol->is_constant || symbol->folded_local)) {
                         WideInt wide;
                         wide.value = static_cast<uint32_t>(symbol->const_value);
@@ -1512,11 +1512,56 @@ std::optional<Checker::WideInt> Checker::fold_wide_int_uncached(const Expr &expr
                     cast.is_unsigned = target_unsigned;
                     return cast;
                 } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                    // `row.len()` is the field `row.len`, an `i64`.
+                    if (item.args.empty() && item.callee != nullptr) {
+                        if (const auto *selector = std::get_if<Expr::Selector>(&item.callee->data);
+                            selector != nullptr && (selector->slice_len || selector->field == "len")) {
+                            return self(self, *item.callee, depth + 1, seen);
+                        }
+                    }
                     // `wide(0) > 0u64` reads the integer that call kept.
                     if (item.comptime_struct == nullptr) {
                         return std::nullopt;
                     }
                     return self(self, *item.comptime_struct, depth + 1, seen);
+                } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                    // `a.len` is an `i64`. A length the checker knows folds at that width, past `i32` too.
+                    if (item.field != "len") {
+                        return std::nullopt;
+                    }
+                    int64_t length = item.len_value;
+                    if (length < 0) {
+                        const std::optional<int> known = fold_int(node);
+                        if (!known) {
+                            return std::nullopt;
+                        }
+                        length = *known;
+                    }
+                    WideInt wide;
+                    wide.value = static_cast<uint64_t>(length);
+                    wide.bits = 64;
+                    wide.is_unsigned = false;
+                    return wide;
+                } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
+                    // `sizeof(T)` is an `i64`.
+                    const bool saved = quiet_;
+                    quiet_ = true;
+                    const Type measured = sizeof_operand(item);
+                    quiet_ = saved;
+                    if (measured.kind == TypeKind::Invalid || measured.kind == TypeKind::Void ||
+                        measured.kind == TypeKind::Function || mentions_trait(measured)) {
+                        return std::nullopt;
+                    }
+                    const std::optional<int64_t> size =
+                        item.align ? std::optional<int64_t>(min_align_of(measured)) : type_size(measured);
+                    if (!size) {
+                        return std::nullopt;
+                    }
+                    WideInt wide;
+                    wide.value = static_cast<uint64_t>(static_cast<int64_t>(*size));
+                    wide.bits = 64;
+                    wide.is_unsigned = false;
+                    return wide;
                 } else {
                     return std::nullopt;
                 }
@@ -1686,6 +1731,15 @@ bool Checker::wide_operand(const Expr &expr, int depth) {
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
                 return !node.postfix && node.expr != nullptr && node.op != TokenKind::Bang &&
                        node.op != TokenKind::Star && node.op != TokenKind::Amp && wide_operand(*node.expr, depth + 1);
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                // `a.len` is an `i64`.
+                return node.field == "len" && (node.slice_len || node.len_value >= 0);
+            } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
+                return true;
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                const auto *selector =
+                    node.callee == nullptr ? nullptr : std::get_if<Expr::Selector>(&node.callee->data);
+                return node.args.empty() && selector != nullptr && selector->slice_len;
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {
                 Type named;
                 return node.indirections == 0 && !node.is_struct && !node.is_enum && node.type_package.empty() &&
@@ -1780,7 +1834,7 @@ std::optional<int> Checker::fold_int_uncached(const Expr &expr) {
                 const Symbol *symbol = lookup(node.text);
                 // `name := 10` folds until a store. A `var` and a `const` do not.
                 const bool held = symbol != nullptr && (symbol->is_constant || (symbol->held_comptime && symbol->folded_local));
-                if (held && plain_int_constant(symbol->type)) {
+                if (held && int_constant(*symbol)) {
                     return symbol->const_value;
                 }
                 // `comptime const ok = yes()` when `yes` returns `bool`. The value is 0 or 1.
@@ -1790,8 +1844,10 @@ std::optional<int> Checker::fold_int_uncached(const Expr &expr) {
                 }
                 return std::nullopt;
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                // A length past `i32` folds only at its own width, in `fold_wide_int`.
                 if (node.len_value >= 0) {
-                    return node.len_value;
+                    return node.len_value <= 2147483647 ? std::optional<int>(static_cast<int>(node.len_value))
+                                                        : std::nullopt;
                 }
                 // A tuple's length is the element count, including before this selector is typechecked.
                 if (node.field == "len" && node.base != nullptr) {
@@ -1834,7 +1890,7 @@ std::optional<int> Checker::fold_int_uncached(const Expr &expr) {
                     const Symbol *symbol = lookup(base->text);
                     if (symbol != nullptr && symbol->is_package) {
                         const Symbol *member = find_export(symbol->package_file, node.field);
-                        if (member == nullptr || !member->is_constant || !plain_int_constant(member->type)) {
+                        if (member == nullptr || !member->is_constant || !int_constant(*member)) {
                             return std::nullopt;
                         }
                         return member->const_value;
@@ -1871,7 +1927,12 @@ std::optional<int> Checker::fold_int_uncached(const Expr &expr) {
                 if (node.align) {
                     return min_align_of(type);
                 }
-                return type_size(type);
+                // A size past `i32` folds only at its own width, in `fold_wide_int`.
+                const std::optional<int64_t> size = type_size(type);
+                if (!size || *size > 2147483647) {
+                    return std::nullopt;
+                }
+                return static_cast<int>(*size);
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
                 if (node.postfix || node.expr == nullptr) {
                     return std::nullopt;
@@ -2216,7 +2277,7 @@ std::optional<int> Checker::file_scope_const_int(const Expr &expr) {
         return std::nullopt;
     }
     const Symbol *symbol = lookup(named->text);
-    if (symbol == nullptr || symbol->is_auto || !symbol->folded_init || !plain_int_constant(symbol->type)) {
+    if (symbol == nullptr || symbol->is_auto || !symbol->folded_init || !int_constant(*symbol)) {
         return std::nullopt;
     }
     const VarDecl *var = global_var(named->text);
@@ -4916,6 +4977,7 @@ void Checker::note_promotable(Symbol &symbol, const Expr *init) {
         symbol.promote_init = init;
         if (const std::optional<int> value = fold_int(*init)) {
             symbol.const_value = *value;
+            symbol.const_fits = true;
             ++fold_generation_;
             symbol.folded_init = true;
         }
@@ -4923,12 +4985,13 @@ void Checker::note_promotable(Symbol &symbol, const Expr *init) {
     }
     // `const j = i + 1` when `i` is a runtime `const`. `t[j]` chooses that field.
     // `comptime const folded = j` does not promote it.
-    if (!plain_int_constant(symbol.type)) {
+    if (!int_constant(symbol)) {
         return;
     }
     if (const std::optional<int> value = constant_index(*init)) {
         symbol.promote_init = init;
         symbol.const_value = *value;
+        symbol.const_fits = true;
         ++fold_generation_;
         symbol.folded_init = true;
     }
@@ -4945,10 +5008,11 @@ void Checker::note_held(Symbol &symbol, const Expr &init) {
     }
     symbol.held_comptime = true;
     symbol.const_init = &init;
-    if (plain_int_constant(symbol.type) || (symbol.type.kind == TypeKind::Bool && symbol.type.alias_id == 0)) {
+    if (int_constant(symbol) || (symbol.type.kind == TypeKind::Bool && symbol.type.alias_id == 0)) {
         if (const std::optional<int> value = constant_index(init)) {
             symbol.folded_local = true;
             symbol.const_value = symbol.type.kind == TypeKind::Bool ? (*value != 0 ? 1 : 0) : *value;
+            symbol.const_fits = true;
             ++fold_generation_;
         }
     }
@@ -5386,6 +5450,7 @@ void Checker::held_restore(const std::vector<HeldSlot> &snap) {
         found->second.pending_fold = slot.pending;
         found->second.folded_local = slot.folded;
         found->second.const_value = slot.value;
+        found->second.const_fits = true;
         found->second.const_init = slot.init;
     }
 }
@@ -5413,6 +5478,7 @@ void Checker::held_and(const std::vector<HeldSlot> &before, const std::vector<He
             found->second.pending_fold = slot.pending;
             found->second.folded_local = slot.folded;
             found->second.const_value = slot.value;
+            found->second.const_fits = true;
             found->second.const_init = slot.init;
         } else {
             found->second.held_comptime = false;
@@ -5762,6 +5828,7 @@ int Checker::explain_comptime_stmt(const Stmt &stmt, const std::string &fn_name)
                         symbol.held_comptime = true;
                         symbol.folded_local = true;
                         symbol.const_value = *value;
+                        symbol.const_fits = true;
                         ++fold_generation_;
                         symbol.const_init = node.value.get();
                         if (scopes_.empty()) {

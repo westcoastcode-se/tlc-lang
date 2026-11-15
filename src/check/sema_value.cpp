@@ -170,7 +170,7 @@ Type Checker::increment_operand(const Expr &expr) {
             InitUseGuard read(*this, InitUse::Read);
             subscript = check_expr(*index->index, true);
         }
-        expect(subscript, type_int(), expr_loc(*index->index));
+        expect_index(subscript, expr_loc(*index->index));
         InitStep step;
         step.kind = InitStep::Kind::Index;
         if (const std::optional<int> folded = constant_index(*index->index)) {
@@ -1033,7 +1033,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         InitUseGuard read(*this, InitUse::Read);
                         subscript = check_expr(*index->index, true);
                     }
-                    expect(subscript, type_int(), expr_loc(*index->index));
+                    expect_index(subscript, expr_loc(*index->index));
                     InitStep step;
                     step.kind = InitStep::Kind::Index;
                     if (const std::optional<int> folded = constant_index(*index->index)) {
@@ -1762,7 +1762,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             const bool sized = base.kind == TypeKind::Array && base.element != nullptr && base.length >= 0;
                             const bool slice = is_slice(base);
                             // `check_expr` drops `decayed_len`. The parameter `[N]T` still stores `N`.
-                            int decayed = 0;
+                            int64_t decayed = 0;
                             bool have_decayed = false;
                             if (!base.optional && selector->base != nullptr) {
                                 if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
@@ -1792,7 +1792,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                     InitPush push(*this, std::move(step));
                                     (void)check_raw(*selector->base, true);
                                 }
-                                return type_int();
+                                return type_i64();
                             }
                         }
                         // `p.make(...)` on a static function is `type mismatch`. The call is `Type.make(...)`.
@@ -2405,7 +2405,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (raw.kind == TypeKind::Tuple && node.field == "len") {
                     node.slice_len = true;
                     node.len_value = static_cast<int>(raw.results.size());
-                    return type_int();
+                    return type_i64();
                 }
                 if (raw.kind == TypeKind::Array && raw.element != nullptr && node.field == "len") {
                     node.slice_len = true;
@@ -2416,7 +2416,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             node.len_value = *known;
                         }
                     }
-                    return type_int();
+                    return type_i64();
                 }
                 // `a.len` on a parameter `[N]T`. The value is a pointer. The length is the one that was written.
                 // This stays ahead of the pointer-to-array check: `[N][M]T` decays to a pointer whose
@@ -2424,7 +2424,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (is_decayed_array(raw) && node.field == "len") {
                     node.slice_len = true;
                     node.len_value = raw.decayed_len;
-                    return type_int();
+                    return type_i64();
                 }
                 // `p.len` on `*[N]T` is the written length. `*i32`, `*[]T`, `**[N]T`, and `?*[N]T` have none.
                 if (raw.kind == TypeKind::Pointer && !raw.optional && raw.pointee != nullptr &&
@@ -2432,7 +2432,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     raw.pointee->element != nullptr && node.field == "len") {
                     node.slice_len = true;
                     node.len_value = raw.pointee->length;
-                    return type_int();
+                    return type_i64();
                 }
                 const Type base = value_type(raw);
                 if (is_slice(base)) {
@@ -2496,12 +2496,12 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     if (node.index) {
                         InitUseGuard read(*this, InitUse::Read);
                         const Type low = check_expr(*node.index, true);
-                        expect(low, type_int(), expr_loc(*node.index));
+                        expect_index(low, expr_loc(*node.index));
                     }
                     if (node.end) {
                         InitUseGuard read(*this, InitUse::Read);
                         const Type high = check_expr(*node.end, true);
-                        expect(high, type_int(), expr_loc(*node.end));
+                        expect_index(high, expr_loc(*node.end));
                     }
                     // A range of a sized array is an address, not a read of the elements.
                     InitStep step;
@@ -2576,7 +2576,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     InitUseGuard read(*this, InitUse::Read);
                     subscript = check_expr(*node.index, true);
                 }
-                expect(subscript, type_int(), expr_loc(*node.index));
+                expect_index(subscript, expr_loc(*node.index));
                 InitStep step;
                 step.kind = InitStep::Kind::Index;
                 if (node.index != nullptr) {
@@ -2690,13 +2690,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     return type_invalid();
                 }
                 if (type.kind == TypeKind::Tuple) {
-                    const std::optional<int> measured = node.align ? std::optional<int>(min_align_of(type)) : type_size(type);
+                    const std::optional<int64_t> measured = node.align ? std::optional<int64_t>(min_align_of(type)) : type_size(type);
                     if (!measured) {
                         error(node.loc, "not supported yet");
                         return type_invalid();
                     }
                 }
-                return type_int();
+                return type_i64();
             } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
                 (void)used;
                 InitQuiet quiet(*this);
@@ -2772,7 +2772,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (!node.is_fn_ptr && !node.type_args.empty()) {
                     Expr::Cast &written = const_cast<Expr::Cast &>(node);
                     bool is_array = false;
-                    int array_len = 0;
+                    int64_t array_len = 0;
                     std::string array_len_name;
                     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum,
                                     written.indirections, written.optional, is_array, array_len, array_len_name,
@@ -2885,8 +2885,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 target_rep.alias_id = 0;
                 const bool source_scalar = is_numeric(source_rep);
                 const bool target_scalar = is_numeric(target_rep);
-                const bool source_int = same_type(source_rep, type_int());
-                const bool target_int = same_type(target_rep, type_int());
+                // A pointer converts to and from a signed `i32` or an `i64`, the width of an address.
+                const bool source_int = same_type(source_rep, type_int()) || same_type(source_rep, type_i64());
+                const bool target_int = same_type(target_rep, type_int()) || same_type(target_rep, type_i64());
                 if ((target.kind == TypeKind::Pointer && source.kind == TypeKind::Pointer) ||
                     (target.kind == TypeKind::Pointer && source_int) ||
                     (target.kind == TypeKind::Pointer && source.kind == TypeKind::Nullptr) ||
@@ -3150,7 +3151,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     bool is_enum = false;
                     bool is_array = false;
-                    int array_len = 0;
+                    int64_t array_len = 0;
                     std::string array_len_name;
                     // Specializing `Box[i32]` rewrites the name on the expression.
                     Expr::New &written = const_cast<Expr::New &>(node);
@@ -3159,14 +3160,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                     written.type_args, written.loc);
                     if (node.count) {
                         const Type got = check_expr(*node.count, true);
-                        if (got.kind != TypeKind::Invalid) {
-                            // The slice length is `i32`. The count may be `i64`. `u64` stays `i32`.
-                            const bool i64_count = got.kind == TypeKind::Int && got.rank == 5 && !got.is_unsigned &&
-                                                   got.alias_id == 0;
-                            if (!i64_count) {
-                                expect(got, type_int(), expr_loc(*node.count));
-                            }
-                        }
+                        // The count is any integer. The slice length is that count as an `i64`.
+                        expect_index(got, expr_loc(*node.count));
                         // `new [0]T` is an empty slice. A negative constant is `type mismatch`.
                         if (const std::optional<int> folded = fold_int(*node.count); folded && *folded < 0) {
                             error(expr_loc(*node.count), "type mismatch");
@@ -3511,7 +3506,7 @@ Checker::TypeReflect Checker::reflect_typeof(const Expr &expr, const Expr::Typeo
 
 Type Checker::operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
                            bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc,
-                           uint32_t const_pointee, bool is_array, int array_len, bool elem_const, bool elem_slice,
+                           uint32_t const_pointee, bool is_array, int64_t array_len, bool elem_const, bool elem_slice,
                            const std::vector<TypeShell> &shells) {
     if (on_type) {
         if (is_array || elem_slice || !shells.empty()) {

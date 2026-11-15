@@ -124,10 +124,10 @@ subq $56, %rsp
 movl $40, 32(%rsp)               # point.x
 movq (%rip), %rcx                # typeof(Point)
 movq 24(%rcx), %rax              # methods
-movl 32(%rcx), %ecx              # methods.len
-movl %ecx, 48(%rsp)              # len
+movq 32(%rcx), %rcx              # methods.len
+movq %rcx, 48(%rsp)              # len
 movq %rax, 40(%rsp)              # data
-movl 48(%rsp), %eax              # len
+movl 48(%rsp), %eax              # len, as the i32 result
 movq 40(%rsp), %rcx              # data
 cmpl $1, %eax                    # len == 1
 jne .L0
@@ -191,8 +191,8 @@ movq (%rax), %rax                # name
 movq %rax, 32(%rsp)              # text
 movq (%rip), %rcx                # typeof(Point)
 movq 8(%rcx), %rax               # fields
-movl 16(%rcx), %ecx              # fields.len
-movl %ecx, 48(%rsp)              # len
+movq 16(%rcx), %rcx              # fields.len
+movq %rcx, 48(%rsp)              # len
 movq %rax, 40(%rsp)              # data
 xorl %eax, %eax                  # zero the result
 leaq (%rip), %rcx                # typeof(i32)
@@ -221,9 +221,9 @@ movb %al, 21(%rsp)               # move
 jne .L4                          # branch
 jmp .L5                          # jump
 .L4:
-movl 48(%rsp), %eax              # fields.len
+movq 48(%rsp), %rax              # fields.len
 movq 40(%rsp), %rcx              # fields
-cmpl $2, %eax                    # len == 2
+cmpq $2, %rax                    # len == 2
 sete %al                         # flag to byte
 movb %al, 21(%rsp)               # move
 .L5:

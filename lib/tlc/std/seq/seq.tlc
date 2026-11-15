@@ -1,11 +1,11 @@
 package seq;
 
 export type Seq[T type] trait {
-    func len() i32;
-    func at(i i32) T;
+    func len() i64;
+    func at(i i64) T;
 };
 
 export type ptr_of[T type] trait {
-    func len() i32;
-    func ref(i i32) *T;
+    func len() i64;
+    func ref(i i64) *T;
 };

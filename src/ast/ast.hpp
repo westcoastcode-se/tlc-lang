@@ -17,14 +17,14 @@ struct FunctionDecl;
 struct Expr;
 
 // One constructor outside a leaf. `shells.front()` is the outermost.
-// A slice is `{ ptr, i32 }`. An array is N of the inner type. A pointer points at the inner type.
+// A slice is `{ ptr, i64 }`. An array is N of the inner type. A pointer points at the inner type.
 struct TypeShell {
     enum class Kind : uint8_t { Pointer, Slice, Array };
     Kind kind = Kind::Pointer;
     bool optional = false;
     bool const_pointee = false;
     // Array length. Zero with `length_name` set is not folded yet. A slice leaves this at 0.
-    int length = 0;
+    int64_t length = 0;
     std::string length_name;
     // `[sizeof(Point)]`. Folded into `length` once that type has a size.
     std::shared_ptr<Expr> length_expr;
@@ -66,7 +66,7 @@ struct TypeArg {
     bool is_array = false;
     // `[]const u8`. The element type is const.
     bool elem_const = false;
-    int array_len = 0;
+    int64_t array_len = 0;
     std::string array_len_name;
     // Constructors outside the leaf, outermost first. Empty when the argument is only a name and pointers.
     std::vector<TypeShell> shells;
@@ -95,7 +95,7 @@ struct FnParam {
     uint32_t const_pointee = 0;
     // `[]T` on a parameter or on one result of several. A sized array is not carried here.
     bool is_array = false;
-    int array_len = 0;
+    int64_t array_len = 0;
     // `[][]T`. The element of this slice is one slice.
     bool elem_slice = false;
     // `[]const u8`. The element type is const.
@@ -224,7 +224,7 @@ struct Expr {
         // `name.len` on a slice, a sized array, or a tuple. The length is `i32` and is not a field.
         mutable bool slice_len = false;
         // A sized array's or a tuple's `.len`. Negative when the length is loaded from a slice.
-        mutable int len_value = -1;
+        mutable int64_t len_value = -1;
         // The list chosen when this overloaded name is stored in a written function type.
         mutable const FunctionDecl *overload = nullptr;
         // `pkg.fn` stored where a C function pointer is expected. See `Name::c_thunk`.
@@ -273,7 +273,7 @@ struct Expr {
         bool elem_slice = false;
         // Constructors outside the leaf, outermost first.
         std::vector<TypeShell> shells;
-        int array_len = 0;
+        int64_t array_len = 0;
         std::unique_ptr<Expr> expr;
         // `alignof`. The operand is the same as `sizeof`. The value is the alignment in bytes.
         bool align = false;
@@ -294,7 +294,7 @@ struct Expr {
         // `[][]T` and `[N][]T`. The element is one slice.
         bool elem_slice = false;
         std::vector<TypeShell> shells;
-        int array_len = 0;
+        int64_t array_len = 0;
         std::unique_ptr<Expr> expr;
         // Filled while checking. Codegen interns this spelling, so equal types share one value.
         mutable std::string canonical;
@@ -395,7 +395,7 @@ struct Expr {
         bool elem_fn = false;
         // `[_][2]i32{...}`. The element is an array of this length.
         // Negative means the element is a slice, as in `[_][]i32{...}`.
-        int elem_array_len = 0;
+        int64_t elem_array_len = 0;
         // `[_][][]T`. The element slice is itself a slice. That form stays rejected.
         bool elem_slice = false;
         // Constructors of the element, outermost first. The inferred `[N]` is not one of them.
@@ -498,7 +498,7 @@ struct ResultSlot {
     // `[][]T` and `[N][]T`. The element is one slice.
     bool elem_slice = false;
     std::vector<TypeShell> shells;
-    int array_len = 0;
+    int64_t array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;
     bool is_fn_ptr = false;
@@ -531,7 +531,7 @@ struct FieldDecl {
     // `[][]T` and `[N][]T`. The element is one slice.
     bool elem_slice = false;
     std::vector<TypeShell> shells;
-    int array_len = 0;
+    int64_t array_len = 0;
     // `[N]int` when N is a name. Folded into `array_len` before code generation.
     std::string array_len_name;
     std::vector<TypeArg> type_args;
@@ -621,7 +621,7 @@ struct TypedefDecl {
     // `[][]T` and `[N][]T`. The element is one slice.
     bool elem_slice = false;
     std::vector<TypeShell> shells;
-    int array_len = 0;
+    int64_t array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;
     bool exported = false;
@@ -659,7 +659,7 @@ struct VarDecl {
     // `[][]T` and `[N][]T`. The element is one slice.
     bool elem_slice = false;
     std::vector<TypeShell> shells;
-    int array_len = 0;
+    int64_t array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;
     // The value is a pointer to the array, as in `*[4]i32`.
@@ -882,7 +882,7 @@ struct Param {
     // `[][]T` and `[N][]T`. The element is one slice.
     bool elem_slice = false;
     std::vector<TypeShell> shells;
-    int array_len = 0;
+    int64_t array_len = 0;
     std::string array_len_name;
     std::vector<TypeArg> type_args;
     bool is_const = false;

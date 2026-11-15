@@ -242,7 +242,7 @@ Checker::InitTouch Checker::init_resolve(Type type, int offset, int count, const
             touch.count = count;
             return touch;
         }
-        const int length = type.length;
+        const int64_t length = type.length;
         const int elem = init_leaf_count(*type.element);
         const bool collapsed = elem > 0 && static_cast<int64_t>(length) * elem > kInitLeafCap;
         const bool oob = step.known && (step.index < 0 || step.index >= length);
@@ -819,9 +819,26 @@ void Checker::init_fill_brace(const Type &type, const Expr::Init *brace, std::ve
     }
     if (type.kind == TypeKind::Array && type.length >= 0 && type.element != nullptr) {
         const int elem = init_leaf_count(*type.element);
-        const int listed = brace == nullptr ? 0 : static_cast<int>(brace->elements.size());
-        for (int index = 0; index < type.length; ++index) {
-            const int at = offset + index * std::max(elem, 0);
+        const int64_t listed = brace == nullptr ? 0 : static_cast<int64_t>(brace->elements.size());
+        // A capped array is one leaf. It is set when every element is: a `{...}` that zeroes the rest or
+        // lists them all, or no initializer when one element's own defaults set all of it. Walking each of
+        // billions of elements here took minutes.
+        if (elem > 0 && type.length * static_cast<int64_t>(elem) > kInitLeafCap) {
+            bool whole = false;
+            if (brace != nullptr) {
+                whole = brace->zero_rest || listed >= type.length;
+            } else {
+                std::vector<uint8_t> one(static_cast<std::size_t>(elem), 0);
+                init_fill(*type.element, nullptr, one, 0);
+                whole = std::find(one.begin(), one.end(), 0) == one.end();
+            }
+            if (whole) {
+                init_set_span(bits, offset, leaves);
+            }
+            return;
+        }
+        for (int64_t index = 0; index < type.length; ++index) {
+            const int at = offset + static_cast<int>(index) * std::max(elem, 0);
             if (brace != nullptr && index < listed && brace->elements[static_cast<std::size_t>(index)] != nullptr) {
                 init_fill(*type.element, brace->elements[static_cast<std::size_t>(index)].get(), bits, at);
             } else if (brace != nullptr && brace->zero_rest && index >= listed) {

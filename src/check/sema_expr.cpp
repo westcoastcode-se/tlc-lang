@@ -506,7 +506,7 @@ Type Checker::check_array_literal(Expr::Init &init) {
                               init.elem_fn_results, init.loc, init.elem_ret_optional, init.elem_ret_const_pointee);
     } else if (!init.elem_shells.empty()) {
         bool is_array = false;
-        int array_len = 0;
+        int64_t array_len = 0;
         std::string array_len_name;
         prepare_written(init.type_name, init.type_package, init.is_struct, init.is_enum, init.indirections, init.optional,
                         is_array, array_len, array_len_name, init.type_args, init.loc);
@@ -525,13 +525,10 @@ Type Checker::check_array_literal(Expr::Init &init) {
         return type_invalid();
     } else if (init.elem_is_array) {
         const bool element_slice = init.elem_array_len_name.empty() && init.elem_array_len < 0;
-        int length = init.elem_array_len;
+        int64_t length = init.elem_array_len;
         if (!element_slice) {
             if (!init.elem_array_len_name.empty()) {
-                std::optional<int> folded = array_length_value(init.elem_array_len_name);
-                if (!folded) {
-                    folded = narrow_file_length(init.elem_array_len_name);
-                }
+                const std::optional<int64_t> folded = array_length_wide(init.elem_array_len_name);
                 if (!folded) {
                     error(init.loc, "not supported yet");
                     check_loose();
@@ -574,7 +571,7 @@ Type Checker::check_array_literal(Expr::Init &init) {
         }
     } else {
         bool is_array = false;
-        int array_len = 0;
+        int64_t array_len = 0;
         std::string array_len_name;
         prepare_written(init.type_name, init.type_package, init.is_struct, init.is_enum, init.indirections, init.optional,
                         is_array, array_len, array_len_name, init.type_args, init.loc);
@@ -663,7 +660,7 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
         int indirections = 0;
         uint32_t optional = 0;
         bool is_array = false;
-        int array_len = 0;
+        int64_t array_len = 0;
         std::string array_len_name;
         prepare_written(init.type_name, init.type_package, is_struct, is_enum, indirections, optional, is_array,
                         array_len, array_len_name, init.type_args, init.loc);
@@ -2258,9 +2255,11 @@ const Checker::MethodInfo *Checker::choose_method(const Expr::Call &node, const 
             hidden_count(extra);
         }
     }
+    // One form takes this many arguments, so there is nothing to choose. `arena.alloc[i32](1)` passes an
+    // `i32` to `count i64`, as an ordinary call does, and the argument check reports a real mismatch.
     if (matches == 0 && visible_counts == 1) {
         for (const MethodInfo *form : forms) {
-            if (args_match(form->type, true)) {
+            if (count_ok(form->type)) {
                 winner = form;
                 matches = 1;
                 break;

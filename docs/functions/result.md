@@ -82,7 +82,7 @@ retq                             # return
 
 `value[0] = 1` stores into that field of a tuple variable. A temporary, `(40, 2)[0] = 1`, and a `const` tuple are `not an lvalue`.
 
-`value.len` is `i32` and is the number of elements. It is a constant.
+`value.len` is `i64` and is the number of elements. It is a constant.
 
 `(40, 'a').len` is 2.
 

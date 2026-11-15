@@ -46,7 +46,7 @@ struct SpecArg {
     bool elem_slice = false;
     // Every pointer, slice, and array outside the leaf. Empty when a plain pointer run is enough.
     std::vector<TypeShell> shells;
-    int array_len = 0;
+    int64_t array_len = 0;
     int struct_id = -1;
     int enum_id = -1;
     // A tuple bound to `T`. One type is stored in the fields above instead.
@@ -132,6 +132,9 @@ struct Symbol {
     // Every value-parameter list of this generic name. One entry is the usual template.
     std::vector<const FunctionDecl *> fn_templates;
     int const_value = 0;
+    // `const_value` is the exact value. An `i64` constant past `i32` has none here and folds in
+    // `fold_wide_int` from its initializer.
+    bool const_fits = false;
     // `const_value` was computed when this runtime `const` was declared.
     // A later binding of a name in the initializer does not change it.
     bool folded_init = false;
@@ -145,6 +148,7 @@ struct Symbol {
     // This local slice's data is an array in the same function. Returning it would dangle.
     bool local_slice = false;
 };
+
 
 struct Scope {
     std::unordered_map<std::string, Symbol> symbols;
@@ -509,7 +513,7 @@ class Checker {
     // `self_id` is the struct being defined. `sizeof` of that struct does not wait on it.
     bool field_waits(const FieldDecl &field, int self_id = -1) const;
     int min_align_of(const Type &type) const;
-    std::optional<int> type_size(const Type &type) const;
+    std::optional<int64_t> type_size(const Type &type) const;
     void declare_struct_tags(const TranslationUnit &unit, uint32_t file_id);
     void define_struct_fields();
     // A field of this struct or union. A method of that name is `redefinition`.
@@ -522,7 +526,7 @@ class Checker {
     Type type_of_name(const std::string &name, SourceLoc loc, bool allow_incomplete = false);
     Type with_indirections(Type type, int count, SourceLoc loc, uint32_t optional = 0, uint32_t const_pointee = 0);
     void note_struct_use(bool is_struct, const std::string &name, SourceLoc loc);
-    Type object_type(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
+    Type object_type(const std::string &name, int indirections, bool is_array, int64_t array_len, SourceLoc loc,
                      bool parameter, const std::string &package = {}, bool is_struct = false, bool is_enum = false,
                      bool receiver = false, uint32_t optional = 0, uint32_t const_pointee = 0,
                      bool allow_incomplete = false, bool elem_const = false, bool elem_slice = false,
@@ -560,7 +564,7 @@ class Checker {
                                uint32_t const_pointee = 0, bool allow_incomplete = false);
     // `[2]T` and `[2][2]T` when `T` is a tuple. Every array shell stays around that tuple.
     // A parameter decays the outermost array to a pointer and keeps the length.
-    Type type_of_tuple_arrays(const std::vector<ResultSlot> &parts, int array_len, const std::vector<TypeShell> &shells,
+    Type type_of_tuple_arrays(const std::vector<ResultSlot> &parts, int64_t array_len, const std::vector<TypeShell> &shells,
                               bool parameter, SourceLoc loc);
     bool indexed_type(const Type &base, Type &out, bool &pointee_void) const;
     // `allow_incomplete` is a tuple alias registered before struct bodies exist.
@@ -754,13 +758,22 @@ class Checker {
     // The decl is a template, not a concrete alias.
     void register_tuple_alias_template(const TypedefDecl &item);
     bool name_taken(const std::string &name) const;
-    Type published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
+    Type published_object(const std::string &name, int indirections, bool is_array, int64_t array_len, SourceLoc loc,
                           bool parameter, const std::string &package, bool is_struct, bool is_enum,
                           uint32_t optional = 0, uint32_t const_pointee = 0, bool elem_const = false,
                           bool elem_slice = false, const std::vector<TypeShell> &shells = {});
     Type published_result(const std::string &name, int indirections, SourceLoc loc, const std::string &package,
                           bool is_struct, bool is_enum, uint32_t optional = 0, uint32_t const_pointee = 0);
     void expect(const Type &got, const Type &want, SourceLoc loc);
+    // An index or a range bound is any integer. It is converted to `i64`. Anything else is
+    // `type mismatch: expected i64, found T`.
+    void expect_index(const Type &got, SourceLoc loc) {
+        if (got.kind == TypeKind::Invalid ||
+            ((got.kind == TypeKind::Int || got.kind == TypeKind::Char) && got.alias_id == 0)) {
+            return;
+        }
+        expect(got, type_i64(), loc);
+    }
     void expect_value(const Type &got, const Type &want, const Expr &expr, SourceLoc loc);
     // `Point{}` and `pkg.Point{}`. A typedef keeps its alias. Anything else is invalid.
     Type literal_struct_type(const Expr::Init &init);
@@ -938,7 +951,7 @@ class Checker {
     bool is_builtin_va_call(const Expr &callee);
     Type operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
                       bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc,
-                      uint32_t const_pointee = 0, bool is_array = false, int array_len = 0, bool elem_const = false,
+                      uint32_t const_pointee = 0, bool is_array = false, int64_t array_len = 0, bool elem_const = false,
                       bool elem_slice = false, const std::vector<TypeShell> &shells = {});
     // Fold each array shell's length name. A non-positive length is `not supported yet`.
     void fold_shells(std::vector<TypeShell> &shells, SourceLoc loc);
@@ -1386,7 +1399,7 @@ class Checker {
     // A file-scope `f32` or `f64`. A `var` may copy another global's initializer.
     bool accept_file_scalar(const VarDecl &var, const Type &type);
     const VarDecl *global_var(const std::string &name);
-    void define_constant(const VarDecl &var, Type type, int folded);
+    void define_constant(const VarDecl &var, Type type, int folded, bool fits = true);
     bool integer_const_type(const Type &type) const;
     bool stored_const_type(const Type &type) const;
     // An array, a string, a slice whose initializer is one of those, or a range of one.
@@ -1403,6 +1416,9 @@ class Checker {
     // A file-scope constant, or a local `const` whose initializer folds.
     // A `var` and an unfolded `const` hide a file-scope constant.
     std::optional<int> array_length_value(const std::string &name);
+    // The length a name gives an array, at 64 bits. `comptime const big = 3000000000` is that `i64`.
+    // An integer value parameter of a generic keeps `array_length_value`, since it is an `i32`.
+    std::optional<int64_t> array_length_wide(const std::string &name);
     // A file-scope `const` of `i8`, `u8`, `i16`, or `u16` used as `[n]T`.
     // A generic value argument does not use this.
     std::optional<int> narrow_file_length(const std::string &name);
@@ -1426,7 +1442,7 @@ class Checker {
     // `result_length` is the result of the function being signed. A mixed template may name
     // its comptime parameter there. A local still waits only when every parameter is comptime.
     void prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
-                         int &indirections, uint32_t &optional, bool &is_array, int &array_len,
+                         int &indirections, uint32_t &optional, bool &is_array, int64_t &array_len,
                          std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc,
                          bool result_length = false);
     // `Buf[n]` and `Mine[n]` while `n` waits. One element stands in so the fields typecheck.
@@ -1522,7 +1538,7 @@ class Checker {
                              SourceLoc loc);
     void substitute_type(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, std::string &type_name,
                          std::string &type_package, bool &is_struct, bool &is_enum, int &indirections, uint32_t &optional,
-                         bool &is_array, int &array_len, std::string &array_len_name, std::vector<TypeArg> &type_args,
+                         bool &is_array, int64_t &array_len, std::string &array_len_name, std::vector<TypeArg> &type_args,
                          SourceLoc loc, std::vector<TypeShell> *shells = nullptr, bool *elem_const = nullptr,
                          uint32_t *const_pointee = nullptr);
     void substitute_expr(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, Expr &expr);

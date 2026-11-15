@@ -54,13 +54,13 @@ Dropping `const` is reported as `unsafe cast`.
 
 A cast between integer types is allowed.
 
-Signed `i32` can be cast to and from a pointer.
+A signed `i32` or an `i64` can be cast to and from a pointer. `i64(p)` is the whole address, and `i32(p)` keeps its low 32 bits. `*u8(sizeof(f32) * 2)` is the address 8.
 
 The cast keeps the type that was written: `*i32(p)` is `*i32`, and `?*i32(p)` is `?*i32`.
 
 `?*i32(null)` is allowed.
 
-`*i32(null)`, `i64(p)`, `u32(p)`, and `i32(null)` are reported as `type mismatch`.
+`*i32(null)`, `u32(p)`, `u64(p)`, and `i32(null)` are reported as `type mismatch`.
 
 The compiler reports `i32*(p)` as `type mismatch`.
 

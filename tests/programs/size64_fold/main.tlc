@@ -1,0 +1,38 @@
+// `.len` and `sizeof` are `i64` and still fold: as an array length, in `comptime if`, and in a constant.
+// A length past `i32` comes from an `i64` constant.
+type Pair struct {
+    a i32;
+    b i32;
+};
+
+comptime const big = 3000000000;
+var wide [big]u8;
+const pair_size = sizeof(Pair);
+var bytes [pair_size]u8;
+
+func main() i32 {
+    var row [3]i32 = {1, 2, 3};
+    const n = row.len;
+    var copy [n]i32;
+    copy[2] = 4;
+    comptime if (row.len != 3) {
+        return 1;
+    }
+    var sized [sizeof(Pair)]u8;
+    var bad = 0;
+    if (copy.len != 3 || bytes.len != 8 || sized.len != 8 || wide.len != 3000000000) {
+        bad += 2;
+    }
+    if (n * 1000000000 != 3000000000) {
+        bad += 4;
+    }
+    // A length past `i32` compares at 64 bits, folded and at run time alike.
+    comptime if (wide.len < 4 || sizeof(wide) <= 2147483647 || wide.len() != 3000000000) {
+        return 8;
+    }
+    var at_run = wide.len;
+    if (!(wide.len >= 4) || !(at_run > 2147483647) || wide.len - 3000000000 != 0 || sizeof(wide) != at_run) {
+        bad += 16;
+    }
+    return bad == 0 ? 42 : bad;
+}

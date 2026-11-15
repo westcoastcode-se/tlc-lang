@@ -595,7 +595,7 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
         // `[]Duo`, `[][2]Duo`, `*[]Duo`, and `[2]*Duo`: the tuple is the leaf and every shell wraps it.
         const std::vector<ResultSlot> parts = leaf.tuple_parts;
         llvm::Type *element = leaf.type;
-        int decayed_len = 0;
+        int64_t decayed_len = 0;
         bool decayed_empty = false;
         if (parameter && !shells.empty() && shells.front().kind == TypeShell::Kind::Array) {
             decayed_len = shells.front().length;
@@ -649,7 +649,7 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
         return out;
     }
     // A parameter `[N]T` is a pointer to the element. `array_len` keeps `N` for a range.
-    int decayed_len = 0;
+    int64_t decayed_len = 0;
     bool decayed_empty = false;
     if (parameter && !shells.empty() && shells.front().kind == TypeShell::Kind::Array) {
         decayed_len = shells.front().length;
@@ -689,7 +689,7 @@ CodeGen::Lowered CodeGen::compose_shells(Lowered leaf, std::vector<TypeShell> sh
 }
 
 CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const std::string &package, bool is_struct,
-                                 int indirections, bool is_array, int array_len, bool parameter, bool elem_slice,
+                                 int indirections, bool is_array, int64_t array_len, bool parameter, bool elem_slice,
                                  const std::vector<TypeShell> &shells) const {
     if (!shells.empty()) {
         // `[2]*Duo` and `[][2]Duo` when `Duo` names a tuple: the leaf's stars go inside the written shells.
@@ -927,7 +927,7 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
         out.type = llvm::ArrayType::get(slice_type(), static_cast<uint64_t>(array_len));
         return out;
     }
-    // `[]T` and `type Rows [][]i32` stay a `{ ptr, i32 }` value. A parameter does not decay.
+    // `[]T` and `type Rows [][]i32` stay a `{ ptr, i64 }` value. A parameter does not decay.
     if ((is_array && array_len < 0) || (base_slice && indirections == 0 && !is_array)) {
         out.is_slice = true;
         out.elem_slice = base_headers;
@@ -1049,7 +1049,7 @@ llvm::Type *CodeGen::tuple_shell_type(const std::vector<ResultSlot> &parts, cons
     return type;
 }
 
-CodeGen::Lowered CodeGen::lower_tuple_array(const std::vector<ResultSlot> &parts, int length,
+CodeGen::Lowered CodeGen::lower_tuple_array(const std::vector<ResultSlot> &parts, int64_t length,
                                              const std::vector<TypeShell> &written) const {
     std::vector<TypeShell> shells = written;
     if (shells.empty() && length > 0) {
@@ -1072,7 +1072,7 @@ CodeGen::Lowered CodeGen::lower_tuple_array(const std::vector<ResultSlot> &parts
 
 CodeGen::Lowered CodeGen::lower_tuple_shaped(uint32_t file, const std::vector<ResultSlot> &parts,
                                               std::vector<TypeShell> shells, int indirections, uint32_t optional,
-                                              bool is_array, int array_len, bool parameter) const {
+                                              bool is_array, int64_t array_len, bool parameter) const {
     if (shells.empty() && is_array && array_len != 0) {
         TypeShell array;
         array.kind = array_len < 0 ? TypeShell::Kind::Slice : TypeShell::Kind::Array;
@@ -1429,7 +1429,7 @@ llvm::StructType *CodeGen::slice_type() const {
         return slice_ty_;
     }
     auto *type = llvm::StructType::create(context_, "tlc.slice");
-    type->setBody({ptr_type(), i32()});
+    type->setBody({ptr_type(), i64()});
     slice_ty_ = type;
     return type;
 }
@@ -1447,18 +1447,18 @@ llvm::Value *CodeGen::as_slice_value(const TypedValue &value, SourceLoc loc) {
             llvm::Value *data =
                 builder_.CreateInBoundsGEP(object, value.value, llvm::ArrayRef<llvm::Value *>{const_i32(0), const_i32(0)});
             // A string literal sets `array_len` to the bytes, which is 0 for `""`.
-            const int len = value.array_len > 0 || (value.is_slice && value.array_len >= 0)
+            const int64_t len = value.array_len > 0 || (value.is_slice && value.array_len >= 0)
                                 ? value.array_len
-                                : static_cast<int>(array->getNumElements());
+                                : static_cast<int64_t>(array->getNumElements());
             llvm::Value *packed = llvm::ConstantAggregateZero::get(slice_ty);
             packed = builder_.CreateInsertValue(packed, data, 0);
-            packed = builder_.CreateInsertValue(packed, const_i32(len), 1);
+            packed = builder_.CreateInsertValue(packed, const_len(len), 1);
             return packed;
         }
         // A parameter `[N]T` keeps `N` in `array_len`. `*[N]T` keeps it in `ptr_array_len`,
         // or in the array shell when a field load did not copy that flag. A string uses
         // `array_len` 0, so that length is still packed.
-        int len = -1;
+        int64_t len = -1;
         if (value.array_len > 0 || (value.is_slice && value.array_len >= 0)) {
             len = value.array_len;
         } else if (value.ptr_to_array && value.ptr_array_len > 0) {
@@ -1470,7 +1470,7 @@ llvm::Value *CodeGen::as_slice_value(const TypedValue &value, SourceLoc loc) {
         if (len >= 0 && value.value->getType()->isPointerTy()) {
             llvm::Value *packed = llvm::ConstantAggregateZero::get(slice_ty);
             packed = builder_.CreateInsertValue(packed, value.value, 0);
-            packed = builder_.CreateInsertValue(packed, const_i32(len), 1);
+            packed = builder_.CreateInsertValue(packed, const_len(len), 1);
             return packed;
         }
     }

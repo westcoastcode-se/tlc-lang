@@ -518,7 +518,7 @@ A type parameter bound to two different types in one call is reported as `type m
 
 ## `sizeof` as a type argument
 
-`sizeof` produces `i32`, so it may be a compile-time integer type argument.
+`sizeof` produces `i64`. A size that fits in `i32` may be a compile-time integer type argument.
 
 `width[sizeof(Point)]()` is the same specialization as `width[8]()`.
 

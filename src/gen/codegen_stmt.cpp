@@ -1254,10 +1254,10 @@ void CodeGen::emit_for_each(const Stmt::For &node) {
             return builder_.CreateExtractValue(header, 1);
         }
         if (value.array_len > 0) {
-            return const_i32(value.array_len);
+            return const_len(value.array_len);
         }
         if (value.array_type != nullptr && value.array_type->isArrayTy()) {
-            return const_i32(static_cast<int>(value.array_type->getArrayNumElements()));
+            return const_len(static_cast<int64_t>(value.array_type->getArrayNumElements()));
         }
         return nullptr;
     };
@@ -1297,8 +1297,10 @@ void CodeGen::emit_for_each(const Stmt::For &node) {
         pop();
         return;
     }
-    llvm::AllocaInst *index = alloca_typed(i32(), "each.i");
-    builder_.CreateStore(const_i32(0), index);
+    // The position is an `i64`, as a length is. A `len()` that returns a narrower integer is widened.
+    length = to_len(length);
+    llvm::AllocaInst *index = alloca_typed(len_ty(), "each.i");
+    builder_.CreateStore(const_len(0), index);
     llvm::Type *slot_type = want_ref ? static_cast<llvm::Type *>(ptr_type()) : i32();
     int slot_depth = want_ref ? 1 : 0;
     int slot_struct = -1;
@@ -1356,13 +1358,13 @@ void CodeGen::emit_for_each(const Stmt::For &node) {
         builder_.CreateBr(cond_block);
     }
     builder_.SetInsertPoint(cond_block);
-    llvm::Value *current = builder_.CreateLoad(i32(), index);
+    llvm::Value *current = builder_.CreateLoad(len_ty(), index);
     llvm::Value *more = builder_.CreateICmpSLT(current, length);
     if (!terminated()) {
         builder_.CreateCondBr(more, body_block, end_block);
     }
     builder_.SetInsertPoint(body_block);
-    llvm::Value *here = builder_.CreateLoad(i32(), index);
+    llvm::Value *here = builder_.CreateLoad(len_ty(), index);
     if (struct_value) {
         llvm::Function *method = find_method(want_ref ? "ref" : "at");
         llvm::Value *self = base.value;
@@ -1379,7 +1381,15 @@ void CodeGen::emit_for_each(const Stmt::For &node) {
         if (method == nullptr) {
             error(node.loc, "type mismatch");
         } else {
-            llvm::Value *produced = builder_.CreateCall(method, {self, here});
+            // `at` takes the position as its parameter type declares it.
+            llvm::Value *position = here;
+            if (llvm::Type *want = method->getFunctionType()->getNumParams() > 1
+                                       ? method->getFunctionType()->getParamType(1)
+                                       : nullptr;
+                want != nullptr && want->isIntegerTy() && want != position->getType()) {
+                position = builder_.CreateSExtOrTrunc(position, want);
+            }
+            llvm::Value *produced = builder_.CreateCall(method, {self, position});
             builder_.CreateStore(produced, slot);
         }
     } else {
@@ -1437,7 +1447,7 @@ void CodeGen::emit_for_each(const Stmt::For &node) {
     }
     builder_.SetInsertPoint(step_block);
     if (!terminated()) {
-        llvm::Value *next = builder_.CreateAdd(builder_.CreateLoad(i32(), index), const_i32(1));
+        llvm::Value *next = builder_.CreateAdd(builder_.CreateLoad(len_ty(), index), const_len(1));
         builder_.CreateStore(next, index);
         builder_.CreateBr(cond_block);
     }

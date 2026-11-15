@@ -14,12 +14,12 @@ The name is in scope in every file. A program that does not import `builtin` sti
 
 `alloc` and `realloc` are default methods in that file, so a call of them needs `import "builtin"`.
 
-A struct satisfies it by defining these methods, each with a pointer receiver:
+A struct satisfies it by defining these methods, each with a pointer receiver. A size is an `i64`. An alignment is an `i32`:
 
 ```c
-unsafe func malloc(self *this, size i32, align i32) ?*u8;
+unsafe func malloc(self *this, size i64, align i32) ?*u8;
 func free(self *this, ptr *u8) void;
-unsafe func realloc(self *this, ptr *u8, size i32, align i32) ?*u8;
+unsafe func realloc(self *this, ptr *u8, size i64, align i32) ?*u8;
 ```
 
 ```asm
@@ -128,7 +128,7 @@ type Slot struct {
     value i32;
 };
 
-unsafe func Slot::malloc(self *this, size i32, align i32) ?*u8 {
+unsafe func Slot::malloc(self *this, size i64, align i32) ?*u8 {
     _ = size;
     _ = align;
     return ?*u8(&self.value);
@@ -138,7 +138,7 @@ func Slot::free(self *this, ptr *u8) void {
     _ = ptr;
 }
 
-unsafe func Slot::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+unsafe func Slot::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 {
     _ = ptr;
     return self.malloc(size, align);
 }
@@ -248,7 +248,7 @@ A cast of a pointer to a struct or union, or to a different primitive, is [`unsa
 
 `new [n]T` and `new(&arena) [n]T` reserve `n` elements of `T` and yield `[]T`. The length is `n`. `buf[i]` is rejected at run time when `i` is outside that length. `delete buf` frees the pointer inside the slice.
 
-`n` has type `i32`.
+`n` is any integer. The length is `n` as an `i64`.
 
 `buf[i]` reads and writes element `i`.
 
@@ -266,7 +266,7 @@ A negative constant is `type mismatch`.
 
 A negative count that is not a constant calls `builtin.panic("count must be positive")`.
 
-A size that does not fit calls `builtin.panic("size does not fit")`.
+A byte size past the `i64` range calls `builtin.panic("size does not fit")`.
 
 `new []T` is reported as `expected an expression`.
 

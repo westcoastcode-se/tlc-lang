@@ -346,9 +346,9 @@ A slice is a separate type, `var v []i32 = row`.
 
 `v[i]` reads an element and is reported as `type mismatch` when used as the target of `=`.
 
-`v.len` is `i32`.
+`v.len` is `i64`.
 
-`row.len` on the array is `i32`, the number of elements.
+`row.len` on the array is `i64`, the number of elements.
 
 `row[i:j]` and `v[i:j]` are the elements from `i` up to, but not including, `j`.
 

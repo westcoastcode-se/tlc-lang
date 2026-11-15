@@ -321,7 +321,7 @@ The compiler reports a different length or a different element type as `type mis
 
 Assigning an element of the const binding is reported as `type mismatch`.
 
-`row.len` is `i32`, the number of elements, the same spelling as a slice.
+`row.len` is `i64`, the number of elements, the same spelling as a slice.
 
 ```c
 func main() i32 {

@@ -109,10 +109,21 @@ inline bool plain_int_constant(const Type &type) {
     if (type.kind == TypeKind::Int && type.rank == 3) {
         return !type.is_unsigned;
     }
+    // `const n = a.len` and `const k = 4i64` are `i64`. The folders keep the value only when it fits in an
+    // `i32`, and a wider one folds in `fold_wide_int`, so the kept value is exact.
+    if (type.kind == TypeKind::Int && type.rank == 5 && !type.is_unsigned) {
+        return true;
+    }
     if (type.kind == TypeKind::Char) {
         return true;
     }
     return type.kind == TypeKind::Int && (type.rank == 1 || type.rank == 2);
+}
+
+// An integer constant the `i32` folders read from `const_value`. An `i64` one counts only when its value
+// fits, so `const n = a.len` is a length and `comptime const n = 3000000000` folds at its width.
+inline bool int_constant(const Symbol &symbol) {
+    return plain_int_constant(symbol.type) && (symbol.type.rank != 5 || symbol.const_fits);
 }
 
 inline Type promote(const Type &type) {
@@ -235,7 +246,7 @@ inline Type apply_shells(Type type, const std::vector<TypeShell> &shells, bool p
         if (index == 0 && parameter) {
             // The value is a pointer to the element. `[0]T` keeps that length.
             // An ordinary pointer leaves `decayed_array` clear.
-            const int length = shell.length;
+            const int64_t length = shell.length;
             type = type_pointer(std::move(type));
             type.decayed_array = true;
             type.decayed_len = length;
@@ -246,7 +257,7 @@ inline Type apply_shells(Type type, const std::vector<TypeShell> &shells, bool p
     return type;
 }
 
-inline Type quiet_object(const std::string &name, int indirections, bool is_array, int array_len, bool parameter,
+inline Type quiet_object(const std::string &name, int indirections, bool is_array, int64_t array_len, bool parameter,
                          uint32_t optional = 0, uint32_t const_pointee = 0, bool elem_slice = false) {
     Type type = quiet_indirect(quiet_type(name), indirections, optional, const_pointee);
     if (!is_array && !elem_slice) {

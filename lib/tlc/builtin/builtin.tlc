@@ -13,9 +13,9 @@ package builtin;
 // malloc returns null when the reservation fails. free releases that block.
 // realloc changes the size. A null pointer reserves a new block, as malloc does.
 extern(abi="compiler") export type Allocator trait {
-    unsafe func malloc(size i32, align i32) ?*u8;
+    unsafe func malloc(size i64, align i32) ?*u8;
     func free(ptr *u8) void;
-    unsafe func realloc(ptr *u8, size i32, align i32) ?*u8;
+    unsafe func realloc(ptr *u8, size i64, align i32) ?*u8;
 }
 
 // One object. Null from malloc is `out of memory`, the same failure as `new`.
@@ -37,7 +37,7 @@ extern(abi="compiler") export func Allocator::alloc[T type](self *this) *T {
 }
 
 // `count` elements. The result is that slice. A count below 1 is `type mismatch`.
-extern(abi="compiler") export func Allocator::alloc[T type](self *this, count i32) []T {
+extern(abi="compiler") export func Allocator::alloc[T type](self *this, count i64) []T {
     if (count < 1) {
         panic("type mismatch"b);
     }
@@ -63,7 +63,7 @@ extern(abi="compiler") export func Allocator::realloc[T type](self *this, ptr *T
 
 // `count` elements. A block that already holds at least `count` is returned as it is.
 // A count below 1 is `type mismatch`.
-extern(abi="compiler") export func Allocator::realloc[T type](self *this, block []T, count i32) []T {
+extern(abi="compiler") export func Allocator::realloc[T type](self *this, block []T, count i64) []T {
     if (count < 1) {
         panic("type mismatch"b);
     }
@@ -197,14 +197,14 @@ export var allocator Malloc;
 
 // Reserves size bytes. An alignment above 16 uses aligned_alloc.
 // Returns null when the reservation fails. The caller handles null.
-extern(abi="compiler") export unsafe func Malloc::malloc(self *this, size i32, align i32) ?*u8;
+extern(abi="compiler") export unsafe func Malloc::malloc(self *this, size i64, align i32) ?*u8;
 
 // Releases a block from malloc or realloc. A null pointer does nothing.
 extern(abi="compiler") export func Malloc::free(self *this, ptr *u8) void;
 
 // Changes the size of a block. A null pointer reserves a new block, as malloc does.
 // Returns null when the reservation fails. The caller handles null.
-extern(abi="compiler") export unsafe func Malloc::realloc(self *this, ptr *u8, size i32, align i32) ?*u8;
+extern(abi="compiler") export unsafe func Malloc::realloc(self *this, ptr *u8, size i64, align i32) ?*u8;
 
 // Atomic operations. Code generation replaces the call. There is no body.
 // order is 0 relaxed, 1 acquire, 2 release, 3 acq_rel, 4 seq_cst.

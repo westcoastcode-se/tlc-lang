@@ -6,7 +6,7 @@ This page describes `sizeof` and `alignof`, and which type forms each one accept
 
 ## sizeof
 
-`sizeof` produces `i32`, the size of a type or a value.
+`sizeof` produces `i64`, the size of a type or a value. A size past `i32` is that size: `sizeof([3000000000]u8)` is 3000000000.
 
 `sizeof(u8)` is 1, `sizeof(i32)` is 4, and `sizeof(i64)` is 8.
 
@@ -30,7 +30,7 @@ That `i32` may be a compile-time integer type argument, so `width[sizeof(Point)]
 
 ## alignof
 
-`alignof` produces `i32`, the alignment in bytes.
+`alignof` produces `i64`, the alignment in bytes.
 
 `alignof(i32)` is 4, and `alignof(Node)` is 8 when `Node` contains a pointer.
 

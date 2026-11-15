@@ -4,11 +4,11 @@ type Bag struct {
     n i32;
 };
 
-func Bag::len(self this) i32 {
+func Bag::len(self this) i64 {
     return 2;
 }
 
-func Bag::at(self this, i i32) i32 {
+func Bag::at(self this, i i64) i32 {
     return self.n + i;
 }
 

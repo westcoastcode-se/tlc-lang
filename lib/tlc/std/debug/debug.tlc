@@ -134,7 +134,7 @@ unsafe func frame_block(trace builtin.StackTrace) ?*u8 {
     return ?*u8(&trace.frames[0]);
 }
 
-export unsafe func DebugAllocator::malloc(self *this, size i32, align i32) ?*u8 {
+export unsafe func DebugAllocator::malloc(self *this, size i64, align i32) ?*u8 {
     self.lock.lock();
     defer self.lock.unlock();
     var raw = builtin.allocator.malloc(size, align);
@@ -156,7 +156,7 @@ export func DebugAllocator::free(self *this, ptr *u8) void {
     builtin.allocator.free(ptr);
 }
 
-export unsafe func DebugAllocator::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+export unsafe func DebugAllocator::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 {
     if (ptr == null) {
         return self.malloc(size, align);
     }

@@ -620,7 +620,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
         bool type_array = false;
         bool type_elem_const = false;
         bool type_elem_slice = false;
-        int type_array_len = 0;
+        int64_t type_array_len = 0;
         std::vector<TypeShell> type_shells;
         ParenType spelled;
         std::unique_ptr<Expr> expr;

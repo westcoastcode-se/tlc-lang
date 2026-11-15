@@ -8,7 +8,7 @@ type Arena struct {
     slot [32]u8;
 };
 
-export unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 {
+export unsafe func Arena::malloc(self *this, size i64, align i32) ?*u8 {
     self.hits = size;
     return ?*u8(&self.slot);
 }
@@ -17,7 +17,7 @@ export func Arena::free(self *this, ptr *u8) void {
     self.freed = 1;
 }
 
-export unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+export unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 {
     return null;
 }
 

@@ -34,7 +34,7 @@ The library type [`string_view`](../std/unicode.md) is `type string_view []const
 
 ## Elements and length
 
-`v[i]` reads one element. The index has type `i32`.
+`v[i]` reads one element. The index is any integer and is used as an `i64`. An unsigned index is zero-extended, so `3000000000u32` stays positive. A `bool`, a float, or an enum is `type mismatch: expected i64, found T`.
 
 `&v[0]` is `*T`, the pointer stored in the slice. A length of 0 still yields that pointer. `&v[i]` for another index is the address of that element, and the program panics with `index out of range` when `i` is outside the length. `[]const T` yields `*const T`.
 
@@ -68,9 +68,9 @@ On a `[]i32` parameter, `v[0] = 8` then `return v[0]` is 8 instructions. Those a
 
 When the element is `*T`, `*v[i] = 1` writes through the pointer.
 
-`v.len` is `i32` and is the number of elements. `v.len()` is that same length.
+`v.len` is `i64` and is the number of elements. The header is a pointer and an `i64` length, 16 bytes. `v.len()` is that same length.
 
-A local `var empty []i32` is a zero header, the same as a file-scope slice. `return empty.len` is 6 instructions: `movq` of 0 for the pointer, `movl` of 0 for the length, `movl` of 0 for the header padding, a reload of the length, a reload of the pointer, and `retq`.
+A local `var empty []i32` is a zero header, the same as a file-scope slice. `return empty.len` is 5 instructions: `movq` of 0 for the pointer, `movq` of 0 for the length, a reload of the length, a reload of the pointer, and `retq`.
 
 A file-scope slice with no initializer is zero, the same as any other global.
 
@@ -166,7 +166,7 @@ retq                             # return
 
 A range of `type Row []i32` stays `Row`. A range of `[N]T`, including `type Pair [2]i32`, is the plain slice `[]T`.
 
-Both bounds have type `i32`. A missing low bound is `0`. A missing high bound is the length, so `a[i:]` is `a[i:a.len]`, `a[:j]` is `a[0:j]`, and `a[:]` is the whole slice.
+Both bounds are any integer and are used as `i64`. A missing low bound is `0`. A missing high bound is the length, so `a[i:]` is `a[i:a.len]`, `a[:j]` is `a[0:j]`, and `a[:]` is the whole slice.
 
 The length is `j - i`.
 

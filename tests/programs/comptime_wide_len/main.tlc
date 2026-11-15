@@ -1,6 +1,7 @@
+// A `comptime const` past `i32` is an array length, since lengths are `i64`. It was `not supported yet`.
 comptime const n = 3000000000u32;
+var row [n]u8;
 
 func main() i32 {
-    var row [n]i32;
-    return row.len;
+    return row.len == 3000000000 ? 42 : 1;
 }

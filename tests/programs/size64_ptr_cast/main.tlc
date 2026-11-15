@@ -1,0 +1,15 @@
+// A pointer converts to and from an `i64`, the whole address, as well as an `i32`.
+var cell i64 = 0;
+func main() i32 {
+    var p = &cell;
+    var whole = i64(p);
+    var back = *i64(whole);
+    *back = 40;
+    var low = i32(p);
+    var step = *u8(sizeof(f32) * 2);
+    var bad = 0;
+    if (cell != 40) { bad += 1; }
+    if (i64(step) != 8) { bad += 2; }
+    if (low != i32(whole)) { bad += 4; }
+    return bad == 0 ? 42 : bad;
+}

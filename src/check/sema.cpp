@@ -32,6 +32,8 @@ Type type_int() {
     return type;
 }
 
+Type type_i64() { return type_rank(5, false); }
+
 Type type_char() {
     Type type;
     type.kind = TypeKind::Char;
@@ -75,7 +77,7 @@ Type type_pointer(Type pointee) {
     return type;
 }
 
-Type type_array(Type element, int length) {
+Type type_array(Type element, int64_t length) {
     Type type;
     type.kind = TypeKind::Array;
     type.element = std::make_shared<Type>(std::move(element));

@@ -1,0 +1,5 @@
+// An index is an integer. A `bool` is not one.
+func main() i32 {
+    var row [2]i32 = {1, 2};
+    return row[true];
+}

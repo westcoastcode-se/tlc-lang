@@ -1495,6 +1495,7 @@ void Checker::fold_early_consts(TranslationUnit &unit, uint32_t file_id) {
         symbol.is_constant = true;
         ++fold_generation_;
         symbol.const_value = *value;
+        symbol.const_fits = true;
         ++fold_generation_;
         declare(std::move(symbol), var->loc);
     }
@@ -1541,7 +1542,7 @@ bool Checker::fold_ready_consts() {
 
 std::optional<int> Checker::lookup_const_value(const std::string &name) {
     if (const Symbol *symbol = lookup(name)) {
-        if (symbol->is_constant && plain_int_constant(symbol->type)) {
+        if (symbol->is_constant && int_constant(*symbol)) {
             return symbol->const_value;
         }
         // A local, a type, or another value hides the file-scope integer.
@@ -1581,13 +1582,13 @@ std::optional<int> Checker::array_length_value(const std::string &name) {
     }
     // `value := n` inside a `comptime func` is that integer once the call substitutes `n`.
     const Symbol *symbol = lookup(name);
-    if (symbol != nullptr && symbol->held_comptime && symbol->folded_local && plain_int_constant(symbol->type)) {
+    if (symbol != nullptr && symbol->held_comptime && symbol->folded_local && int_constant(*symbol)) {
         return symbol->const_value;
     }
     // `lookup_const_value` stops when any local hides the file-scope constant.
     // A file-scope `const` is folded by `note_promotable` and is not `runtime_const`.
     // `const N = row.len` is that length. A `var`, including `var n const i32`, is not.
-    if (symbol != nullptr && !symbol->is_var && symbol->folded_init && plain_int_constant(symbol->type)) {
+    if (symbol != nullptr && !symbol->is_var && symbol->folded_init && int_constant(*symbol)) {
         return symbol->const_value;
     }
     // `comptime const n = 4i64` inside a function. `4u32` and `4u64` are that length when the
@@ -1598,7 +1599,7 @@ std::optional<int> Checker::array_length_value(const std::string &name) {
         }
     }
     // A runtime `const` whose initializer folds is still that length.
-    if (symbol == nullptr || !symbol->runtime_const || !plain_int_constant(symbol->type)) {
+    if (symbol == nullptr || !symbol->runtime_const || !int_constant(*symbol)) {
         return std::nullopt;
     }
     // The length is the value from the declaration, not a name that init still mentions.
@@ -1609,6 +1610,45 @@ std::optional<int> Checker::array_length_value(const std::string &name) {
         return std::nullopt;
     }
     return constant_index(*symbol->promote_init);
+}
+
+std::optional<int64_t> Checker::array_length_wide(const std::string &name) {
+    if (const std::optional<int> value = array_length_value(name)) {
+        return value;
+    }
+    if (const std::optional<int> value = narrow_file_length(name)) {
+        return value;
+    }
+    const Symbol *symbol = lookup(name);
+    if (symbol == nullptr || symbol->is_var || symbol->type.kind != TypeKind::Int || symbol->type.alias_id != 0) {
+        return std::nullopt;
+    }
+    // A `comptime const` keeps its initializer. A runtime `const` keeps the one it was promoted from, and a
+    // file-scope one its declaration.
+    const Expr *init = symbol->is_constant ? symbol->const_init : nullptr;
+    if (init == nullptr && symbol->runtime_const) {
+        init = symbol->promote_init;
+    }
+    if (init == nullptr) {
+        if (const VarDecl *var = global_var(name); var != nullptr && var->is_const_decl && var->init != nullptr) {
+            init = var->init.get();
+        }
+    }
+    if (init == nullptr) {
+        return std::nullopt;
+    }
+    const std::optional<WideInt> wide = fold_wide_int(*init);
+    if (!wide) {
+        return std::nullopt;
+    }
+    // A `u64` past the `i64` range is no length. A signed value keeps its sign, so a negative one is reported.
+    if (wide->bits == 64 && wide->is_unsigned && wide->value > 9223372036854775807ULL) {
+        return std::nullopt;
+    }
+    if (wide->bits < 64 || wide->is_unsigned) {
+        return static_cast<int64_t>(wide->value);
+    }
+    return static_cast<int64_t>(wide->value);
 }
 
 std::optional<int> Checker::narrow_file_length(const std::string &name) {
@@ -2146,17 +2186,14 @@ void Checker::disambiguate_bounds(uint32_t owner, std::vector<SpecArg> &bounds) 
 }
 
 void Checker::prepare_written(std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
-                              int &indirections, uint32_t &optional, bool &is_array, int &array_len,
+                              int &indirections, uint32_t &optional, bool &is_array, int64_t &array_len,
                               std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc,
                               bool result_length) {
     (void)is_enum;
     (void)indirections;
     (void)optional;
     if (!array_len_name.empty()) {
-        std::optional<int> value = array_length_value(array_len_name);
-        if (!value) {
-            value = narrow_file_length(array_len_name);
-        }
+        const std::optional<int64_t> value = array_length_wide(array_len_name);
         if (value && *value >= 0) {
             array_len = *value;
             array_len_name.clear();
@@ -2401,7 +2438,7 @@ void Checker::substitute_fn_param(const std::vector<TypeParam> &params, const st
     }
     if (param.is_fn_ptr) {
         bool is_array = false;
-        int array_len = 0;
+        int64_t array_len = 0;
         std::string array_len_name;
         substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
                         param.ret_indirections, param.ret_optional, is_array, array_len, array_len_name, param.type_args,
@@ -2598,7 +2635,7 @@ void Checker::substitute_var(const std::vector<TypeParam> &params, const std::ve
 
 void Checker::substitute_type(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds,
                               std::string &type_name, std::string &type_package, bool &is_struct, bool &is_enum,
-                              int &indirections, uint32_t &optional, bool &is_array, int &array_len,
+                              int &indirections, uint32_t &optional, bool &is_array, int64_t &array_len,
                               std::string &array_len_name, std::vector<TypeArg> &type_args, SourceLoc loc,
                               std::vector<TypeShell> *shells, bool *elem_const, uint32_t *const_pointee) {
     (void)is_struct;
@@ -2695,7 +2732,7 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
         const uint32_t written_opt = arg.optional;
         const uint32_t written_const = arg.const_pointee;
         const bool written_array = arg.is_array;
-        const int written_len = arg.array_len;
+        const int64_t written_len = arg.array_len;
         if (bound->is_array && written_array) {
             error(arg.loc, "not supported yet");
             return;
@@ -2769,7 +2806,7 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
     const uint32_t written_opt = optional;
     const uint32_t written_const = const_pointee != nullptr ? *const_pointee : 0;
     const bool written_array = is_array;
-    const int written_len = array_len;
+    const int64_t written_len = array_len;
     if (bound->is_array && written_array) {
         error(loc, "not supported yet");
         return;
@@ -3208,7 +3245,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                     int indirections = 0;
                     uint32_t optional = 0;
                     bool is_array = false;
-                    int array_len = 0;
+                    int64_t array_len = 0;
                     std::string array_len_name;
                     substitute_type(params, bounds, type_name, type_package, is_struct, is_enum, indirections, optional,
                                     is_array, array_len, array_len_name, node.type_args, node.loc);
@@ -3239,7 +3276,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                     auto subst_spelling = [&](std::string &type_name, std::string &type_package, bool &is_struct,
                                               bool &is_enum, int &indirections, uint32_t &optional) {
                         bool is_array = false;
-                        int array_len = 0;
+                        int64_t array_len = 0;
                         std::string array_len_name;
                         std::vector<TypeArg> type_args;
                         substitute_type(params, bounds, type_name, type_package, is_struct, is_enum, indirections,
@@ -3248,7 +3285,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                     auto subst_param = [&](auto &&self, FnParam &param) -> void {
                         if (param.is_fn_ptr) {
                             bool is_array = false;
-                            int array_len = 0;
+                            int64_t array_len = 0;
                             std::string array_len_name;
                             substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct,
                                             param.is_enum, param.ret_indirections, param.ret_optional, is_array, array_len,
@@ -3301,7 +3338,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                     }
                     if (!stamped) {
                         bool is_array = false;
-                        int array_len = 0;
+                        int64_t array_len = 0;
                         std::string array_len_name;
                         uint32_t const_pointee = node.const_pointee;
                         substitute_type(params, bounds, node.type_name, node.type_package, node.is_struct, node.is_enum,
@@ -3313,7 +3350,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
             } else if constexpr (std::is_same_v<T, Expr::Init>) {
                 if (node.array_literal) {
                     bool is_array = node.elem_is_array;
-                    int array_len = 0;
+                    int64_t array_len = 0;
                     std::string array_len_name;
                     substitute_type(params, bounds, node.type_name, node.type_package, node.is_struct, node.is_enum,
                                     node.indirections, node.optional, is_array, array_len, array_len_name, node.type_args,
@@ -3508,7 +3545,7 @@ void Checker::substitute_function(FunctionDecl &fn, const std::vector<TypeParam>
         }
         if (param.is_fn_ptr) {
             bool is_array = false;
-            int array_len = 0;
+            int64_t array_len = 0;
             std::string array_len_name;
             substitute_type(params, bounds, param.type_name, param.type_package, param.is_struct, param.is_enum,
                             param.ret_indirections, param.ret_optional, is_array, array_len, array_len_name,

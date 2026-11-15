@@ -56,7 +56,7 @@ Assigning `null` to `i32` or `bool` is reported as `type mismatch`.
 
 Pointer arithmetic is reported as `type mismatch`.
 
-A subscript index has type `i32`.
+A subscript index is any integer. It is used as an `i64`.
 
 ```c
 func main() i32 {

@@ -817,6 +817,15 @@ bool CodeGen::wide_operand(const Expr &expr, int depth) const {
             } else if constexpr (std::is_same_v<T, Expr::Unary>) {
                 return !node.postfix && node.expr != nullptr && node.op != TokenKind::Bang &&
                        node.op != TokenKind::Star && node.op != TokenKind::Amp && wide_operand(*node.expr, depth + 1);
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                // `a.len` is an `i64`, as `Checker::wide_operand` says.
+                return node.field == "len" && (node.slice_len || node.len_value >= 0);
+            } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
+                return true;
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                const auto *selector =
+                    node.callee == nullptr ? nullptr : std::get_if<Expr::Selector>(&node.callee->data);
+                return node.args.empty() && selector != nullptr && selector->slice_len;
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {
                 return node.indirections == 0 && !node.is_struct && !node.is_enum && !node.is_fn_ptr &&
                        node.type_package.empty() && wide_name(node.type_name);
@@ -914,8 +923,10 @@ std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
                 }
                 return std::nullopt;
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                // A length past `i32` folds only at its own width, in `fold_wide`, as in the checker.
                 if (node.len_value >= 0) {
-                    return node.len_value;
+                    return node.len_value <= 2147483647 ? std::optional<int32_t>(static_cast<int32_t>(node.len_value))
+                                                        : std::nullopt;
                 }
                 if (node.field == "len" && node.base != nullptr) {
                     if (const std::optional<int32_t> known = known_len(*node.base)) {
@@ -1542,10 +1553,45 @@ std::optional<CodeGen::WideInt> CodeGen::fold_wide(const Expr &expr) const {
                     cast.is_unsigned = target_unsigned;
                     return cast;
                 } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                    // `row.len()` is the field `row.len`, an `i64`.
+                    if (item.args.empty() && item.callee != nullptr) {
+                        if (const auto *selector = std::get_if<Expr::Selector>(&item.callee->data);
+                            selector != nullptr && (selector->slice_len || selector->field == "len")) {
+                            return self(self, *item.callee, depth + 1, seen);
+                        }
+                    }
                     if (item.comptime_struct == nullptr) {
                         return std::nullopt;
                     }
                     return self(self, *item.comptime_struct, depth + 1, seen);
+                } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                    // `a.len` is an `i64`, past `i32` too.
+                    if (item.field != "len") {
+                        return std::nullopt;
+                    }
+                    int64_t length = item.len_value;
+                    if (length < 0) {
+                        const std::optional<int32_t> known = fold(node);
+                        if (!known) {
+                            return std::nullopt;
+                        }
+                        length = *known;
+                    }
+                    WideInt wide;
+                    wide.value = static_cast<uint64_t>(length);
+                    wide.bits = 64;
+                    wide.is_unsigned = false;
+                    return wide;
+                } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
+                    const std::optional<int64_t> size = folded_sizeof_wide(item);
+                    if (!size) {
+                        return std::nullopt;
+                    }
+                    WideInt wide;
+                    wide.value = static_cast<uint64_t>(*size);
+                    wide.bits = 64;
+                    wide.is_unsigned = false;
+                    return wide;
                 } else {
                     return std::nullopt;
                 }

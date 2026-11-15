@@ -537,6 +537,14 @@ std::vector<FieldDecl> Parser::parse_fields(bool extern_c) {
 }
 
 
+bool Parser::array_length_literal(const Token &number) const {
+    if (number.suffix.is_unsigned || number.int_value > 9223372036854775807ULL) {
+        return false;
+    }
+    return number.suffix.bits == 0 || number.suffix.bits == 64 ||
+           (number.suffix.bits == 32 && number.int_value <= 2147483647ULL);
+}
+
 bool Parser::at_func_type(std::size_t ahead) const {
     // `?func (i32) i32` is a function pointer that may be null.
     if (peek(ahead).kind == TokenKind::Question) {
@@ -963,10 +971,10 @@ Parser::PlacedType Parser::parse_go_type(bool allow_value_const) {
             shell.kind = TypeShell::Kind::Slice;
             return;
         }
-        if (check(TokenKind::IntLiteral) && !peek().suffix.is_unsigned && peek().suffix.bits != 8 &&
-            peek().suffix.bits != 16 && peek().suffix.bits != 64 && peek().int_value <= 2147483647ULL) {
+        // A length is an `i64`: `[3000000000]u8` and `[8i64]u8`. An unsigned, `i8`, or `i16` suffix is not one.
+        if (check(TokenKind::IntLiteral) && array_length_literal(peek())) {
             shell.kind = TypeShell::Kind::Array;
-            shell.length = static_cast<int>(peek().int_value);
+            shell.length = static_cast<int64_t>(peek().int_value);
             ++pos_;
             expect(TokenKind::RBracket, "expected ']'");
             return;
@@ -1580,9 +1588,8 @@ Parser::ArrayMark Parser::parse_array_suffix(bool allow_slice) {
         if (!allow_slice) {
             diags_.error(loc, "not supported yet");
         }
-    } else if (check(TokenKind::IntLiteral) && !peek().suffix.is_unsigned && peek().suffix.bits != 8 &&
-               peek().suffix.bits != 16 && peek().suffix.bits != 64 && peek().int_value <= 2147483647ULL) {
-        mark.length = static_cast<int>(peek().int_value);
+    } else if (check(TokenKind::IntLiteral) && array_length_literal(peek())) {
+        mark.length = static_cast<int64_t>(peek().int_value);
         ++pos_;
         expect(TokenKind::RBracket, "expected ']'");
     } else if (check(TokenKind::Identifier)) {

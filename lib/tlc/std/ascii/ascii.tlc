@@ -138,11 +138,11 @@ export func from(text []const u8, alloc *Allocator) string {
     return string{.Long = {.len = buf.len, .bytes = buf}};
 }
 
-export func string::len(self this) i32 {
+export func string::len(self this) i64 {
     return self.Short.len;
 }
 
-export func string::at(self this, i i32) u8 {
+export func string::at(self this, i i64) u8 {
     if (self.Short.len <= short_cap) {
         return self.Short.bytes[i];
     }

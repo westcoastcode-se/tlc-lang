@@ -19,7 +19,7 @@ struct Type {
     std::shared_ptr<Type> result;
     std::shared_ptr<Type> pointee;
     std::shared_ptr<Type> element;
-    int length = 0;
+    int64_t length = 0;
     int struct_id = -1;
     int enum_id = -1;
     int trait_id = -1;
@@ -40,7 +40,7 @@ struct Type {
     // When `[N]T` is expected, the pointer is that array and the elements are copied.
     // `decayed_array` is clear on an ordinary pointer, whose `decayed_len` is also 0.
     bool decayed_array = false;
-    int decayed_len = 0;
+    int64_t decayed_len = 0;
     // A function type from an `extern(abi="c")` signature or field. Calls through it use the C convention.
     // A tlc function type is a different type.
     bool c_abi = false;
@@ -54,11 +54,13 @@ Type type_invalid();
 Type type_void();
 Type type_meta();
 Type type_int();
+// `.len`, an index, and `sizeof` are 64-bit: `i64`.
+Type type_i64();
 Type type_char();
 Type type_bool();
 Type type_nullptr();
 Type type_pointer(Type pointee);
-Type type_array(Type element, int length);
+Type type_array(Type element, int64_t length);
 Type type_struct(int id);
 Type type_enum(int id);
 Type type_trait(int id);

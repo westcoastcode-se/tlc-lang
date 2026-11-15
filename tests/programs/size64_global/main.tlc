@@ -1,0 +1,30 @@
+// An array past 2 GiB. Its length, `sizeof`, an index past `i32`, and a slice of it are 64-bit.
+// The global is zero and untouched except for two bytes, so it costs no memory.
+var g [2147483700]u8;
+
+func last(s []u8) i64 {
+    return s.len - 1;
+}
+
+func main() i32 {
+    var bad = 0;
+    if (g.len != 2147483700 || sizeof(g) != 2147483700) {
+        bad += 1;
+    }
+    var i u32 = 2147483699u32;
+    g[i] = 7;
+    var j i64 = 2147483698;
+    g[j] = 5;
+    if (g[2147483699] != 7 || g[j] != 5) {
+        bad += 2;
+    }
+    var s []u8 = g[2147483690:];
+    if (s.len != 10 || s[9] != 7 || last(s) != 9) {
+        bad += 4;
+    }
+    var whole []u8 = g[:];
+    if (whole.len != 2147483700 || whole[2147483698] != 5) {
+        bad += 8;
+    }
+    return bad == 0 ? 42 : bad;
+}

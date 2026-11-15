@@ -81,7 +81,7 @@ void dump_stmt(const Stmt &stmt, std::string &out, int indent);
 void dump_function(const FunctionDecl &fn, std::string &out, int indent);
 
 std::string type_text(const std::string &name, const std::string &package, bool is_struct, bool is_enum,
-                       int indirections, bool is_array, int array_len, uint32_t optional = 0,
+                       int indirections, bool is_array, int64_t array_len, uint32_t optional = 0,
                        const std::string &len_name = {}, uint32_t const_pointee = 0) {
     std::string text;
     if (!package.empty()) {

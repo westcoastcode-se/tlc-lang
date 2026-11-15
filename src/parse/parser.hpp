@@ -49,7 +49,7 @@ class Parser {
         bool is_function = false;
         int indirections = 0;
         bool is_array = false;
-        int array_len = 0;
+        int64_t array_len = 0;
         std::vector<Param> params;
         bool variadic = false;
         std::string method_struct;
@@ -62,7 +62,7 @@ class Parser {
     struct ArrayMark {
         bool is_array = false;
         std::string len_name;
-        int length = 0;
+        int64_t length = 0;
         // One empty `[]` after the outer brackets: `[][]T` and `[N][]T`.
         bool elem_slice = false;
     };
@@ -145,7 +145,7 @@ class Parser {
         bool elem_slice = false;
         // Constructors outside the leaf, outermost first. This is the shape `[]`, `*[]`, and `[N][M]` share.
         std::vector<TypeShell> shells;
-        int array_len = 0;
+        int64_t array_len = 0;
         std::string array_len_name;
         std::vector<TypeArg> type_args;
         // `*[4]i32`: one pointer outside the array.
@@ -219,6 +219,8 @@ class Parser {
     void parse_fn_pointer(int &fn_depth, std::string &name, SourceLoc &loc, std::vector<FnParam> &params, bool &variadic);
     FnParam fn_param_from(const PlacedType &type) const;
     bool at_func_type(std::size_t ahead = 0) const;
+    // An integer literal that can be an array length.
+    bool array_length_literal(const Token &number) const;
     // `as_cast` is `func (i32) i32(value)`. The `(` after the result is the operand,
     // so the result does not take the C declarator `i32 (*name)(`.
     PlacedType parse_func_type(bool as_cast = false);

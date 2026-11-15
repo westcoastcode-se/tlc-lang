@@ -2282,9 +2282,9 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Arena struct { mark i32; };\n"
-            "unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::malloc(self *this, size i64, align i32) ?*u8 { return null; }\n"
             "func Arena::free(self *this, ptr *u8) void {}\n"
-            "unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 { return null; }\n"
             "func main() i32 {\n"
             "  var arena Arena;\n"
             "  var raw *u8 = *u8(0);\n"
@@ -2299,9 +2299,9 @@ int run_sema_tests() {
     {
         const std::string errors = diagnose(
             "type Arena struct { mark i32; };\n"
-            "unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::malloc(self *this, size i64, align i32) ?*u8 { return null; }\n"
             "func Arena::free(self *this, ptr *u8) void {}\n"
-            "unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 { return null; }\n"
             "func main() i32 {\n"
             "  var arena Arena;\n"
             "  var raw *u8 = *u8(0);\n"
@@ -6839,7 +6839,7 @@ int run_sema_tests() {
         const std::string errors = check_program(
             "type Point struct { x i32; };\n"
             "type Arena struct { mark i32; };\n"
-            "unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::malloc(self *this, size i64, align i32) ?*u8 { return null; }\n"
             "func Arena::free(self *this, ptr *u8) void {}\n"
             "func main() i32 {\n"
             "  var arena Arena;\n"
@@ -6856,9 +6856,9 @@ int run_sema_tests() {
     {
         const std::string errors = check_program(
             "type Arena struct { hits i32; };\n"
-            "unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::malloc(self *this, size i64, align i32) ?*u8 { return null; }\n"
             "func Arena::free(self *this, ptr *u8) void {}\n"
-            "unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 { return null; }\n"
             "func main() i32 {\n"
             "  var live Arena;\n"
             "  const frozen = live;\n"
@@ -6876,9 +6876,9 @@ int run_sema_tests() {
     {
         const std::string errors = check_program(
             "type Arena struct { hits i32; };\n"
-            "unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::malloc(self *this, size i64, align i32) ?*u8 { return null; }\n"
             "func Arena::free(self *this, ptr *u8) void {}\n"
-            "unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 { return null; }\n"
             "func main() i32 {\n"
             "  var live Arena;\n"
             "  var q ?*Arena = ?*Arena(&live);\n"
@@ -6892,9 +6892,9 @@ int run_sema_tests() {
     {
         const std::string errors = check_program(
             "type Arena struct { hits i32; };\n"
-            "unsafe func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::malloc(self *this, size i64, align i32) ?*u8 { return null; }\n"
             "func Arena::free(self *this, ptr *u8) void {}\n"
-            "unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 { return null; }\n"
             "func main() i32 {\n"
             "  var live Arena;\n"
             "  const p = &live;\n"
@@ -6910,9 +6910,9 @@ int run_sema_tests() {
     {
         const std::string errors = check_program(
             "type Arena struct { hits i32; };\n"
-            "func Arena::malloc(self *this, size i32, align i32) ?*u8 { return null; }\n"
+            "func Arena::malloc(self *this, size i64, align i32) ?*u8 { return null; }\n"
             "func Arena::free(self *this, ptr *u8) void {}\n"
-            "unsafe func Arena::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 { return null; }\n"
+            "unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 { return null; }\n"
             "func main() i32 {\n"
             "  var live Arena;\n"
             "  var n *i32 = new(&live) i32;\n"
@@ -7459,28 +7459,28 @@ int run_sema_tests() {
     }
 
     {
-        const std::string body = "    func len() i32;\n    func at(i i32) T;\n    func ref(i i32) *T;\n";
+        const std::string body = "    func len() i64;\n    func at(i i64) T;\n    func ref(i i64) *T;\n";
         const std::string errors = check_std_seq(body, true);
         EXPECT(check, errors.empty());
     }
 
     {
         const std::string body =
-            "    func len() i32;\n    func at(i i32) T;\n    func ref(i i32) *T;\n    n i32;\n";
+            "    func len() i64;\n    func at(i i64) T;\n    func ref(i i64) *T;\n    n i32;\n";
         const std::string errors = check_std_seq(body, true);
         EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
         const std::string body =
-            "    func len() i32;\n    func at(i i32) T;\n    func ref(i i32) *T;\n    func extra(i i32) i32;\n";
+            "    func len() i64;\n    func at(i i64) T;\n    func ref(i i64) *T;\n    func extra(i i32) i32;\n";
         const std::string errors = check_std_seq(body, true);
         EXPECT_HAS(check, errors, "not supported yet");
     }
 
     {
         const std::string body =
-            "    func len() i32;\n    func at(i i32) T;\n    func ref(i i32) *T;\n    n i32;\n";
+            "    func len() i64;\n    func at(i i64) T;\n    func ref(i i64) *T;\n    n i32;\n";
         const std::string errors = check_std_seq(body, false);
         EXPECT(check, errors.find("not supported yet") == std::string::npos);
     }
@@ -8420,11 +8420,13 @@ int run_sema_tests() {
         EXPECT(check, errors.empty());
     }
 
+    // Lengths are `i64`, so a `u32` past `i32` is that length.
     {
         const std::string errors = diagnose(
             "comptime const N = 3000000000u32;\n"
-            "func main() i32 { var buf [N]i32; return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+            "var buf [N]u8;\n"
+            "func main() i32 { return buf.len == 3000000000 ? 0 : 1; }\n");
+        EXPECT(check, errors.empty());
     }
 
     {

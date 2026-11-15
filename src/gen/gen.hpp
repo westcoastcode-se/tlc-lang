@@ -340,10 +340,10 @@ struct Binding {
     bool is_function = false;
     bool elem_char = false;
     bool is_array = false;
-    int array_len = 0;
+    int64_t array_len = 0;
     // The loaded value is a pointer to an array (`*[4]i32`).
     bool ptr_to_array = false;
-    int ptr_array_len = 0;
+    int64_t ptr_array_len = 0;
     int struct_id = -1;
     bool elem_void = false;
     bool elem_bool = false;
@@ -375,7 +375,7 @@ struct Binding {
     std::vector<FnParam> fn_results{};
     int enum_id = -1;
     // `[2][3]i32`: the element is an array of this length. Zero when the element is not an array.
-    int inner_array_len = 0;
+    int64_t inner_array_len = 0;
     // A pack of several types, stored as one anonymous struct.
     bool is_tuple = false;
     std::vector<ResultSlot> tuple_parts;
@@ -421,7 +421,7 @@ struct TypedValue {
     std::vector<FnParam> fn_results{};
     int enum_id = -1;
     // Set on a decayed array whose element is itself an array. Indexing steps by that row.
-    int inner_array_len = 0;
+    int64_t inner_array_len = 0;
     // The address is a row of an array of arrays. The caller uses it as a pointer, not a load.
     bool row_decay = false;
     bool is_tuple = false;
@@ -431,13 +431,13 @@ struct TypedValue {
     std::shared_ptr<TupleForward> tuple_forward;
     // Set when this value is a pointer to an array (`*[4]i32`).
     bool ptr_to_array = false;
-    int ptr_array_len = 0;
+    int64_t ptr_array_len = 0;
     // Length of a sized array that has not decayed. Negative for a slice.
-    int array_len = 0;
+    int64_t array_len = 0;
     // Set when this rvalue is a sized array. A new binding copies that array.
     // The address is still the array, so an index or a `[N]T` argument uses the pointer.
     llvm::Type *array_type = nullptr;
-    // `[]T`, stored as one `{ ptr, i32 }` value.
+    // `[]T`, stored as one `{ ptr, i64 }` value.
     bool is_slice = false;
     // The element is one `[]E`. Indexing loads a header, not `E`.
     bool elem_slice = false;
@@ -703,7 +703,7 @@ class CodeGen {
         int depth = 0;
         bool elem_char = false;
         bool is_array = false;
-        int array_len = 0;
+        int64_t array_len = 0;
         int struct_id = -1;
         bool elem_void = false;
         bool elem_bool = false;
@@ -712,7 +712,7 @@ class CodeGen {
         bool elem_float = false;
         // The field is an enumerator. The memory type is that integer. Zero means it is not one.
         int enum_id = -1;
-        // `[]T` stored in the field. The slot is the `{ ptr, i32 }` value.
+        // `[]T` stored in the field. The slot is the `{ ptr, i64 }` value.
         bool is_slice = false;
         // The element of this slice or array field is one `[]E`.
         bool elem_slice = false;
@@ -751,9 +751,9 @@ class CodeGen {
         int depth = 0;
         bool elem_char = false;
         bool is_array = false;
-        int array_len = 0;
+        int64_t array_len = 0;
         bool ptr_to_array = false;
-        int ptr_array_len = 0;
+        int64_t ptr_array_len = 0;
         int struct_id = -1;
         bool elem_void = false;
         bool elem_bool = false;
@@ -771,7 +771,7 @@ class CodeGen {
         int fn_ret_struct = -1;
         std::vector<FnParam> fn_results{};
         int enum_id = -1;
-        int inner_array_len = 0;
+        int64_t inner_array_len = 0;
         bool is_tuple = false;
         std::vector<ResultSlot> tuple_parts;
         bool is_slice = false;
@@ -796,7 +796,7 @@ class CodeGen {
         int depth = 0;
         bool elem_char = false;
         bool is_array = false;
-        int array_len = 0;
+        int64_t array_len = 0;
         int struct_id = -1;
         bool elem_void = false;
         bool elem_bool = false;
@@ -831,7 +831,7 @@ class CodeGen {
         bool elem_void = false;
         int struct_id = -1;
         bool is_array = false;
-        int array_len = 0;
+        int64_t array_len = 0;
         bool is_function = false;
         bool elem_bool = false;
         int elem_bits = 0;
@@ -885,7 +885,7 @@ class CodeGen {
     struct IterSlot {
         bool active = false;
         bool is_slice = false;
-        int array_len = 0;
+        int64_t array_len = 0;
         Lowered param;
         std::string fragment;
         std::string alias_owner;
@@ -1038,6 +1038,39 @@ class CodeGen {
     }
     llvm::Constant *const_i32(int32_t value) const {
         return llvm::ConstantInt::get(i32(), static_cast<uint64_t>(static_cast<uint32_t>(value)), true);
+    }
+    // `.len`, an index, and `sizeof` are `i64`.
+    llvm::Type *len_ty() const { return i64(); }
+    llvm::Constant *const_len(int64_t value) const {
+        return llvm::ConstantInt::get(i64(), static_cast<uint64_t>(value), true);
+    }
+    // A count or an offset as an `i64`, for a slice header or a bound.
+    llvm::Value *to_len(llvm::Value *value, bool is_unsigned = false) {
+        if (value == nullptr || !value->getType()->isIntegerTy() || value->getType() == len_ty()) {
+            return value;
+        }
+        if (value->getType()->getIntegerBitWidth() > 64) {
+            return builder_.CreateTrunc(value, len_ty());
+        }
+        return is_unsigned ? builder_.CreateZExt(value, len_ty()) : builder_.CreateSExt(value, len_ty());
+    }
+    // An argument of an allocator method at the width its signature declares: `size i64`, `align i32`.
+    llvm::Value *alloc_arg(llvm::Function *method, unsigned index, llvm::Value *value) {
+        if (method == nullptr || value == nullptr || index >= method->getFunctionType()->getNumParams()) {
+            return value;
+        }
+        llvm::Type *want = method->getFunctionType()->getParamType(index);
+        if (!want->isIntegerTy() || !value->getType()->isIntegerTy() || want == value->getType()) {
+            return value;
+        }
+        return builder_.CreateZExtOrTrunc(value, want);
+    }
+    // A length as a value: an `i64`, so arithmetic on it is 64-bit.
+    TypedValue len_value(llvm::Value *value) const {
+        TypedValue out;
+        out.value = value;
+        out.elem_bits = 64;
+        return out;
     }
     llvm::Constant *null_ptr() const { return llvm::ConstantPointerNull::get(ptr_type()); }
     llvm::Value *zero() { return const_i32(0); }
@@ -1474,7 +1507,7 @@ class CodeGen {
     bool has_typedef(uint32_t file, const std::string &name) const;
     bool alias_base_ready(uint32_t file, const TypedefDecl &item) const;
     Lowered lower(uint32_t file, const std::string &name, const std::string &package, bool is_struct, int indirections,
-                  bool is_array, int array_len, bool parameter, bool elem_slice = false,
+                  bool is_array, int64_t array_len, bool parameter, bool elem_slice = false,
                   const std::vector<TypeShell> &shells = {}) const;
     // LLVM type of `shells` around a leaf. `shells.front()` is the outermost constructor.
     llvm::Type *shell_type(const std::vector<TypeShell> &shells, int depth, bool elem_char, int struct_id, bool elem_bool,
@@ -1482,10 +1515,10 @@ class CodeGen {
     Lowered compose_shells(Lowered leaf, std::vector<TypeShell> shells, bool parameter) const;
     // Anonymous struct for a written tuple. Fewer than two parts is not a tuple.
     Lowered lower_tuple_parts(uint32_t file, const std::vector<ResultSlot> &parts) const;
-    Lowered lower_tuple_array(const std::vector<ResultSlot> &parts, int length, const std::vector<TypeShell> &shells) const;
+    Lowered lower_tuple_array(const std::vector<ResultSlot> &parts, int64_t length, const std::vector<TypeShell> &shells) const;
     // A tuple leaf inside `shells`, with `indirections` more stars next to it. Every shape lowers through this.
     Lowered lower_tuple_shaped(uint32_t file, const std::vector<ResultSlot> &parts, std::vector<TypeShell> shells,
-                               int indirections, uint32_t optional, bool is_array, int array_len, bool parameter) const;
+                               int indirections, uint32_t optional, bool is_array, int64_t array_len, bool parameter) const;
     // `shells` wrapped around that struct. A slice returns null.
     llvm::Type *tuple_shell_type(const std::vector<ResultSlot> &parts, const std::vector<TypeShell> &shells) const;
     // Index one shell. The base is an rvalue: a slice header, or a pointer whose shells start with `Pointer`.
@@ -1622,7 +1655,7 @@ class CodeGen {
     struct SlicePieces {
         llvm::Constant *pointer = nullptr;
         llvm::Type *element = nullptr;
-        int32_t length = 0;
+        int64_t length = 0;
     };
     std::optional<SlicePieces> slice_pieces(const Expr &expr, std::unordered_set<std::string> &seen);
     llvm::Constant *constant_slice(const Expr &expr, std::unordered_set<std::string> &seen);
@@ -1661,6 +1694,7 @@ class CodeGen {
                                 std::unordered_set<int> &seen);
     void store_each_element(llvm::Value *raw, llvm::Value *count, llvm::Type *elem, llvm::Constant *image);
     std::optional<int32_t> folded_sizeof(const Expr::Sizeof &node) const;
+    std::optional<int64_t> folded_sizeof_wide(const Expr::Sizeof &node) const;
     llvm::Constant *const_array(const Expr::Init &init, const Binding &dest);
     // `zero_pad` stores 0 after a short list in a file-scope value, `{4}` and `{4, 0...}` alike.
     llvm::Constant *fill_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags,
@@ -1847,7 +1881,7 @@ class CodeGen {
     void store_init_fields(int struct_id, llvm::Value *slot, const Expr::Init &init);
     TypedValue emit_addr(const Expr &expr);
     // Address of `base[subscript]`. `base` is the rvalue of the collection.
-    TypedValue index_address(const TypedValue &base, llvm::Value *subscript, SourceLoc loc);
+    TypedValue index_address(const TypedValue &base, llvm::Value *subscript, SourceLoc loc, bool is_unsigned = false);
     IterSlot iter_slot(const TypedValue &arg) const;
     bool emit_iter_call(const Expr::Call &node, const Expr::Selector &selector, PreparedCall &prepared);
     llvm::Type *shape_type(const Shape &shape) const;

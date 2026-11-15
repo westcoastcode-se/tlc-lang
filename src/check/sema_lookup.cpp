@@ -150,7 +150,7 @@ Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc, bool paramet
     }
     FnParam &written = const_cast<FnParam &>(param);
     bool is_array = false;
-    int array_len = 0;
+    int64_t array_len = 0;
     std::string array_len_name;
     // A function pointer stores the result in `type_name`. `Box[i32]` is `type_args` on that result.
     if (written.is_fn_ptr) {
@@ -235,7 +235,7 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
     return pointer;
 }
 
-Type Checker::type_of_tuple_arrays(const std::vector<ResultSlot> &parts, int array_len,
+Type Checker::type_of_tuple_arrays(const std::vector<ResultSlot> &parts, int64_t array_len,
                                    const std::vector<TypeShell> &shells, bool parameter, SourceLoc loc) {
     // The tuple is the leaf. `[2]T` is one shell. `[2][3]T` is two. A slice or a star stays rejected.
     Type element = type_of_written_tuple(parts, 0, false, {}, loc);
@@ -729,8 +729,8 @@ bool Checker::remember_shared(const Symbol &symbol, SourceLoc loc) {
     auto &table = package_syms_[self->package_key];
     const auto found = table.find(symbol.name);
     if (found != table.end()) {
-        if (found->second.is_constant && symbol.is_constant && plain_int_constant(found->second.type) &&
-            plain_int_constant(symbol.type) && found->second.const_value == symbol.const_value) {
+        if (found->second.is_constant && symbol.is_constant && int_constant(found->second) &&
+            int_constant(symbol) && found->second.const_value == symbol.const_value) {
             return true;
         }
         error(loc, "redefinition");

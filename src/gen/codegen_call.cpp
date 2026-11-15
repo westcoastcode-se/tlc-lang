@@ -1219,7 +1219,7 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
                                 call.elem_bits, call.elem_unsigned, -1, call.elem_float});
     // `give()` that returns `*[N]T` is still that pointer. The length stays so a slice use can pack it.
     auto stamp_array_ptr = [&](const std::string &name, const std::string &package, bool is_struct, int indirections,
-                               bool is_array, int array_len, bool elem_slice, const std::vector<TypeShell> &shells) {
+                               bool is_array, int64_t array_len, bool elem_slice, const std::vector<TypeShell> &shells) {
         if (result.ptr_to_array || shells.empty()) {
             return;
         }
@@ -1795,7 +1795,7 @@ CodeGen::IterSlot CodeGen::iter_slot(const TypedValue &arg) const {
     slot.alias_owner = arg.alias_owner;
     slot.alias_file = arg.alias_file;
     const bool has_array_type = arg.array_type != nullptr && arg.array_type->isArrayTy();
-    int length = arg.array_len;
+    int64_t length = arg.array_len;
     if (length <= 0 && has_array_type) {
         length = static_cast<int>(llvm::cast<llvm::ArrayType>(arg.array_type)->getNumElements());
     }
@@ -2034,9 +2034,9 @@ bool CodeGen::emit_iter_call(const Expr::Call &node, const Expr::Selector &selec
                 return true;
             }
             llvm::Value *header = value.value->getType() == slice_type() ? value.value : as_slice_value(value, node.loc);
-            prepared.yield = {builder_.CreateExtractValue(header, 1), 0};
+            prepared.yield = len_value(builder_.CreateExtractValue(header, 1));
         } else {
-            prepared.yield = {const_i32(slot.array_len), 0};
+            prepared.yield = len_value(const_len(slot.array_len));
         }
         prepared.yielded = true;
         return true;
@@ -2048,7 +2048,7 @@ bool CodeGen::emit_iter_call(const Expr::Call &node, const Expr::Selector &selec
     const TypedValue base = value_of_binding(*self);
     // `at(i i32)` converts its argument as a call does. `items.at(1.0)` passes 1.
     const TypedValue subscript = emit_rvalue(*node.args.front());
-    const TypedValue addr = index_address(base, adapt(subscript, i32(), node.loc), node.loc);
+    const TypedValue addr = index_address(base, adapt(subscript, len_ty(), node.loc), node.loc);
     if (addr.value == nullptr) {
         return true;
     }

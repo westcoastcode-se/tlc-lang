@@ -2,7 +2,7 @@ type Boom struct {
     hits i32;
 };
 
-unsafe func Boom::malloc(self *this, size i32, align i32) ?*u8 {
+unsafe func Boom::malloc(self *this, size i64, align i32) ?*u8 {
     _ = size;
     _ = align;
     self.hits = self.hits + 1;
@@ -13,7 +13,7 @@ func Boom::free(self *this, ptr *u8) void {
     _ = ptr;
 }
 
-unsafe func Boom::realloc(self *this, ptr *u8, size i32, align i32) ?*u8 {
+unsafe func Boom::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 {
     _ = ptr;
     _ = size;
     _ = align;

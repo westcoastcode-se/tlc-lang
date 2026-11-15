@@ -103,13 +103,15 @@ void Checker::ensure_allocator_trait() {
     Type pointer = type_pointer(byte);
     Type optional = pointer;
     optional.optional = true;
-    const Type size = type_int();
+    // A size is an `i64`. An alignment is an `i32`.
+    const Type size = type_i64();
+    const Type align = type_int();
     TraitInfo info;
     info.name = "Allocator";
     const int id = static_cast<int>(traits_.size());
-    info.methods.push_back(TraitInfo::Method{"malloc", type_function(optional, {size, size}), true, {}, id});
+    info.methods.push_back(TraitInfo::Method{"malloc", type_function(optional, {size, align}), true, {}, id});
     info.methods.push_back(TraitInfo::Method{"free", type_function(type_void(), {pointer}), false, {}, id});
-    info.methods.push_back(TraitInfo::Method{"realloc", type_function(optional, {pointer, size, size}), true, {}, id});
+    info.methods.push_back(TraitInfo::Method{"realloc", type_function(optional, {pointer, size, align}), true, {}, id});
     owned_defaults_.push_back(allocator_malloc_default());
     info.defaults.push_back(&owned_defaults_.back());
     allocator_trait_id_ = id;
@@ -118,7 +120,7 @@ void Checker::ensure_allocator_trait() {
 
 namespace {
 
-bool slice_spelling(bool is_array, int array_len, bool elem_const, bool elem_slice, const std::vector<TypeShell> &shells,
+bool slice_spelling(bool is_array, int64_t array_len, bool elem_const, bool elem_slice, const std::vector<TypeShell> &shells,
                     bool constant) {
     if (!is_array || array_len >= 0 || elem_slice || elem_const != constant || shells.size() != 1) {
         return false;
@@ -359,8 +361,9 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
                 for (const FunctionDecl &method : item->methods) {
                     const bool header = method.body == nullptr && method.type_params.empty() && !method.variadic &&
                                         method.link_name.empty();
+                    // A size is an `i64`. An alignment stays an `i32`.
                     if (method.name == "malloc" && header && method.unsafe && value_count(method) == 2 &&
-                        value_param(method, 0) != nullptr && param_plain(*value_param(method, 0), "i32", false) &&
+                        value_param(method, 0) != nullptr && param_plain(*value_param(method, 0), "i64", false) &&
                         param_plain(*value_param(method, 1), "i32", false) && result_ptr(method, "u8", true, false)) {
                         malloc_ok = true;
                     } else if (method.name == "free" && header && !method.unsafe && value_count(method) == 1 &&
@@ -370,7 +373,7 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
                     } else if (method.name == "realloc" && header && method.unsafe && value_count(method) == 3 &&
                                value_param(method, 0) != nullptr &&
                                param_ptr(*value_param(method, 0), "u8", false, false, false) &&
-                               param_plain(*value_param(method, 1), "i32", false) &&
+                               param_plain(*value_param(method, 1), "i64", false) &&
                                param_plain(*value_param(method, 2), "i32", false) && result_ptr(method, "u8", true, false)) {
                         realloc_ok = true;
                     } else {
@@ -413,7 +416,7 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
                 keep("alloc[T]", head && !fn->unsafe && result_ptr(*fn, "T", false, false), fn->loc);
             } else if (fn->name == "alloc" && value_count(*fn) == 1) {
                 keep("alloc[T,n]", head && !fn->unsafe && value_ok(0, [](const Param &param) {
-                         return param_plain(param, "i32", false);
+                         return param_plain(param, "i64", false);
                      }) && result_slice(*fn, "T", false),
                      fn->loc);
             } else if (fn->name == "realloc" && value_count(*fn) == 1) {
@@ -425,7 +428,7 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
                 keep("realloc[T,n]",
                      head && !fn->unsafe && value_ok(0, [](const Param &param) {
                          return param_slice(param, "T", false, false);
-                     }) && value_ok(1, [](const Param &param) { return param_plain(param, "i32", false); }) &&
+                     }) && value_ok(1, [](const Param &param) { return param_plain(param, "i64", false); }) &&
                          result_slice(*fn, "T", false),
                      fn->loc);
             } else if (fn->extern_compiler) {
@@ -477,7 +480,7 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
             if (fn->name == "malloc") {
                 keep(prefix + "malloc",
                      head && fn->unsafe && value_count(*fn) == 2 && value_ok(0, [](const Param &param) {
-                         return param_plain(param, "i32", false);
+                         return param_plain(param, "i64", false);
                      }) && value_ok(1, [](const Param &param) { return param_plain(param, "i32", false); }) &&
                          result_ptr(*fn, "u8", true, false),
                      fn->loc);
@@ -491,7 +494,7 @@ void Checker::validate_builtin(const TranslationUnit &unit) {
                 keep(prefix + "realloc",
                      head && fn->unsafe && value_count(*fn) == 3 && value_ok(0, [](const Param &param) {
                          return param_ptr(param, "u8", false, false, false);
-                     }) && value_ok(1, [](const Param &param) { return param_plain(param, "i32", false); }) &&
+                     }) && value_ok(1, [](const Param &param) { return param_plain(param, "i64", false); }) &&
                          value_ok(2, [](const Param &param) { return param_plain(param, "i32", false); }) &&
                          result_ptr(*fn, "u8", true, false),
                      fn->loc);
@@ -639,8 +642,9 @@ bool Checker::package_is_iteration(uint32_t file) const {
 
 namespace {
 
-bool plain_i32_param(const Param &param) {
-    return param.type_name == "i32" && param.type_package.empty() && !param.is_struct && !param.is_enum &&
+// A position of `seq.Seq` is an `i64`, as an index is.
+bool plain_i64_param(const Param &param) {
+    return param.type_name == "i64" && param.type_package.empty() && !param.is_struct && !param.is_enum &&
            param.indirections == 0 && param.optional == 0 && param.const_pointee == 0 && !param.is_array &&
            !param.is_fn_ptr && param.type_args.empty() && param.shells.empty() && !param.is_receiver;
 }
@@ -665,10 +669,10 @@ Checker::IterationMethod Checker::iteration_method(const FunctionDecl &method, c
             return IterationMethod::Other;
         }
     }
-    if (method.params.empty() && plain_result(method, "i32", 0)) {
+    if (method.params.empty() && plain_result(method, "i64", 0)) {
         return IterationMethod::Length;
     }
-    if (method.params.size() == 1 && plain_i32_param(method.params.front())) {
+    if (method.params.size() == 1 && plain_i64_param(method.params.front())) {
         if (plain_result(method, type_param, 0)) {
             return IterationMethod::Element;
         }
@@ -1611,7 +1615,7 @@ int Checker::min_align_of(const Type &type) const {
         return 8;
     }
     if (type.kind == TypeKind::Array) {
-        // A slice is `{ptr, i32}`. The pointer sets the alignment.
+        // A slice is `{ptr, i64}`. The pointer sets the alignment.
         if (type.length < 0) {
             return 8;
         }
@@ -1663,14 +1667,14 @@ int Checker::min_align_of(const Type &type) const {
     return 1;
 }
 
-std::optional<int> Checker::type_size(const Type &type) const {
-    auto align_up = [](int offset, int align) {
+std::optional<int64_t> Checker::type_size(const Type &type) const {
+    auto align_up = [](int64_t offset, int64_t align) {
         if (align <= 1) {
             return offset;
         }
         return (offset + align - 1) / align * align;
     };
-    auto scalar = [](const Type &current) -> std::optional<int> {
+    auto scalar = [](const Type &current) -> std::optional<int64_t> {
         if (current.kind == TypeKind::Bool || current.kind == TypeKind::Char) {
             return 1;
         }
@@ -1694,7 +1698,7 @@ std::optional<int> Checker::type_size(const Type &type) const {
     };
     std::unordered_set<int> seen;
     std::unordered_set<int> seen_alias;
-    const auto walk = [&](const auto &self, const Type &current) -> std::optional<int> {
+    const auto walk = [&](const auto &self, const Type &current) -> std::optional<int64_t> {
         if (current.kind == TypeKind::Pointer || current.kind == TypeKind::Meta) {
             return 8;
         }
@@ -1702,15 +1706,15 @@ std::optional<int> Checker::type_size(const Type &type) const {
             if (current.element == nullptr) {
                 return std::nullopt;
             }
-            // `{ptr, i32}` with the pointer's alignment is 16 bytes.
+            // `{ptr, i64}` is 16 bytes.
             if (current.length < 0) {
                 return 16;
             }
             if (current.length == 0) {
                 return 0;
             }
-            const std::optional<int> element = self(self, *current.element);
-            if (!element || *element > 2147483647 / current.length) {
+            const std::optional<int64_t> element = self(self, *current.element);
+            if (!element || *element > 9223372036854775807LL / current.length) {
                 return std::nullopt;
             }
             return *element * current.length;
@@ -1729,10 +1733,10 @@ std::optional<int> Checker::type_size(const Type &type) const {
             if (current.results.empty()) {
                 return std::nullopt;
             }
-            int size = 0;
+            int64_t size = 0;
             int align = 1;
             for (const Type &part : current.results) {
-                const std::optional<int> part_size = self(self, part);
+                const std::optional<int64_t> part_size = self(self, part);
                 if (!part_size) {
                     return std::nullopt;
                 }
@@ -1762,7 +1766,7 @@ std::optional<int> Checker::type_size(const Type &type) const {
                     return std::nullopt;
                 }
                 const Type &tag = enum_types_[static_cast<std::size_t>(info.tag_enum)].underlying;
-                const std::optional<int> tag_size = self(self, tag);
+                const std::optional<int64_t> tag_size = self(self, tag);
                 if (!tag_size) {
                     return std::nullopt;
                 }
@@ -1774,10 +1778,10 @@ std::optional<int> Checker::type_size(const Type &type) const {
             return align_up(0, std::max(info.align, 1));
         }
         if (info.is_union && info.tag_enum < 0) {
-            int size = 0;
+            int64_t size = 0;
             int align = 1;
             for (const StructInfo::Field &field : info.fields) {
-                const std::optional<int> field_size = self(self, field.type);
+                const std::optional<int64_t> field_size = self(self, field.type);
                 if (!field_size) {
                     return std::nullopt;
                 }
@@ -1791,14 +1795,14 @@ std::optional<int> Checker::type_size(const Type &type) const {
                 return std::nullopt;
             }
             const Type &tag = enum_types_[static_cast<std::size_t>(info.tag_enum)].underlying;
-            const std::optional<int> tag_size = self(self, tag);
+            const std::optional<int64_t> tag_size = self(self, tag);
             if (!tag_size) {
                 return std::nullopt;
             }
-            int payload = 0;
+            int64_t payload = 0;
             int payload_align = 1;
             for (const StructInfo::Field &field : info.fields) {
-                const std::optional<int> field_size = self(self, field.type);
+                const std::optional<int64_t> field_size = self(self, field.type);
                 if (!field_size) {
                     return std::nullopt;
                 }
@@ -1811,10 +1815,10 @@ std::optional<int> Checker::type_size(const Type &type) const {
             // The payload starts at offset 0. The enum tag is placed after it.
             return align_up(align_up(payload, tag_align) + *tag_size, align);
         }
-        int offset = 0;
+        int64_t offset = 0;
         int align = 1;
         for (const StructInfo::Field &field : info.fields) {
-            const std::optional<int> field_size = self(self, field.type);
+            const std::optional<int64_t> field_size = self(self, field.type);
             if (!field_size) {
                 return std::nullopt;
             }
@@ -2078,7 +2082,7 @@ void Checker::define_struct_fields() {
             if (field.is_const) {
                 field_type.is_const = true;
             }
-            // A slice is a tlc value, `{ptr, i32}`. An `extern(abi="c")` struct keeps the C layout.
+            // A slice is a tlc value, `{ptr, i64}`. An `extern(abi="c")` struct keeps the C layout.
             if (is_slice(field_type) && info.extern_c) {
                 error(field.loc, "extern(abi=\"c\") cannot use a slice");
                 info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc, field.exported});
@@ -2991,7 +2995,7 @@ bool Checker::name_taken(const std::string &name) const {
     return package_has_enum(file_id_, name);
 }
 
-Type Checker::published_object(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
+Type Checker::published_object(const std::string &name, int indirections, bool is_array, int64_t array_len, SourceLoc loc,
                                bool parameter, const std::string &package, bool is_struct, bool is_enum,
                                uint32_t optional, uint32_t const_pointee, bool elem_const, bool elem_slice,
                                const std::vector<TypeShell> &shells) {
@@ -3072,10 +3076,7 @@ void Checker::fold_shells(std::vector<TypeShell> &shells, SourceLoc loc) {
         if (shell.kind != TypeShell::Kind::Array || shell.length_name.empty()) {
             continue;
         }
-        std::optional<int> value = array_length_value(shell.length_name);
-        if (!value) {
-            value = narrow_file_length(shell.length_name);
-        }
+        const std::optional<int64_t> value = array_length_wide(shell.length_name);
         if (value && *value >= 0) {
             shell.length = *value;
             shell.length_name.clear();
@@ -3095,7 +3096,7 @@ void Checker::fold_shells(std::vector<TypeShell> &shells, SourceLoc loc) {
     }
 }
 
-Type Checker::object_type(const std::string &name, int indirections, bool is_array, int array_len, SourceLoc loc,
+Type Checker::object_type(const std::string &name, int indirections, bool is_array, int64_t array_len, SourceLoc loc,
                           bool parameter, const std::string &package, bool is_struct, bool is_enum, bool receiver,
                           uint32_t optional, uint32_t const_pointee, bool allow_incomplete, bool elem_const,
                           bool elem_slice, const std::vector<TypeShell> &shells, bool variable) {

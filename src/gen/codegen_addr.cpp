@@ -184,7 +184,7 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
         }
         const TypedValue base = emit_rvalue(*index->base);
         const TypedValue subscript = emit_rvalue(*index->index);
-        return index_address(base, subscript.value, index->loc);
+        return index_address(base, subscript.value, index->loc, subscript.elem_unsigned);
     }
     if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
         if (!selector->resolved_owner.empty()) {
@@ -270,15 +270,16 @@ llvm::Value *CodeGen::emit_short_circuit(const Expr::Binary &expr, bool is_and) 
     return phi;
 }
 
-TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript, SourceLoc loc) {
-    // A checked index is an `i32`. A comptime func can be compiled for a call before its body is checked,
-    // and an index there may still be a float or another width. That body reports the error when checked.
+TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript, SourceLoc loc, bool is_unsigned) {
+    // An index is any integer, used as an `i64`. An unsigned one is zero-extended, so `3000000000u32` stays
+    // positive. A comptime func can be compiled for a call before its body is checked, and an index there
+    // may still be a float. That body reports the error when checked.
     if (subscript != nullptr && !subscript->getType()->isIntegerTy()) {
         error(loc, "type mismatch");
         return {};
     }
-    if (subscript != nullptr && !subscript->getType()->isIntegerTy(32)) {
-        subscript = builder_.CreateSExtOrTrunc(subscript, i32());
+    if (subscript != nullptr && !subscript->getType()->isIntegerTy(64)) {
+        subscript = is_unsigned ? builder_.CreateZExt(subscript, len_ty()) : builder_.CreateSExt(subscript, len_ty());
     }
     if (!base.shells.empty() && subscript != nullptr) {
         // A slice header carries its length. `s[i]` past it panics, as on the path without shells.
@@ -295,7 +296,7 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
         // `[3][2]T` checks `k` against 3. `p[k]` on `*[N]T` is `(*p)[k]`, and that `N` is the shell under the
         // pointer. A slice value was checked above against its header.
         if (!base.is_slice) {
-            int known = -1;
+            int64_t known = -1;
             if (base.empty_decay) {
                 known = 0;
             } else if (base.array_len > 0) {
@@ -305,7 +306,7 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
                 known = base.shells[1].length;
             }
             if (known >= 0) {
-                trap_index(subscript, const_i32(known), loc);
+                trap_index(subscript, const_len(known), loc);
                 if (terminated()) {
                     return {};
                 }
@@ -336,11 +337,11 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
                 --elem_depth;
             }
             if (llvm::Type *object = object_type(base.value); object != nullptr && object->isArrayTy()) {
-                limit = const_i32(static_cast<int>(llvm::cast<llvm::ArrayType>(object)->getNumElements()));
+                limit = const_len(static_cast<int64_t>(llvm::cast<llvm::ArrayType>(object)->getNumElements()));
             } else if (base.empty_decay) {
-                limit = const_i32(0);
+                limit = const_len(0);
             } else if (base.array_len > 0) {
-                limit = const_i32(base.array_len);
+                limit = const_len(base.array_len);
             }
         }
         // `&items[0]` is that stored pointer. Another index still rejects a length of 0.
@@ -421,9 +422,9 @@ TypedValue CodeGen::index_address(const TypedValue &base, llvm::Value *subscript
     llvm::Value *offset = subscript;
     // Every decayed array still knows its length: the outer `N` of `[N][M]T`, of `[N][]T`, and of `*[N]T`.
     // An index past it panics on each of these paths, not only on a flat `[N]T`.
-    const int known = base.ptr_to_array ? base.ptr_array_len : base.empty_decay ? 0 : base.array_len > 0 ? base.array_len : -1;
+    const int64_t known = base.ptr_to_array ? base.ptr_array_len : base.empty_decay ? 0 : base.array_len > 0 ? base.array_len : -1;
     if (known >= 0) {
-        trap_index(offset, const_i32(known), loc);
+        trap_index(offset, const_len(known), loc);
         if (terminated()) {
             return {};
         }
@@ -1152,7 +1153,7 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
         loaded.tuple_parts = addr.tuple_parts;
         return loaded;
     }
-    // A slice field is the `{ ptr, i32 }` header, not the first element.
+    // A slice field is the `{ ptr, i64 }` header, not the first element.
     if (addr.is_slice) {
         TypedValue loaded;
         loaded.value = builder_.CreateLoad(slice_type(), addr.value);
@@ -1269,10 +1270,10 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
             if (bound.value == nullptr || !bound.value->getType()->isIntegerTy()) {
                 return nullptr;
             }
-            if (bound.value->getType() == i32()) {
+            if (bound.value->getType() == len_ty()) {
                 return bound.value;
             }
-            return resize_int(bound.value, i32(), bound.elem_unsigned);
+            return resize_int(bound.value, len_ty(), bound.elem_unsigned);
         };
         llvm::Value *start_index = as_bound(low);
         llvm::Value *end_index = as_bound(high);
@@ -1281,7 +1282,7 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
             return {zero(), 0};
         }
         if (eval_ || emitting_fn_ == nullptr || !emitting_fn_->is_comptime) {
-            llvm::Value *low_bad = builder_.CreateICmpSLT(start_index, const_i32(0));
+            llvm::Value *low_bad = builder_.CreateICmpSLT(start_index, const_len(0));
             llvm::Value *order_bad = builder_.CreateICmpSLT(end_index, start_index);
             llvm::Value *bad = builder_.CreateOr(low_bad, order_bad);
             auto *fail = llvm::BasicBlock::Create(context_, "range.fail", function_);
@@ -1384,10 +1385,10 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
             if (bound.value == nullptr || !bound.value->getType()->isIntegerTy()) {
                 return nullptr;
             }
-            if (bound.value->getType() == i32()) {
+            if (bound.value->getType() == len_ty()) {
                 return bound.value;
             }
-            return resize_int(bound.value, i32(), bound.elem_unsigned);
+            return resize_int(bound.value, len_ty(), bound.elem_unsigned);
         };
         llvm::Value *start = data;
         llvm::Value *len = nullptr;
@@ -1446,10 +1447,10 @@ TypedValue CodeGen::emit_range(const Expr::Index &node) {
         if (packed->getType() == slice_type() &&
             (eval_ || emitting_fn_ == nullptr || !emitting_fn_->is_comptime)) {
             llvm::Value *old = builder_.CreateExtractValue(packed, 1);
-            llvm::Value *start_at = low_omitted ? const_i32(0) : start_index;
+            llvm::Value *start_at = low_omitted ? const_len(0) : start_index;
             llvm::Value *end_at = high_omitted ? old : end_index;
             if (start_at != nullptr && end_at != nullptr) {
-                llvm::Value *low_bad = builder_.CreateICmpSLT(start_at, const_i32(0));
+                llvm::Value *low_bad = builder_.CreateICmpSLT(start_at, const_len(0));
                 llvm::Value *order_bad = builder_.CreateICmpSLT(end_at, start_at);
                 llvm::Value *high_bad = builder_.CreateICmpSGT(end_at, old);
                 llvm::Value *bad = builder_.CreateOr(builder_.CreateOr(low_bad, order_bad), high_bad);

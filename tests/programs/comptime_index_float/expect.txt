@@ -1,1 +1,1 @@
-compile-error: type mismatch: expected i32, found f64
+compile-error: type mismatch: expected i64, found f64

@@ -758,7 +758,7 @@ void CodeGen::paint_omitted_elements(llvm::Value *slot, llvm::ArrayType *array_t
     if (!struct_has_default(struct_id, probe)) {
         return;
     }
-    const unsigned count = array_ty->getNumElements();
+    const uint64_t count = array_ty->getNumElements();
     const unsigned written = list == nullptr ? 0 : static_cast<unsigned>(list->elements.size());
     llvm::Type *elem = array_ty->getElementType();
     auto *inner = llvm::dyn_cast<llvm::ArrayType>(elem);
@@ -793,24 +793,33 @@ void CodeGen::store_each_element(llvm::Value *raw, llvm::Value *count, llvm::Typ
     if (image->getType() != elem || module_.getDataLayout().getTypeAllocSize(elem).getFixedValue() == 0) {
         return;
     }
-    llvm::AllocaInst *step = alloca_typed(i32(), "new.i");
-    builder_.CreateStore(const_i32(0), step);
+    llvm::AllocaInst *step = alloca_typed(len_ty(), "new.i");
+    builder_.CreateStore(const_len(0), step);
     llvm::BasicBlock *cond = llvm::BasicBlock::Create(context_, "new.zero", function_);
     llvm::BasicBlock *body = llvm::BasicBlock::Create(context_, "new.zero.body", function_);
     llvm::BasicBlock *done = llvm::BasicBlock::Create(context_, "new.zero.done", function_);
     builder_.CreateBr(cond);
     builder_.SetInsertPoint(cond);
-    llvm::Value *index = builder_.CreateLoad(i32(), step);
-    builder_.CreateCondBr(builder_.CreateICmpSLT(index, count), body, done);
+    llvm::Value *index = builder_.CreateLoad(len_ty(), step);
+    builder_.CreateCondBr(builder_.CreateICmpSLT(index, to_len(count)), body, done);
     builder_.SetInsertPoint(body);
     llvm::Value *at = builder_.CreateInBoundsGEP(elem, raw, llvm::ArrayRef<llvm::Value *>{index});
     builder_.CreateStore(image, at);
-    builder_.CreateStore(builder_.CreateAdd(index, const_i32(1)), step);
+    builder_.CreateStore(builder_.CreateAdd(index, const_len(1)), step);
     builder_.CreateBr(cond);
     builder_.SetInsertPoint(done);
 }
 
 std::optional<int32_t> CodeGen::folded_sizeof(const Expr::Sizeof &node) const {
+    // The `i32` fold keeps a size that fits. A larger one folds in `fold_wide`.
+    const std::optional<int64_t> bytes = folded_sizeof_wide(node);
+    if (!bytes || *bytes > 2147483647) {
+        return std::nullopt;
+    }
+    return static_cast<int32_t>(*bytes);
+}
+
+std::optional<int64_t> CodeGen::folded_sizeof_wide(const Expr::Sizeof &node) const {
     llvm::Type *measured = nullptr;
     if (node.on_type) {
         const Lowered low = lower(current_file_, node.type_name, node.type_package, node.is_struct, node.indirections,
@@ -831,10 +840,10 @@ std::optional<int32_t> CodeGen::folded_sizeof(const Expr::Sizeof &node) const {
     }
     const uint64_t bytes = node.align ? module_.getDataLayout().getABITypeAlign(measured).value()
                                       : module_.getDataLayout().getTypeAllocSize(measured).getFixedValue();
-    if (bytes > 2147483647ULL) {
+    if (bytes > 9223372036854775807ULL) {
         return std::nullopt;
     }
-    return static_cast<int32_t>(bytes);
+    return static_cast<int64_t>(bytes);
 }
 
 const VarDecl *CodeGen::global_decl(const std::string &name) const {
@@ -1045,7 +1054,7 @@ void CodeGen::store_array_elements(llvm::Value *slot, llvm::ArrayType *array_ty,
     }
     llvm::Type *elem = array_ty->getElementType();
     auto *inner = llvm::dyn_cast<llvm::ArrayType>(elem);
-    const unsigned limit = array_ty->getNumElements();
+    const uint64_t limit = array_ty->getNumElements();
     unsigned index = 0;
     for (const auto &element : init.elements) {
         if (index >= limit || terminated()) {
@@ -1974,7 +1983,7 @@ std::optional<CodeGen::SlicePieces> CodeGen::slice_pieces(const Expr &expr, std:
         pieces->element = array->getElementType();
         pieces->pointer = llvm::ConstantExpr::getInBoundsGetElementPtr(
             array, global, llvm::ArrayRef<llvm::Constant *>{const_i32(0), const_i32(0)});
-        pieces->length = binding->array_len > 0 ? binding->array_len : static_cast<int32_t>(array->getNumElements());
+        pieces->length = binding->array_len > 0 ? binding->array_len : static_cast<int64_t>(array->getNumElements());
     } else if (binding != nullptr && binding->is_slice) {
         // `const p *const u8 = label` uses this pointer. The length stays on the slice.
         llvm::Constant *init = global == nullptr ? nullptr : global->getInitializer();

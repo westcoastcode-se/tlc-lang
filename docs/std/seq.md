@@ -28,9 +28,9 @@ A missing `ref` on that value is `type mismatch`.
 
 ## The methods `len` and `at`
 
-`len` has no parameter after the receiver and returns `i32`.
+`len` has no parameter after the receiver and returns `i64`, the type of a slice's `.len`.
 
-`at` takes one `i32` and returns `T`.
+`at` takes one `i64` position and returns `T`.
 
 A struct writes those names, and both take the value.
 
@@ -40,7 +40,7 @@ They do not have `ref`.
 
 A pointer to an element is `for (var item : ptr_of(items))`.
 
-That value's `ref` takes `self *this` and one `i32` and returns `*T`.
+That value's `ref` takes `self *this` and one `i64` position and returns `*T`.
 
 A field, a further method, or a default on `Seq` is reported as `not supported yet`.
 
@@ -51,11 +51,11 @@ type Bag struct {
     n i32;
 };
 
-func Bag::len(self this) i32 {
+func Bag::len(self this) i64 {
     return 2;
 }
 
-func Bag::at(self this, i i32) i32 {
+func Bag::at(self this, i i64) i32 {
     return self.n + i;
 }
 
