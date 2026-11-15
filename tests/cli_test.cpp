@@ -232,6 +232,31 @@ int run_cli_tests() {
     EXPECT(check, comptime_over.code == 1);
     EXPECT_HAS(check, comptime_over.err, comptime_memory + ":11:24: error: compile-time memory limit exceeded");
     std::remove(comptime_memory.c_str());
+    // A diagnostic reported before the limit is printed first. It often names the cause.
+    const std::string earlier = "/tmp/tlc-memory-earlier.tlc";
+    {
+        std::ofstream out(earlier);
+        out << "var wrong i32 = missing;\n"
+               "var buf [200000000]u8;\n"
+               "\n"
+               "comptime func fill() i32 {\n"
+               "    for (var i i64 = 0; i < buf.len; i += 4096) {\n"
+               "        buf[i] = 1;\n"
+               "    }\n"
+               "    return 7;\n"
+               "}\n"
+               "\n"
+               "func main() i32 {\n"
+               "    comptime const n = fill();\n"
+               "    return n;\n"
+               "}\n";
+    }
+    const tlc::test::Proc earlier_over = tlc::test::spawn({bin, "--max-memory", "32M", "--check", earlier});
+    EXPECT(check, earlier_over.code == 1);
+    const auto first = earlier_over.err.find(earlier + ":1:17: error: undeclared identifier");
+    const auto limit = earlier_over.err.find(earlier + ":12:24: error: compile-time memory limit exceeded");
+    EXPECT(check, first != std::string::npos && limit != std::string::npos && first < limit);
+    std::remove(earlier.c_str());
     // Outside a comptime call there is no place to name.
     const std::string big_init = "/tmp/tlc-init-memory.tlc";
     {

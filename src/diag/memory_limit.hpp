@@ -20,6 +20,7 @@
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace tlc {
 
@@ -27,10 +28,16 @@ inline constexpr uint64_t kDefaultMaxMemory = uint64_t{1} << 30;
 
 namespace memory_detail {
 
+// The command line shows this many diagnostics, then `error: too many errors`.
+inline constexpr std::size_t kNoteLimit = 100;
+
 struct State {
     std::mutex lock;
     // `path:line:column` of the running comptime call. Empty outside one.
     std::string place;
+    // The compile's diagnostics so far, as printed. The watchdog prints them before it stops.
+    std::vector<std::string> notes;
+    std::size_t noted = 0;
 };
 
 inline State &state() {
@@ -67,6 +74,36 @@ inline std::optional<uint64_t> used_bytes() {
 }
 
 } // namespace memory_detail
+
+// A new compile. The diagnostics of the one before are not this compile's.
+inline void reset_memory_notes() {
+    memory_detail::State &shared = memory_detail::state();
+    const std::lock_guard<std::mutex> guard(shared.lock);
+    shared.notes.clear();
+    shared.noted = 0;
+}
+
+// One diagnostic line, `path:line:column: error: message`, with its newline.
+inline void note_memory_diagnostic(std::string line) {
+    memory_detail::State &shared = memory_detail::state();
+    const std::lock_guard<std::mutex> guard(shared.lock);
+    ++shared.noted;
+    if (shared.notes.size() < memory_detail::kNoteLimit) {
+        shared.notes.push_back(std::move(line));
+    }
+}
+
+// The engine dropped the diagnostics after the first `count`.
+inline void truncate_memory_notes(std::size_t count) {
+    memory_detail::State &shared = memory_detail::state();
+    const std::lock_guard<std::mutex> guard(shared.lock);
+    if (count < shared.notes.size()) {
+        shared.notes.resize(count);
+    }
+    if (count < shared.noted) {
+        shared.noted = count;
+    }
+}
 
 // Names the comptime call that runs while this object lives. Calls nest. The inner one is reported.
 class MemoryPlace {
@@ -147,13 +184,22 @@ inline void start_memory_limit(uint64_t limit) {
     std::thread([limit] {
         for (;;) {
             if (const std::optional<uint64_t> used = memory_detail::used_bytes(); used && *used > limit) {
+                // What the compile reported so far comes first. It often names the cause.
                 std::string text;
+                std::string place;
                 {
                     memory_detail::State &shared = memory_detail::state();
                     const std::lock_guard<std::mutex> guard(shared.lock);
-                    text = shared.place;
+                    for (const std::string &note : shared.notes) {
+                        text += note;
+                    }
+                    if (shared.noted > shared.notes.size()) {
+                        text += "error: too many errors\n";
+                    }
+                    place = shared.place;
                 }
-                text += text.empty() ? "error: " : ": error: ";
+                text += place;
+                text += place.empty() ? "error: " : ": error: ";
                 text += "compile-time memory limit exceeded\n";
                 std::fwrite(text.data(), 1, text.size(), stderr);
                 std::fflush(stderr);

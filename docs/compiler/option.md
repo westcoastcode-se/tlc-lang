@@ -69,6 +69,8 @@ Past the limit the compiler stops with status 1. A `comptime` call that is runni
 main.tlc:11:24: error: compile-time memory limit exceeded
 ```
 
+The diagnostics the compiler reported before it reached the limit are printed first, up to the same 100. One of them often names the cause, such as `array too large` on the line that made a large array.
+
 Outside a `comptime` call, such as while LLVM optimizes, the message has no place:
 
 ```text

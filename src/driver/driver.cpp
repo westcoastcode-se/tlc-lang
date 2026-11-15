@@ -557,6 +557,7 @@ CompileOutput compile_source(const Options &opt) {
     }
     SourceSet sources;
     DiagnosticEngine diags(sources);
+    diags.mirror_for_memory_limit();
     ResolveRequest request;
     request.entry = opt.input;
     request.package_paths = opt.package_paths;

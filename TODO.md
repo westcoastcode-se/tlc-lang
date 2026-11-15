@@ -20,7 +20,6 @@ These were found by review and have a repro. They are not fixed yet.
 - `?func` is not allowed as an array element, `[2]?func (i32) i32`, or behind a pointer, `*?func (i32) i32`. The cast form `?func (i32) i32(x)` is `expected an expression`.
 - Deeply nested blocks check in quadratic time. In a release build 2000 nested `if` take 33 ms, 4000 take 98 ms, and 8000 take 0.35 seconds. The nesting limit stays at 10000 levels.
 - A file-scope array with an initializer list is built one element at a time, zeros included. `var arr [2147483647]i32 = {1, 2, 3}` needs 8 GiB in the compiler and stops at `--max-memory`. A comptime call builds every global of the program the same way, also one whose type was already `array too large`. Found by `build/verify/sem.py`.
-- When `--max-memory` stops the compiler, the diagnostics reported before are not printed. The watchdog exits at once, so `array too large` on the line that caused the large array is lost and only `compile-time memory limit exceeded` shows.
 
 ### Runtime
 
