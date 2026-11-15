@@ -1381,7 +1381,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             return type_invalid();
                         }
                         if (kept.status != KeptStruct::Status::Value || kept.value == nullptr) {
-                            if (diags_.size() == before) {
+                            if (diags_.size() == before && !broken_calls_.contains(&node)) {
                                 error(node.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
                                 recheck_fault_.clear();
                             }
@@ -1411,7 +1411,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             return type_invalid();
                         }
                         if (kept.status != KeptStruct::Status::Value || kept.value == nullptr) {
-                            if (diags_.size() == before) {
+                            if (diags_.size() == before && !broken_calls_.contains(&node)) {
                                 error(node.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
                                 recheck_fault_.clear();
                             }
@@ -1431,7 +1431,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     }
                     if (slice_of_const_u8(result)) {
                         if (!fold_comptime_string(node)) {
-                            if (diags_.size() == before) {
+                            if (diags_.size() == before && !broken_calls_.contains(&node)) {
                                 error(node.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
                                 recheck_fault_.clear();
                             }
@@ -1442,7 +1442,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     // `comptime func yes() bool` stays `bool`. The folded value is 0 or 1.
                     if (result.kind == TypeKind::Bool) {
                         if (!fold_int(expr)) {
-                            if (diags_.size() == before) {
+                            if (diags_.size() == before && !broken_calls_.contains(&node)) {
                                 error(node.loc, "not supported yet");
                             }
                             return type_invalid();
@@ -1523,7 +1523,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     // `i64`, `u64`, `u32`, `i16`, `u16`, `i8`, and `u8`. `i32` uses the path below.
                     if (comptime_wide_int(result)) {
                         if (!fold_comptime_wide(node)) {
-                            if (diags_.size() == before) {
+                            // A body with its own errors was not run. Those errors are the report.
+                            if (diags_.size() == before && !broken_calls_.contains(&node)) {
                                 error(node.loc, "not supported yet");
                             }
                             return type_invalid();
@@ -1531,7 +1532,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return result;
                     }
                     if (!fold_int(expr)) {
-                        if (diags_.size() == before) {
+                        if (diags_.size() == before && !broken_calls_.contains(&node)) {
                             error(node.loc, "not supported yet");
                         }
                         return type_invalid();

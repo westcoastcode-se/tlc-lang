@@ -328,6 +328,8 @@ retq                             # return
 
 ## When a comptime call fails
 
+A `comptime func` whose body has an error of its own is not run, wherever it is declared. That error, on the body, is the report, and the call adds none. An error that comes from the arguments, such as `10 / n` when the call passes 0, is found by running the body and is reported as below.
+
 A false `assert` is that message, on the `assert`.
 
 An index outside a known length is `index out of range`, on that index.

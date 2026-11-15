@@ -4404,8 +4404,34 @@ bool Checker::comptime_for_pending(const Stmt::For &loop) const {
     return comptime_param_pending(bind_value(*loop.init));
 }
 
+bool Checker::comptime_body_broken(const FunctionDecl &fn) {
+    if (const auto found = body_ok_.find(&fn); found != body_ok_.end()) {
+        return !found->second;
+    }
+    // Declared after the call, so not checked yet. A quiet check of an unchanged copy decides. The body's
+    // own check later reports what it finds.
+    FunctionDecl copy = clone_function(fn);
+    const bool ok = recheck_comptime_copy(copy, true);
+    recheck_fault_.clear();
+    body_ok_[&fn] = ok;
+    return !ok;
+}
+
 void Checker::check_function(const FunctionDecl &fn) {
     fn.body_checked = true;
+    // Whether this body has errors of its own, before any call substitutes its parameters.
+    struct BodyResult {
+        Checker &self;
+        const FunctionDecl &fn;
+        std::size_t errors;
+        bool quiet;
+        // A quiet check is a temporary copy. Only the function's own check is kept.
+        ~BodyResult() {
+            if (!quiet) {
+                self.body_ok_[&fn] = self.diags_.size() == errors;
+            }
+        }
+    } body_result{*this, fn, diags_.size(), quiet_};
     InitSuspend suspend(*this);
     struct Depths {
         int &comptime_slot;

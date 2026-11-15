@@ -556,6 +556,12 @@ class Checker {
     }
     // A struct method `self *this` for a trait method that only reads, reported once.
     std::unordered_set<const FunctionDecl *> reads_only_reported_;
+    // Each function whose body was checked, and whether that check found no error.
+    std::unordered_map<const FunctionDecl *, bool> body_ok_;
+    // The body has errors of its own, so a comptime call does not run it.
+    bool comptime_body_broken(const FunctionDecl &fn);
+    // Calls not run for that reason. Their body's errors are the report, so the call adds none.
+    std::unordered_set<const Expr::Call *> broken_calls_;
     // `path:line:column` of `loc`, the way a diagnostic prints it.
     std::string memory_place(SourceLoc loc) const;
     void declare_struct_tags(const TranslationUnit &unit, uint32_t file_id);

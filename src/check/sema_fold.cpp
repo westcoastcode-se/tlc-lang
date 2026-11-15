@@ -3670,6 +3670,12 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
     // `comptime if`, `comptime switch`, and `comptime for` fold on this copy.
     // `repeat[n]` instantiates once `n` is the integer. A rejected call stays rejected.
     (void)generic;
+    // A body with its own errors does not run. Those errors are reported where the body is checked.
+    if (comptime_body_broken(*fn)) {
+        call.comptime_failed = true;
+        broken_calls_.insert(&call);
+        return std::nullopt;
+    }
     if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
         error(call.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
         recheck_fault_.clear();
@@ -3849,6 +3855,12 @@ bool Checker::fold_comptime_wide(const Expr::Call &call) {
         return false;
     }
     (void)generic;
+    // A body with its own errors does not run. Those errors are reported where the body is checked.
+    if (comptime_body_broken(*fn)) {
+        call.comptime_failed = true;
+        broken_calls_.insert(&call);
+        return false;
+    }
     if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
         error(call.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
         recheck_fault_.clear();
@@ -4042,6 +4054,12 @@ bool Checker::fold_comptime_f64(const Expr::Call &call) {
         return false;
     }
     (void)generic;
+    // A body with its own errors does not run. Those errors are reported where the body is checked.
+    if (comptime_body_broken(*fn)) {
+        call.comptime_failed = true;
+        broken_calls_.insert(&call);
+        return false;
+    }
     if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
         error(call.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
         recheck_fault_.clear();
@@ -4244,6 +4262,12 @@ bool Checker::fold_comptime_enum(const Expr::Call &call) {
         return false;
     }
     (void)generic;
+    // A body with its own errors does not run. Those errors are reported where the body is checked.
+    if (comptime_body_broken(*fn)) {
+        call.comptime_failed = true;
+        broken_calls_.insert(&call);
+        return false;
+    }
     if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
         error(call.loc, recheck_fault_.empty() ? "not supported yet" : recheck_fault_);
         recheck_fault_.clear();
@@ -4412,6 +4436,12 @@ bool Checker::fold_comptime_string(const Expr::Call &call) {
     // `comptime if`, `comptime switch`, and `comptime for` fold on this copy.
     // `repeat[n]` instantiates once `n` is the integer. A rejected call stays rejected.
     (void)generic;
+    // A body with its own errors does not run. Those errors are reported where the body is checked.
+    if (comptime_body_broken(*fn)) {
+        call.comptime_failed = true;
+        broken_calls_.insert(&call);
+        return false;
+    }
     if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
         return false;
     }
@@ -4641,6 +4671,12 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
         return kept;
     }
     (void)generic;
+    // A body with its own errors does not run. Those errors are reported where the body is checked.
+    if (comptime_body_broken(*fn)) {
+        call.comptime_failed = true;
+        broken_calls_.insert(&call);
+        return kept;
+    }
     if (!recheck_comptime_copy(wrapper, lengths || wrapper.pending_generic)) {
         return kept;
     }
@@ -4656,6 +4692,12 @@ Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
     // A file-scope const is bound before the body is checked, so `Point{.x = 10}` has no
     // `struct_id` yet. This walk stamps the copy. `is_comptime` stays set so a nested call
     // remains ordinary code.
+    // A body with its own errors does not run. Those errors are reported where the body is checked.
+    if (comptime_body_broken(*fn)) {
+        call.comptime_failed = true;
+        broken_calls_.insert(&call);
+        return kept;
+    }
     if (!recheck_comptime_copy(wrapper, true)) {
         return kept;
     }

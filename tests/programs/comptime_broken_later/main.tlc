@@ -1,0 +1,10 @@
+// The comptime func is declared after the call, and its body has an error. The call does not run it, and
+// the body's error is the only one.
+func main() i32 {
+    return us(42);
+}
+const a i32 = 40;
+comptime func us(p i32) i32 {
+    a = 41;
+    return p;
+}
