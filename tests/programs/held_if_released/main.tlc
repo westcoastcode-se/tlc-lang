@@ -1,0 +1,17 @@
+// A store in one arm releases the name. After the `if` it is not a comptime value.
+comptime func add(n i32) i32 {
+    return n + 2;
+}
+
+func f(c bool) i32 {
+    a := 10;
+    b := 20;
+    if (c) {
+        b = 5;
+    }
+    return add(a) + add(b);
+}
+
+func main() i32 {
+    return f(true);
+}

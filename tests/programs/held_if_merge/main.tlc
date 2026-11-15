@@ -1,0 +1,25 @@
+// A held `name := value` that no arm of an `if` stores stays a comptime value after it.
+comptime func add(n i32) i32 {
+    return n + 2;
+}
+
+func f(c bool) i32 {
+    a := 10;
+    b := 20;
+    d := 8;
+    if (c) {
+        e := 1;
+    } else {
+    }
+    if (c) {
+    } else {
+        var unused = 0;
+    }
+    if (!c) {
+    }
+    return add(a) + add(b) + d;
+}
+
+func main() i32 {
+    return f(true);
+}

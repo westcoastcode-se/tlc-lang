@@ -5418,13 +5418,33 @@ bool Checker::global_assigned(const TranslationUnit &unit, const std::string &na
     return false;
 }
 
+namespace {
+
+// A scope index and a name, hashed. The name is a view into storage the caller keeps alive.
+struct HeldKey {
+    std::size_t scope = 0;
+    std::string_view name;
+    bool operator==(const HeldKey &) const = default;
+};
+
+struct HeldKeyHash {
+    std::size_t operator()(const HeldKey &key) const {
+        return std::hash<std::string_view>{}(key.name) ^ (key.scope * 0x9e3779b97f4a7c15ULL);
+    }
+};
+
+using HeldKeys = std::unordered_set<HeldKey, HeldKeyHash>;
+
+} // namespace
+
 std::vector<std::pair<std::size_t, std::string>> Checker::held_candidates() const {
     // Each symbol that is held or pending now, once, from `held_names_`. Walking every symbol in every
     // scope made each `if` and each loop linear in the locals.
     std::vector<std::pair<std::size_t, std::string>> out;
-    std::set<std::pair<std::size_t, std::string>> seen;
+    HeldKeys seen;
+    seen.reserve(held_names_.size());
     for (const auto &[scope, name] : held_names_) {
-        if (scope >= scopes_.size() || !seen.emplace(scope, name).second) {
+        if (scope >= scopes_.size() || !seen.insert(HeldKey{scope, name}).second) {
             continue;
         }
         const auto found = scopes_[scope].symbols.find(name);
@@ -5477,13 +5497,19 @@ void Checker::held_restore(const std::vector<HeldSlot> &snap) {
 
 void Checker::held_and(const std::vector<HeldSlot> &before, const std::vector<HeldSlot> &left,
                        const std::vector<HeldSlot> &right) {
-    const auto kept = [](const std::vector<HeldSlot> &side, const HeldSlot &slot) {
+    // One hash set per arm. A scan of each arm for each name made every `if` quadratic in the held names.
+    const auto keys = [](const std::vector<HeldSlot> &side) {
+        HeldKeys out;
+        out.reserve(side.size());
         for (const HeldSlot &item : side) {
-            if (item.scope == slot.scope && item.name == slot.name) {
-                return true;
-            }
+            out.insert(HeldKey{item.scope, item.name});
         }
-        return false;
+        return out;
+    };
+    const HeldKeys in_left = keys(left);
+    const HeldKeys in_right = keys(right);
+    const auto kept = [](const HeldKeys &side, const HeldSlot &slot) {
+        return side.contains(HeldKey{slot.scope, slot.name});
     };
     for (const HeldSlot &slot : before) {
         if (slot.scope >= scopes_.size()) {
@@ -5493,7 +5519,7 @@ void Checker::held_and(const std::vector<HeldSlot> &before, const std::vector<He
         if (found == scopes_[slot.scope].symbols.end()) {
             continue;
         }
-        if (kept(left, slot) && kept(right, slot)) {
+        if (kept(in_left, slot) && kept(in_right, slot)) {
             found->second.held_comptime = slot.held;
             found->second.pending_fold = slot.pending;
             found->second.folded_local = slot.folded;
