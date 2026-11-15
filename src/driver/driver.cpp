@@ -47,6 +47,9 @@ std::string help_text() {
         "  --allocator <type>\n"
         "                  type bare new and delete use. Malloc is the default.\n"
         "                  tlc --test uses debug.DebugAllocator unless this flag names a type.\n"
+        "  --max-memory <size>\n"
+        "                  stop when the compiler uses more memory, such as 512M or 4G.\n"
+        "                  1G is the default. 0 is no limit.\n"
         "  -o <file>       output path\n"
         "  -P <dir>        package search root, after the entry directory\n"
         "  --lib <dir>     library directory, before lib/tlc. Repeat to add another.\n"
@@ -260,6 +263,29 @@ Options parse_args(int argc, char **argv) {
                 break;
             }
             opt.allocator = std::move(name);
+        } else if (arg == "--max-memory" || arg.starts_with("--max-memory=")) {
+            std::string size;
+            if (arg.starts_with("--max-memory=")) {
+                size = arg.substr(std::string("--max-memory=").size());
+            } else if (i + 1 >= argc) {
+                opt.mode = Mode::Error;
+                opt.error = "missing size after --max-memory";
+                break;
+            } else {
+                size = argv[++i];
+            }
+            if (size.empty()) {
+                opt.mode = Mode::Error;
+                opt.error = "missing size after --max-memory";
+                break;
+            }
+            const std::optional<uint64_t> bytes = parse_memory_size(size);
+            if (!bytes) {
+                opt.mode = Mode::Error;
+                opt.error = "invalid size after --max-memory: " + size;
+                break;
+            }
+            opt.max_memory = *bytes;
         } else if (arg == "--lsp" || arg == "lsp") {
             set_mode(Mode::Lsp);
         } else if (arg == "-o") {
@@ -677,6 +703,7 @@ int execute(const Options &opt) {
     case Mode::Compile:
     case Mode::Run:
     case Mode::Test: {
+        start_memory_limit(opt.max_memory);
         Options streamed = opt;
         streamed.inherit_output = opt.mode == Mode::Run || opt.mode == Mode::Test;
         const CompileOutput output = compile_source(streamed);

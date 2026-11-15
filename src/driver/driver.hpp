@@ -1,5 +1,6 @@
 #pragma once
 
+#include "diag/memory_limit.hpp"
 #include "gen/codegen.hpp"
 
 #include <string>
@@ -41,6 +42,8 @@ struct Options {
     OptLevel opt_level = OptLevel::Default;
     // `--allocator`. Empty keeps `Malloc`, except `tlc --test`, which uses `debug.DebugAllocator`.
     std::string allocator;
+    // `--max-memory`. The most memory the compiler may use. 0 is no limit.
+    uint64_t max_memory = kDefaultMaxMemory;
     std::string error;
     // `--run` and `--test` from the command line. The program writes to this process's own stdout and
     // stderr as it runs, and reads its stdin. Otherwise its output is collected into `CompileOutput`.

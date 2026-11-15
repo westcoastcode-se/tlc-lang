@@ -4,6 +4,7 @@
 #include "check/check_util.hpp"
 
 #include "ast/format.hpp"
+#include "diag/memory_limit.hpp"
 #include "gen/codegen.hpp"
 
 #include <cmath>
@@ -3473,7 +3474,18 @@ void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &
     }
 }
 
+std::string Checker::memory_place(SourceLoc loc) const {
+    const SourceFile *file = diags_.source(loc.file);
+    if (file == nullptr) {
+        return {};
+    }
+    const LineCol at = file->line_col(loc.offset);
+    return file->path() + ":" + std::to_string(at.line) + ":" + std::to_string(at.column);
+}
+
 std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
+    // `--max-memory` names this call while it is compiled and run.
+    const MemoryPlace memory_scope(memory_place(call.loc));
     if (call.comptime_failed || call.comptime_float || call.comptime_struct != nullptr) {
         return std::nullopt;
     }
@@ -3671,6 +3683,8 @@ std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
 }
 
 bool Checker::fold_comptime_wide(const Expr::Call &call) {
+    // `--max-memory` names this call while it is compiled and run.
+    const MemoryPlace memory_scope(memory_place(call.loc));
     if (call.comptime_failed) {
         return false;
     }
@@ -4038,6 +4052,8 @@ bool Checker::fold_comptime_f64(const Expr::Call &call) {
 }
 
 bool Checker::fold_comptime_enum(const Expr::Call &call) {
+    // `--max-memory` names this call while it is compiled and run.
+    const MemoryPlace memory_scope(memory_place(call.loc));
     if (call.comptime_failed) {
         return false;
     }
@@ -4233,6 +4249,8 @@ bool Checker::fold_comptime_enum(const Expr::Call &call) {
 }
 
 bool Checker::fold_comptime_string(const Expr::Call &call) {
+    // `--max-memory` names this call while it is compiled and run.
+    const MemoryPlace memory_scope(memory_place(call.loc));
     if (call.comptime_failed) {
         return false;
     }
@@ -4475,6 +4493,8 @@ const Expr *Checker::fold_zero() {
 }
 
 Checker::KeptStruct Checker::fold_comptime_struct(const Expr::Call &call) {
+    // `--max-memory` names this call while it is compiled and run.
+    const MemoryPlace memory_scope(memory_place(call.loc));
     KeptStruct kept;
     if (call.comptime_failed) {
         return kept;

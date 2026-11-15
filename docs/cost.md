@@ -69,6 +69,10 @@ movl $42, %eax    # 40 + 2
 retq
 ```
 
+## The start of `main`
+
+The program's `main` first calls `tlc.guard.start`, which installs the stack overflow handler once, as described in [panic](builtin/panic.md#stack-overflow). The listings on the feature pages leave that call out. A function whose frame is larger than a page touches each page of it in order before it runs.
+
 ## A call
 
 A call records a trace frame, then calls.

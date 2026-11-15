@@ -531,6 +531,8 @@ class Checker {
     // Each struct declared so far whose size is past `i64` is `array too large`, once.
     void check_struct_sizes();
     void check_struct_size(std::size_t id);
+    // `path:line:column` of `loc`, the way a diagnostic prints it.
+    std::string memory_place(SourceLoc loc) const;
     void declare_struct_tags(const TranslationUnit &unit, uint32_t file_id);
     void define_struct_fields();
     // A field of this struct or union. A method of that name is `redefinition`.

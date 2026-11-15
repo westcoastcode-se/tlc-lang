@@ -199,6 +199,55 @@ int run_cli_tests() {
     EXPECT(check, missing_lib_dir.code != 0);
     EXPECT_HAS(check, missing_lib_dir.err, "missing directory after --lib");
 
+    // `--max-memory` limits the whole compiler. A comptime call that is running names itself.
+    EXPECT_HAS(check, help.out, "--max-memory");
+    const tlc::test::Proc missing_size = tlc::test::spawn({bin, "--max-memory"});
+    EXPECT(check, missing_size.code != 0);
+    EXPECT_HAS(check, missing_size.err, "missing size after --max-memory");
+    const tlc::test::Proc bad_size = tlc::test::spawn({bin, "--max-memory", "12X", ret_const});
+    EXPECT(check, bad_size.code != 0);
+    EXPECT_HAS(check, bad_size.err, "invalid size after --max-memory: 12X");
+    const tlc::test::Proc no_limit = tlc::test::spawn({bin, "--max-memory=0", "--run", ret_const});
+    EXPECT(check, no_limit.code == 42);
+    const tlc::test::Proc roomy = tlc::test::spawn({bin, "--max-memory", "512m", "--run", ret_const});
+    EXPECT(check, roomy.code == 42);
+    const std::string comptime_memory = "/tmp/tlc-comptime-memory.tlc";
+    {
+        std::ofstream out(comptime_memory);
+        out << "var buf [200000000]u8;\n"
+               "\n"
+               "comptime func fill() i32 {\n"
+               "    for (var i i64 = 0; i < buf.len; i += 4096) {\n"
+               "        buf[i] = 1;\n"
+               "    }\n"
+               "    return 7;\n"
+               "}\n"
+               "\n"
+               "func main() i32 {\n"
+               "    comptime const n = fill();\n"
+               "    return n;\n"
+               "}\n";
+    }
+    const tlc::test::Proc comptime_over = tlc::test::spawn({bin, "--max-memory", "32M", "--check", comptime_memory});
+    EXPECT(check, comptime_over.code == 1);
+    EXPECT_HAS(check, comptime_over.err, comptime_memory + ":11:24: error: compile-time memory limit exceeded");
+    std::remove(comptime_memory.c_str());
+    // Outside a comptime call there is no place to name.
+    const std::string big_init = "/tmp/tlc-init-memory.tlc";
+    {
+        std::ofstream out(big_init);
+        out << "var table [100000000]u8 = {1, 2, 3, 0...};\n"
+               "\n"
+               "func main() i32 {\n"
+               "    return i32(table[2]);\n"
+               "}\n";
+    }
+    const tlc::test::Proc init_over = tlc::test::spawn({bin, "--max-memory", "32M", "--emit-obj", "-o", "/tmp/tlc-init-memory.o", big_init});
+    EXPECT(check, init_over.code == 1);
+    EXPECT_EQ(check, init_over.err, std::string("error: compile-time memory limit exceeded\n"));
+    std::remove(big_init.c_str());
+    std::remove("/tmp/tlc-init-memory.o");
+
     const tlc::test::Proc missing_lsp_lib = tlc::test::spawn({bin, "lsp", "--lib"});
     EXPECT(check, missing_lsp_lib.code != 0);
     EXPECT_HAS(check, missing_lsp_lib.err, "missing directory after --lib");
