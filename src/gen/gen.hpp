@@ -1231,7 +1231,82 @@ class CodeGen {
             return slot.elem_unsigned || slot.elem_char ? builder_.CreateFPToUI(rhs.value, slot_type)
                                                         : builder_.CreateFPToSI(rhs.value, slot_type);
         }
+        // A tuple is stored at the slot's element widths too. `t = (40u64, 2)` into `(u32, i32)` wrote the
+        // `i64` over both elements.
+        if (rhs.value->getType()->isStructTy() && slot.value != nullptr) {
+            llvm::Type *memory = nullptr;
+            if (const auto *local = llvm::dyn_cast<llvm::AllocaInst>(slot.value)) {
+                memory = local->getAllocatedType();
+            } else if (const auto *global = llvm::dyn_cast<llvm::GlobalVariable>(slot.value)) {
+                memory = global->getValueType();
+            } else if (const auto *step = llvm::dyn_cast<llvm::GetElementPtrInst>(slot.value)) {
+                memory = step->getResultElementType();
+            }
+            // `*p` through a loaded pointer has no memory type. The slot's tuple parts give it.
+            if (memory == nullptr && slot.is_tuple && !slot.tuple_parts.empty() && slot.depth == 0 &&
+                slot.shells.empty()) {
+                memory = stored_type(lower_tuple_parts(current_file_, slot.tuple_parts));
+            }
+            if (memory != nullptr && memory != rhs.value->getType()) {
+                return fit_aggregate(rhs.value, memory, rhs.tuple_parts, slot.is_tuple ? slot.tuple_parts : std::vector<ResultSlot>{});
+            }
+        }
         return rhs.value;
+    }
+    // `value` at the element types of `want`, one element at a time. An integer element is resized, signed
+    // or not as its part in `parts` says, and a float element changes width. A float stored into an integer
+    // element converts the way `i32(2.5)` does, signed or not as `want_parts` says. A shape that differs in
+    // any other way is returned as it is.
+    llvm::Value *fit_aggregate(llvm::Value *value, llvm::Type *want, const std::vector<ResultSlot> &parts,
+                               const std::vector<ResultSlot> &want_parts = {}) {
+        auto *have_struct = llvm::dyn_cast<llvm::StructType>(value->getType());
+        auto *want_struct = llvm::dyn_cast<llvm::StructType>(want);
+        if (have_struct == nullptr || want_struct == nullptr ||
+            have_struct->getNumElements() != want_struct->getNumElements()) {
+            return value;
+        }
+        llvm::Value *out = llvm::UndefValue::get(want);
+        for (unsigned index = 0; index < have_struct->getNumElements(); ++index) {
+            llvm::Value *part = builder_.CreateExtractValue(value, index);
+            llvm::Type *target = want_struct->getElementType(index);
+            const auto is_unsigned = [](const std::vector<ResultSlot> &list, unsigned at) {
+                if (at >= list.size() || list[at].indirections != 0) {
+                    return false;
+                }
+                const std::string &name = list[at].type_name;
+                return !name.empty() && (name[0] == 'u' || name == "bool" || name == "char");
+            };
+            const bool part_unsigned = is_unsigned(parts, index);
+            const bool target_unsigned = is_unsigned(want_parts, index);
+            const bool target_bool = index < want_parts.size() && want_parts[index].type_name == "bool" &&
+                                     want_parts[index].indirections == 0;
+            if (part->getType() == target) {
+            } else if (part->getType()->isIntegerTy() && target->isIntegerTy()) {
+                part = resize_int(part, target, part_unsigned);
+            } else if (part->getType()->isFloatingPointTy() && target->isFloatingPointTy()) {
+                part = builder_.CreateFPCast(part, target);
+            } else if (part->getType()->isFloatingPointTy() && target->isIntegerTy()) {
+                if (target_bool) {
+                    llvm::Value *truth =
+                        builder_.CreateFCmpUNE(part, llvm::ConstantFP::get(part->getType(), 0.0));
+                    part = builder_.CreateZExtOrTrunc(truth, target);
+                } else {
+                    part = target_unsigned ? builder_.CreateFPToUI(part, target) : builder_.CreateFPToSI(part, target);
+                }
+            } else if (part->getType()->isIntegerTy() && target->isFloatingPointTy()) {
+                part = part_unsigned ? builder_.CreateUIToFP(part, target) : builder_.CreateSIToFP(part, target);
+            } else if (part->getType()->isStructTy() && target->isStructTy()) {
+                const auto inner_of = [&](const std::vector<ResultSlot> &list) {
+                    return index < list.size() && list[index].is_tuple ? list[index].tuple_parts
+                                                                       : std::vector<ResultSlot>{};
+                };
+                part = fit_aggregate(part, target, inner_of(parts), inner_of(want_parts));
+            } else {
+                return value;
+            }
+            out = builder_.CreateInsertValue(out, part, index);
+        }
+        return out;
     }
     // Load a pointer whose type is `shells`: `*[2]T`, `**[]T`, `?*[N][M]T`, at any depth.
     // `depth` is the leaf's own pointers. The shells are the pointer and everything it points to.

@@ -1,6 +1,7 @@
 // Running one comptime function by compiling it and calling the result.
 #include "gen/gen.hpp"
 #include "gen/aggregate_lower.hpp"
+#include "gen/comptime_jit.hpp"
 #include "gen/store_check.hpp"
 
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
@@ -463,6 +464,7 @@ std::optional<std::string> eval_comptime_string(
     llvm::orc::JITTargetMachineBuilder machine = std::move(*machine_or);
     machine.setCPU("generic");
     machine.setRelocationModel(llvm::Reloc::PIC_);
+    prepare_comptime_machine(machine);
     machine.getOptions().EmulatedTLS = false;
     auto layout_or = machine.getDefaultDataLayoutForTarget();
     if (!layout_or) {
@@ -490,6 +492,8 @@ std::optional<std::string> eval_comptime_string(
         return std::nullopt;
     }
 
+    // The mappings outlive the JIT, which is declared after them.
+    LazyGlobals lazy;
     llvm::orc::LLJITBuilder builder;
     builder.setJITTargetMachineBuilder(std::move(machine));
     auto jit_or = builder.create();
@@ -498,7 +502,7 @@ std::optional<std::string> eval_comptime_string(
         return std::nullopt;
     }
     std::unique_ptr<llvm::orc::LLJIT> jit = std::move(*jit_or);
-    if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(module), std::move(context)))) {
+    if (auto err = add_comptime_module(*jit, std::move(module), std::move(context), lazy)) {
         llvm::consumeError(std::move(err));
         return std::nullopt;
     }
@@ -560,6 +564,7 @@ std::optional<int32_t> eval_comptime_i32(
     llvm::orc::JITTargetMachineBuilder machine = std::move(*machine_or);
     machine.setCPU("generic");
     machine.setRelocationModel(llvm::Reloc::PIC_);
+    prepare_comptime_machine(machine);
     machine.getOptions().EmulatedTLS = false;
     auto layout_or = machine.getDefaultDataLayoutForTarget();
     if (!layout_or) {
@@ -589,6 +594,8 @@ std::optional<int32_t> eval_comptime_i32(
         return std::nullopt;
     }
 
+    // The mappings outlive the JIT, which is declared after them.
+    LazyGlobals lazy;
     llvm::orc::LLJITBuilder builder;
     builder.setJITTargetMachineBuilder(std::move(machine));
     auto jit_or = builder.create();
@@ -597,7 +604,7 @@ std::optional<int32_t> eval_comptime_i32(
         return std::nullopt;
     }
     std::unique_ptr<llvm::orc::LLJIT> jit = std::move(*jit_or);
-    if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(module), std::move(context)))) {
+    if (auto err = add_comptime_module(*jit, std::move(module), std::move(context), lazy)) {
         llvm::consumeError(std::move(err));
         return std::nullopt;
     }
@@ -636,6 +643,7 @@ std::optional<int64_t> eval_comptime_i64(
     llvm::orc::JITTargetMachineBuilder machine = std::move(*machine_or);
     machine.setCPU("generic");
     machine.setRelocationModel(llvm::Reloc::PIC_);
+    prepare_comptime_machine(machine);
     machine.getOptions().EmulatedTLS = false;
     auto layout_or = machine.getDefaultDataLayoutForTarget();
     if (!layout_or) {
@@ -665,6 +673,8 @@ std::optional<int64_t> eval_comptime_i64(
         return std::nullopt;
     }
 
+    // The mappings outlive the JIT, which is declared after them.
+    LazyGlobals lazy;
     llvm::orc::LLJITBuilder builder;
     builder.setJITTargetMachineBuilder(std::move(machine));
     auto jit_or = builder.create();
@@ -673,7 +683,7 @@ std::optional<int64_t> eval_comptime_i64(
         return std::nullopt;
     }
     std::unique_ptr<llvm::orc::LLJIT> jit = std::move(*jit_or);
-    if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(module), std::move(context)))) {
+    if (auto err = add_comptime_module(*jit, std::move(module), std::move(context), lazy)) {
         llvm::consumeError(std::move(err));
         return std::nullopt;
     }
@@ -712,6 +722,7 @@ std::optional<uint32_t> eval_comptime_u32(
     llvm::orc::JITTargetMachineBuilder machine = std::move(*machine_or);
     machine.setCPU("generic");
     machine.setRelocationModel(llvm::Reloc::PIC_);
+    prepare_comptime_machine(machine);
     machine.getOptions().EmulatedTLS = false;
     auto layout_or = machine.getDefaultDataLayoutForTarget();
     if (!layout_or) {
@@ -742,6 +753,8 @@ std::optional<uint32_t> eval_comptime_u32(
         return std::nullopt;
     }
 
+    // The mappings outlive the JIT, which is declared after them.
+    LazyGlobals lazy;
     llvm::orc::LLJITBuilder builder;
     builder.setJITTargetMachineBuilder(std::move(machine));
     auto jit_or = builder.create();
@@ -750,7 +763,7 @@ std::optional<uint32_t> eval_comptime_u32(
         return std::nullopt;
     }
     std::unique_ptr<llvm::orc::LLJIT> jit = std::move(*jit_or);
-    if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(module), std::move(context)))) {
+    if (auto err = add_comptime_module(*jit, std::move(module), std::move(context), lazy)) {
         llvm::consumeError(std::move(err));
         return std::nullopt;
     }
@@ -789,6 +802,7 @@ std::optional<float> eval_comptime_f32(
     llvm::orc::JITTargetMachineBuilder machine = std::move(*machine_or);
     machine.setCPU("generic");
     machine.setRelocationModel(llvm::Reloc::PIC_);
+    prepare_comptime_machine(machine);
     machine.getOptions().EmulatedTLS = false;
     auto layout_or = machine.getDefaultDataLayoutForTarget();
     if (!layout_or) {
@@ -818,6 +832,8 @@ std::optional<float> eval_comptime_f32(
         return std::nullopt;
     }
 
+    // The mappings outlive the JIT, which is declared after them.
+    LazyGlobals lazy;
     llvm::orc::LLJITBuilder builder;
     builder.setJITTargetMachineBuilder(std::move(machine));
     auto jit_or = builder.create();
@@ -826,7 +842,7 @@ std::optional<float> eval_comptime_f32(
         return std::nullopt;
     }
     std::unique_ptr<llvm::orc::LLJIT> jit = std::move(*jit_or);
-    if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(module), std::move(context)))) {
+    if (auto err = add_comptime_module(*jit, std::move(module), std::move(context), lazy)) {
         llvm::consumeError(std::move(err));
         return std::nullopt;
     }
@@ -865,6 +881,7 @@ std::optional<double> eval_comptime_f64(
     llvm::orc::JITTargetMachineBuilder machine = std::move(*machine_or);
     machine.setCPU("generic");
     machine.setRelocationModel(llvm::Reloc::PIC_);
+    prepare_comptime_machine(machine);
     machine.getOptions().EmulatedTLS = false;
     auto layout_or = machine.getDefaultDataLayoutForTarget();
     if (!layout_or) {
@@ -894,6 +911,8 @@ std::optional<double> eval_comptime_f64(
         return std::nullopt;
     }
 
+    // The mappings outlive the JIT, which is declared after them.
+    LazyGlobals lazy;
     llvm::orc::LLJITBuilder builder;
     builder.setJITTargetMachineBuilder(std::move(machine));
     auto jit_or = builder.create();
@@ -902,7 +921,7 @@ std::optional<double> eval_comptime_f64(
         return std::nullopt;
     }
     std::unique_ptr<llvm::orc::LLJIT> jit = std::move(*jit_or);
-    if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(module), std::move(context)))) {
+    if (auto err = add_comptime_module(*jit, std::move(module), std::move(context), lazy)) {
         llvm::consumeError(std::move(err));
         return std::nullopt;
     }
@@ -2148,6 +2167,7 @@ ComptimeStructValue eval_comptime_struct(
     llvm::orc::JITTargetMachineBuilder machine = std::move(*machine_or);
     machine.setCPU("generic");
     machine.setRelocationModel(llvm::Reloc::PIC_);
+    prepare_comptime_machine(machine);
     machine.getOptions().EmulatedTLS = false;
     auto layout_or = machine.getDefaultDataLayoutForTarget();
     if (!layout_or) {
@@ -2177,6 +2197,8 @@ ComptimeStructValue eval_comptime_struct(
     if (llvm::verifyModule(*module, &verify_stream)) {
         return out;
     }
+    // The mappings outlive the JIT, which is declared after them.
+    LazyGlobals lazy;
     llvm::orc::LLJITBuilder builder;
     builder.setJITTargetMachineBuilder(std::move(machine));
     auto jit_or = builder.create();
@@ -2185,7 +2207,7 @@ ComptimeStructValue eval_comptime_struct(
         return out;
     }
     std::unique_ptr<llvm::orc::LLJIT> jit = std::move(*jit_or);
-    if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(module), std::move(context)))) {
+    if (auto err = add_comptime_module(*jit, std::move(module), std::move(context), lazy)) {
         llvm::consumeError(std::move(err));
         return out;
     }

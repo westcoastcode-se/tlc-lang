@@ -1,0 +1,35 @@
+// A comptime call runs with every global of the program, here one of 2 GiB. The JIT does not
+// zero-fill it, so only the pages the call writes count toward `--max-memory`, and code reaches it
+// from anywhere.
+var used i64;
+var slot [2147483700]u8;
+
+type Arena struct {
+    mark i32;
+}
+
+unsafe func Arena::malloc(self *this, size i64, align i32) ?*u8 {
+    used = size;
+    return ?*u8(&slot[2147483000]);
+}
+
+func Arena::free(self *this, ptr *u8) void {}
+
+unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 {
+    return null;
+}
+
+comptime func fill(n i32) i32 {
+    var arena Arena;
+    var buf = new(&arena) [64]u8;
+    buf[63] = u8(n);
+    slot[2147483699] = 2;
+    var got = i32(buf[63]) + i32(slot[2147483699]);
+    delete(&arena) buf;
+    return got;
+}
+
+func main() i32 {
+    comptime const n = fill(40);
+    return n;
+}

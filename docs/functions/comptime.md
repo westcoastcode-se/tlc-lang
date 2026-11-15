@@ -18,6 +18,8 @@ A `new` or `delete` with no allocator uses the heap. That call is `not supported
 
 A local is at most 1 MiB, the same as in a runtime function. `var cells [2097152]u8` is `array too large for the stack: use a global or new`.
 
+A `comptime func` may use a file-scope array of any size, as an arena's storage, for example. Only the pages it writes use the compiler's memory, as counted by [`--max-memory`](../compiler/option.md#memory).
+
 `from()` returns 42.
 
 ```c
