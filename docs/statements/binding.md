@@ -80,6 +80,8 @@ A local with no initializer is uninitialized.
 
 Reading it before a store is reported as `uninitialized`. `a[1] += 1`, `s.f++`, and `u.f -= 2` read the place before they store it, so they are `uninitialized` on an element, a field, or an arm that was never set.
 
+An array with more than 1048576 scalar parts, such as `[2000000]u8` or `[600000][2]i32`, is not tracked. A read of it is never `uninitialized`, and an element that was never stored holds whatever the memory held. Such an array is past the 1 MiB local limit, so this is an array from `new` or a field of a struct from `new`. The struct's other fields are still tracked.
+
 A file-scope variable with no initializer is zero.
 
 A local struct field takes the value written on the field.

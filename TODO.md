@@ -16,7 +16,6 @@ These were found by review and have a repro. They are not fixed yet.
 - A file-scope `comptime const k = f(2)` used as an array length in a struct field, `type S struct { buf [k]u8; }`, is `not supported yet` twice. Types are resolved before the call runs. A `const` or a `var` that names `k` binds it first.
 - A C function pointer type that differs from the tlc one has no spelling of its own. A local or a tlc struct field holds it only by inference, `var f = get_cb()`. A generic parameter `func (T) i32` is a tlc type, so a C pointer that passes a struct is `type mismatch` there.
 - A function with many held `k := i` locals is still quadratic to check. 1500 of them take about 20 seconds.
-- A local array whose element count is past 1048576 leaves, `var a [2000000]u8`, is tracked as one leaf, so `a[5] = 1` then `a[5]` is `uninitialized`. Such a local is now past the 1 MiB stack limit too, so only the follow-on diagnostic shows. A large `new` array or a struct field is still affected.
 - An integer value parameter of a generic, `Buf[N i32]`, cannot take an array length past `i32`. That call is `type mismatch`.
 - An array length is a literal or a name. `[sizeof(Pair) + 1]u8` is `expected ']'`.
 - `?func` is not allowed as an array element, `[2]?func (i32) i32`, or behind a pointer, `*?func (i32) i32`. The cast form `?func (i32) i32(x)` is `expected an expression`.

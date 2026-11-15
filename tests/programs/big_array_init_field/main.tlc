@@ -1,0 +1,13 @@
+// The large array is not tracked. The other field still is.
+type Holder struct {
+    bytes [2000000]u8;
+    tag i32;
+}
+
+func main() i32 {
+    var h = new Holder;
+    h.bytes[3] = 1;
+    var got = h.tag;
+    delete h;
+    return got;
+}

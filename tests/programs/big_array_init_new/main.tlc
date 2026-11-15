@@ -1,0 +1,18 @@
+// An array past 1048576 elements is not tracked for initialization. Storing one element and
+// reading it back is accepted, through `new` and through a struct field.
+type Holder struct {
+    bytes [2000000]u8;
+    tag i32;
+}
+
+func main() i32 {
+    var p = new [2000000]u8;
+    p[5] = 40;
+    var h = new Holder;
+    h.bytes[1999999] = 2;
+    h.tag = 0;
+    var got = i32(p[5]) + i32(h.bytes[1999999]) + h.tag;
+    delete p;
+    delete h;
+    return got;
+}

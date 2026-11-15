@@ -59,8 +59,9 @@ int Checker::init_leaf_count(const Type &type, std::unordered_set<int> &seen) {
             return 0;
         }
         const int64_t product = static_cast<int64_t>(type.length) * elem;
+        // An array past the cap is not tracked. It has no leaves, so no read of it is `uninitialized`.
         if (product > kInitLeafCap) {
-            return 1;
+            return 0;
         }
         return static_cast<int>(product);
     }
@@ -247,17 +248,9 @@ Checker::InitTouch Checker::init_resolve(Type type, int offset, int count, const
         const bool collapsed = elem > 0 && static_cast<int64_t>(length) * elem > kInitLeafCap;
         const bool oob = step.known && (step.index < 0 || step.index >= length);
         const bool dynamic = !step.known || oob;
-        // A capped array is one leaf for every element. Writing one element does not
-        // initialize the others, and reading one needs the whole array.
+        // A capped array is not tracked. A store or a read of it touches no leaf.
         if (collapsed && !opaque) {
-            if (storing || (designate && !keep)) {
-                return {};
-            }
-            InitTouch touch;
-            touch.read = true;
-            touch.offset = offset;
-            touch.count = count;
-            return touch;
+            return {};
         }
         if (opaque) {
             if (dynamic) {
@@ -820,21 +813,9 @@ void Checker::init_fill_brace(const Type &type, const Expr::Init *brace, std::ve
     if (type.kind == TypeKind::Array && type.length >= 0 && type.element != nullptr) {
         const int elem = init_leaf_count(*type.element);
         const int64_t listed = brace == nullptr ? 0 : static_cast<int64_t>(brace->elements.size());
-        // A capped array is one leaf. It is set when every element is: a `{...}` that zeroes the rest or
-        // lists them all, or no initializer when one element's own defaults set all of it. Walking each of
-        // billions of elements here took minutes.
+        // A capped array has no leaves, so `leaves` was 0 above. Walking each of billions of elements
+        // here took minutes.
         if (elem > 0 && type.length * static_cast<int64_t>(elem) > kInitLeafCap) {
-            bool whole = false;
-            if (brace != nullptr) {
-                whole = brace->zero_rest || listed >= type.length;
-            } else {
-                std::vector<uint8_t> one(static_cast<std::size_t>(elem), 0);
-                init_fill(*type.element, nullptr, one, 0);
-                whole = std::find(one.begin(), one.end(), 0) == one.end();
-            }
-            if (whole) {
-                init_set_span(bits, offset, leaves);
-            }
             return;
         }
         for (int64_t index = 0; index < type.length; ++index) {
