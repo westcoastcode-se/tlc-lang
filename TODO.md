@@ -26,7 +26,6 @@ These were found by review and have a repro. They are not fixed yet.
 ### Runtime
 
 - A thread that a C library creates on its own and that then calls a tlc callback has no signal stack. A stack overflow there ends the process with `SIGSEGV` and no message. `pthread_create` called from tlc is covered.
-- A struct passed by value that holds a 64 KiB array, `func take(b Big) i32` with `bytes [65536]u8`, crashes the compiler in LLVM instruction selection. 4 KiB works. The struct is passed as one first-class aggregate. The 1 MiB local limit does not count parameters.
 - The stack overflow handler is Linux on x86-64 and AArch64 only. Other targets crash with no message.
 
 ### Driver and language server

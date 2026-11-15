@@ -1,0 +1,20 @@
+// Each call holds one 64 KiB copy. `return bump(b, n - 1)` writes the caller's result directly.
+type Big struct {
+    bytes [65536]u8;
+    tag i32;
+}
+
+var g Big;
+
+func bump(b Big, n i32) Big {
+    if (n == 0) {
+        return b;
+    }
+    b.bytes[7] += 1;
+    return bump(b, n - 1);
+}
+
+func main() i32 {
+    var r = bump(g, 42);
+    return i32(r.bytes[7]);
+}

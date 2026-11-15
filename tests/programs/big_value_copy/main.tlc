@@ -1,0 +1,54 @@
+// A struct with 65537 scalar parts. Copying it as one value crashed the compiler below 65536 parts
+// and copied the wrong bytes above. Each copy below goes through memory.
+type Big struct {
+    bytes [65536]u8;
+    tag i32;
+}
+
+type Outer struct {
+    inner Big;
+    n i32;
+}
+
+var g Big;
+var h Big;
+var rows [2]Big;
+var outer Outer;
+var raw_a [65536]u8;
+var raw_b [65536]u8;
+
+func main() i32 {
+    var bad = 0;
+    g.bytes[7] = 42;
+    g.tag = 3;
+    h = g;
+    if (h.bytes[7] != 42 || h.tag != 3) {
+        bad |= 1;
+    }
+    rows[1] = g;
+    outer.inner = rows[1];
+    if (outer.inner.bytes[7] != 42) {
+        bad |= 2;
+    }
+    var local = g;
+    var p = &h;
+    *p = local;
+    if (local.bytes[7] != 42 || h.bytes[7] != 42) {
+        bad |= 4;
+    }
+    raw_a[65535] = 9;
+    raw_b = raw_a;
+    if (raw_b[65535] != 9) {
+        bad |= 8;
+    }
+    // A swap through a temporary, and a copy onto itself.
+    h.bytes[7] = 1;
+    var t = g;
+    g = h;
+    h = t;
+    g = g;
+    if (g.bytes[7] != 1 || h.bytes[7] != 42) {
+        bad |= 16;
+    }
+    return bad == 0 ? 42 : bad;
+}

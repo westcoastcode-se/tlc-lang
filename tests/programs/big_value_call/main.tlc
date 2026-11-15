@@ -1,0 +1,83 @@
+// A large struct as a parameter, a result, a tuple part, and through a function pointer.
+type Big struct {
+    bytes [65536]u8;
+    tag i32;
+}
+
+var g Big;
+var h Big;
+
+func take(b Big) i32 {
+    return i32(b.bytes[7]);
+}
+
+func give() Big {
+    return g;
+}
+
+func pair() (Big, i32) {
+    return (g, 2);
+}
+
+func bump(b Big) Big {
+    b.bytes[7] += 2;
+    return b;
+}
+
+func mutate() i32 {
+    g.bytes[7] = 99;
+    return 0;
+}
+
+func take_then(b Big, k i32) i32 {
+    return i32(b.bytes[7]) + k;
+}
+
+func first_zero(x Big, y Big) i32 {
+    x.bytes[7] = 0;
+    return i32(y.bytes[7]);
+}
+
+func id[T type](v T) T {
+    return v;
+}
+
+func through() Big {
+    return give();
+}
+
+func main() i32 {
+    var bad = 0;
+    g.bytes[7] = 40;
+    if (take(g) != 40) {
+        bad |= 1;
+    }
+    h = give();
+    var f = give;
+    var from_ptr = f();
+    if (h.bytes[7] != 40 || from_ptr.bytes[7] != 40) {
+        bad |= 2;
+    }
+    var b, n = pair();
+    if (i32(b.bytes[7]) + n != 42) {
+        bad |= 4;
+    }
+    // The argument is read before `mutate` runs. The callee's change stays in its copy.
+    if (take_then(g, mutate()) != 40 || g.bytes[7] != 99) {
+        bad |= 8;
+    }
+    g.bytes[7] = 40;
+    g = bump(g);
+    if (g.bytes[7] != 42) {
+        bad |= 16;
+    }
+    if (first_zero(g, g) != 42 || g.bytes[7] != 42) {
+        bad |= 32;
+    }
+    h = id(g);
+    var deep = through();
+    if (h.bytes[7] != 42 || deep.bytes[7] != 42) {
+        bad |= 64;
+    }
+    return bad == 0 ? 42 : bad;
+}

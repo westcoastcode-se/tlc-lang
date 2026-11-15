@@ -1,5 +1,6 @@
 // Host target, object file, and the codegen() entry point.
 #include "gen/gen.hpp"
+#include "gen/aggregate_lower.hpp"
 #include "gen/store_check.hpp"
 
 #include "llvm/IR/LegacyPassManager.h"
@@ -144,6 +145,7 @@ CodegenOutput codegen(const PackageGraph &graph, DiagnosticEngine &diags, const 
         gen.set_allocator(std::move(allocator));
     }
     gen.emit(graph);
+    lower_large_aggregates(*module);
     check_stores(*module);
     std::string verify_error;
     llvm::raw_string_ostream verify_stream(verify_error);

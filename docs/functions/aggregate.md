@@ -8,6 +8,12 @@ This page describes how a function passes and returns a struct, an array, or a s
 
 Structs are passed and returned by value.
 
+A struct, tuple, or array value with more than 1024 scalar parts, such as a struct that holds `[65536]u8`, is moved with a block copy. As a parameter, the caller makes a copy and passes its address. As a result, the caller passes the address of the memory the result goes to. `return f(x)` hands that same address on, so each call in a recursion holds one copy. The callee changes only its own copy, so the caller's value stays the same.
+
+A smaller value is passed in its parts, the same as before.
+
+This is the tlc convention for every tlc function, including an `extern` tlc library. An `extern(abi="c")` function uses the C convention, as described in [extern](../packages/extern.md).
+
 ## Array parameters and results
 
 An array parameter or result names its length, as in `a [4]i32` and `[N]T`. The parameter becomes a pointer. A function may return an array.

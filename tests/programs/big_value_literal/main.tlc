@@ -1,0 +1,20 @@
+// A struct literal and a conditional of large structs.
+type Big struct {
+    bytes [65536]u8;
+    tag i32;
+}
+
+var g Big;
+var h Big;
+
+func pick(c bool) Big {
+    return c ? g : h;
+}
+
+func main() i32 {
+    g = Big{.tag = 40, 0...};
+    g.bytes[7] = 2;
+    h.tag = 1;
+    var r = pick(true);
+    return r.tag + i32(r.bytes[7]);
+}

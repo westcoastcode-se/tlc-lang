@@ -1,0 +1,25 @@
+// A `comptime func` passes and returns a large struct. It runs in the compiler's process.
+type Big struct {
+    bytes [65536]u8;
+    tag i32;
+}
+
+comptime func make(n i32) Big {
+    var b Big = Big{.tag = n, 0...};
+    b.bytes[7] = u8(n);
+    return b;
+}
+
+comptime func read(b Big) i32 {
+    return i32(b.bytes[7]) + b.tag - 42;
+}
+
+comptime func both() i32 {
+    var b = make(42);
+    return read(b);
+}
+
+func main() i32 {
+    comptime const v = both();
+    return v;
+}
