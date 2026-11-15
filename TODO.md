@@ -19,7 +19,8 @@ These were found by review and have a repro. They are not fixed yet.
 - An array length is a literal or a name. `[sizeof(Pair) + 1]u8` is `expected ']'`.
 - `?func` is not allowed as an array element, `[2]?func (i32) i32`, or behind a pointer, `*?func (i32) i32`. The cast form `?func (i32) i32(x)` is `expected an expression`.
 - Deeply nested blocks check in quadratic time. In a release build 2000 nested `if` take 33 ms, 4000 take 98 ms, and 8000 take 0.35 seconds. The nesting limit stays at 10000 levels.
-- An array field of a file-scope struct, and a field's default value, are still built one element at a time, zeros included. `type H struct { raw [100000000]u8; }` then `var h = H{.raw = {1, 0...}}` costs 100 million constants in the compiler. A file-scope array's own list is the list and one zero tail.
+- An array of structs whose fields have defaults, `var pts [100000000]Point;`, is built as one constant per element. From 4096 elements it is to live in `.bss`, with a loop at program start that writes the defaults. A `const` one stays a constant.
+- A file-scope struct copied from another, `var copy = h;`, is `global initializer is not a constant`. An array copy, `var copy = grid;`, works.
 
 ### Runtime
 

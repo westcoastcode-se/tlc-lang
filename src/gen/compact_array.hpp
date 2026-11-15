@@ -55,6 +55,34 @@ llvm::Constant *CodeGen::compact_array(llvm::ArrayType *array_ty, const std::vec
     return llvm::ConstantStruct::get(llvm::StructType::get(context_, types), fields);
 }
 
+llvm::Constant *CodeGen::finish_listed_array(llvm::ArrayType *array_ty, std::vector<llvm::Constant *> values,
+                                             bool compact) {
+    llvm::Type *element = array_ty->getElementType();
+    const uint64_t total = array_ty->getNumElements();
+    bool exact = true;
+    for (llvm::Constant *value : values) {
+        exact = exact && value->getType() == element;
+    }
+    // A long zero tail, or a compact row among the elements, makes this array compact too.
+    if (compact && values.size() < total && (total - values.size() >= kCompactTail || !exact)) {
+        return compact_array(array_ty, values);
+    }
+    if (!exact) {
+        if (values.size() != total) {
+            return compact_array(array_ty, values);
+        }
+        std::vector<llvm::Type *> types;
+        for (llvm::Constant *value : values) {
+            types.push_back(value->getType());
+        }
+        return llvm::ConstantStruct::get(llvm::StructType::get(context_, types), values);
+    }
+    while (values.size() < total) {
+        values.push_back(llvm::Constant::getNullValue(element));
+    }
+    return llvm::ConstantArray::get(array_ty, values);
+}
+
 llvm::Constant *CodeGen::array_element(llvm::Constant *array, uint64_t index) {
     if (array == nullptr) {
         return nullptr;

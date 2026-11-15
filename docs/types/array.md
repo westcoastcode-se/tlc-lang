@@ -44,6 +44,8 @@ A file-scope list that ends with `0...` stores 0 in every element the list does 
 
 A long run of those zeros costs the compiler nothing. `var arr [2147483647]i32 = {1, 2, 3}` is built as the three elements and one zero tail, in the compiler and in a `comptime` call alike. The binary still holds the whole array, zeros included, the same as a C compiler's. A file-scope array with no initializer, or one that is all zero, takes no space in the binary.
 
+The same holds for an array field of a file-scope struct, `var h = H{.raw = {1, 0...}}`, and for a field's default value, `raw [100000000]u8 = {7, 8, 0...}`.
+
 The compiler reports a file-scope shorter list, without `0...`, as `global initializer is not a constant` when code is emitted. `--check` accepts that list.
 
 ## Arrays of arrays

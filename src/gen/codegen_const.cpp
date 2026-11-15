@@ -11,7 +11,9 @@ llvm::Constant *CodeGen::const_default_array(const Expr::Init &init, llvm::Array
         return nullptr;
     }
     llvm::Type *element = array_ty->getElementType();
-    std::vector<llvm::Constant *> values(array_ty->getNumElements(), llvm::Constant::getNullValue(element));
+    // The listed elements. The rest of the array is zero, spelled out or as one compact tail.
+    std::vector<llvm::Constant *> values;
+    values.reserve(init.elements.size());
     for (std::size_t index = 0; index < init.elements.size(); ++index) {
         const auto &item = init.elements[index];
         if (!item) {
@@ -26,7 +28,7 @@ llvm::Constant *CodeGen::const_default_array(const Expr::Init &init, llvm::Array
             if (nested != nullptr && array_brace(*nested)) {
                 Binding row = flags;
                 row.is_array = true;
-                row.array_len = static_cast<int>(inner->getNumElements());
+                row.array_len = static_cast<int64_t>(inner->getNumElements());
                 row.inner_array_len = 0;
                 row.value = nullptr;
                 value = const_default_array(*nested, inner, row);
@@ -41,12 +43,12 @@ llvm::Constant *CodeGen::const_default_array(const Expr::Init &init, llvm::Array
             one.value = nullptr;
             value = const_initializer(*item, one);
         }
-        if (value == nullptr || value->getType() != element) {
+        if (value == nullptr || (value->getType() != element && !(compact_ok_ && same_layout(value->getType(), element)))) {
             return nullptr;
         }
-        values[index] = value;
+        values.push_back(value);
     }
-    return llvm::ConstantArray::get(array_ty, values);
+    return finish_listed_array(array_ty, std::move(values), compact_ok_);
 }
 
 llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) {
@@ -76,10 +78,10 @@ llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) 
             if (init->is_tuple || !init->fields.empty()) {
                 return nullptr;
             }
-            return fill_array(*init, array_ty, flags, true);
+            return fill_array(*init, array_ty, flags, true, compact_ok_);
         }
         llvm::Constant *copied = const_array_base(expr);
-        if (copied == nullptr || copied->getType() != array_ty) {
+        if (copied == nullptr || (copied->getType() != array_ty && !(compact_ok_ && same_layout(copied->getType(), array_ty)))) {
             return nullptr;
         }
         return copied;
@@ -524,7 +526,7 @@ llvm::Constant *CodeGen::const_struct_into(const Expr::Init *overlay, int struct
             }
             llvm::Constant *value = const_field(*field.value, *slot);
             llvm::Type *expected = layout.type->getElementType(static_cast<unsigned>(index));
-            if (value == nullptr || value->getType() != expected) {
+            if (value == nullptr || !fits_field(value, expected)) {
                 return leave(nullptr);
             }
             elements[static_cast<std::size_t>(index)] = value;
@@ -545,8 +547,7 @@ llvm::Constant *CodeGen::const_struct_into(const Expr::Init *overlay, int struct
         if (have_slot) {
             value = omitted_field(layout.fields[index], stack);
         }
-        if (have_slot && layout.fields[index].init != nullptr &&
-            (value == nullptr || value->getType() != expected)) {
+        if (have_slot && layout.fields[index].init != nullptr && (value == nullptr || !fits_field(value, expected))) {
             return leave(nullptr);
         }
         if (value == nullptr) {
@@ -555,20 +556,30 @@ llvm::Constant *CodeGen::const_struct_into(const Expr::Init *overlay, int struct
             elements[index] = llvm::Constant::getNullValue(expected);
             continue;
         }
-        if (value->getType() != expected) {
+        if (!fits_field(value, expected)) {
             return leave(nullptr);
         }
         elements[index] = value;
     }
     bool zero = true;
-    for (llvm::Constant *element : elements) {
+    bool exact = true;
+    for (unsigned index = 0; index < count; ++index) {
+        llvm::Constant *element = elements[index];
         if (element == nullptr || !element->isNullValue()) {
             zero = false;
-            break;
         }
+        exact = exact && element != nullptr && element->getType() == layout.type->getElementType(index);
     }
     if (zero) {
         return leave(llvm::ConstantAggregateZero::get(layout.type));
+    }
+    if (!exact) {
+        // A compact field keeps the field's place and size. The struct is an unnamed one of the same layout.
+        std::vector<llvm::Type *> types;
+        for (llvm::Constant *element : elements) {
+            types.push_back(element->getType());
+        }
+        return leave(llvm::ConstantStruct::get(llvm::StructType::get(context_, types, layout.type->isPacked()), elements));
     }
     return leave(llvm::ConstantStruct::get(layout.type, elements));
 }
@@ -610,6 +621,8 @@ llvm::Constant *CodeGen::bare_initializer(const Lowered &low, llvm::Type *ty) {
     if (ty == nullptr) {
         return nullptr;
     }
+    // A field default with a long zero tail is compact. The caller sets it with `set_global_initializer`.
+    const CompactScope compact(*this);
     // `?*[2]Point` has leaf depth 0 and is a pointer. Its shells say so.
     const bool object = low.struct_id >= 0 && low.depth == 0 && !low.is_slice && !low.elem_slice &&
                         !pointer_shell(low.shells) && low.struct_id < static_cast<int>(structs_.size());
@@ -626,7 +639,7 @@ llvm::Constant *CodeGen::bare_initializer(const Lowered &low, llvm::Type *ty) {
             } else {
                 value = default_struct(low.struct_id);
             }
-            if (value != nullptr && value->getType() == ty) {
+            if (value != nullptr && same_layout(value->getType(), ty)) {
                 return value;
             }
         }
@@ -911,31 +924,10 @@ llvm::Constant *CodeGen::fill_array(const Expr::Init &init, llvm::ArrayType *arr
         }
         values.push_back(value);
     }
-    bool exact = true;
-    for (llvm::Constant *value : values) {
-        exact = exact && value->getType() == element;
+    if (!pad && values.size() != array_ty->getNumElements()) {
+        return nullptr;
     }
-    const uint64_t total = array_ty->getNumElements();
-    // A long zero tail, or a compact row among the elements, makes this array compact too.
-    if (compact && pad && values.size() < total && (total - values.size() >= kCompactTail || !exact)) {
-        return compact_array(array_ty, values);
-    }
-    if (!exact) {
-        if (values.size() != total) {
-            return compact_array(array_ty, values);
-        }
-        std::vector<llvm::Type *> types;
-        for (llvm::Constant *value : values) {
-            types.push_back(value->getType());
-        }
-        return llvm::ConstantStruct::get(llvm::StructType::get(context_, types), values);
-    }
-    if (pad) {
-        while (values.size() < total) {
-            values.push_back(llvm::Constant::getNullValue(element));
-        }
-    }
-    return llvm::ConstantArray::get(array_ty, values);
+    return finish_listed_array(array_ty, std::move(values), compact);
 }
 
 llvm::Constant *CodeGen::const_array(const Expr::Init &init, const Binding &dest) {
@@ -2041,6 +2033,8 @@ llvm::Constant *CodeGen::constant_slice(const Expr &expr, std::unordered_set<std
 }
 
 void CodeGen::apply_initializer(const VarDecl &var) {
+    // A file-scope value may be compact: a long zero tail in an array, a field, or a field default.
+    const CompactScope compact(*this);
     if (!var.owner_params.empty() || var.generic_alias || var.spec_alias) {
         return;
     }
@@ -2237,12 +2231,11 @@ void CodeGen::apply_initializer(const VarDecl &var) {
             return;
         }
         llvm::Constant *value = const_struct(*init, found_early->second.struct_id);
-        if (value == nullptr) {
+        auto *global = llvm::cast<llvm::GlobalVariable>(found_early->second.value);
+        if (value == nullptr || !set_global_initializer(global, value)) {
             error(var.loc, "global initializer is not a constant");
             return;
         }
-        auto *global = llvm::cast<llvm::GlobalVariable>(found_early->second.value);
-        global->setInitializer(value);
         file.folded.insert(key);
         return;
     }

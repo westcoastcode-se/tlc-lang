@@ -296,6 +296,31 @@ int run_cli_tests() {
     EXPECT_HAS(check, compact_ir.out, "[2147483644 x i32] zeroinitializer");
     EXPECT_HAS(check, compact_ir.out, "store i32 42");
     std::remove(compact.c_str());
+    // The same holds for an array field and a field default. 100 million bytes each.
+    const std::string fields = "/tmp/tlc-compact-fields.tlc";
+    {
+        std::ofstream out(fields);
+        out << "type H struct {\n"
+               "    tag i32;\n"
+               "    raw [100000000]u8;\n"
+               "}\n"
+               "type D struct {\n"
+               "    raw [100000000]u8 = {7, 8, 0...};\n"
+               "}\n"
+               "var h = H{.tag = 1, .raw = {1, 0...}};\n"
+               "const k = H{.tag = 2, .raw = {3, 0...}};\n"
+               "var d D;\n"
+               "\n"
+               "func main() i32 {\n"
+               "    return h.tag + i32(k.raw[0]) + i32(d.raw[1]) + 30;\n"
+               "}\n";
+    }
+    const tlc::test::Proc fields_ir = tlc::test::spawn({bin, "--max-memory", "128M", "--emit-llvm", fields});
+    EXPECT(check, fields_ir.code == 0);
+    EXPECT(check, fields_ir.err.empty());
+    EXPECT_HAS(check, fields_ir.out, "[99999999 x i8] zeroinitializer");
+    EXPECT_HAS(check, fields_ir.out, "[99999998 x i8] zeroinitializer");
+    std::remove(fields.c_str());
 
     const tlc::test::Proc missing_lsp_lib = tlc::test::spawn({bin, "lsp", "--lib"});
     EXPECT(check, missing_lsp_lib.code != 0);

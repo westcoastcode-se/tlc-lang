@@ -1,0 +1,32 @@
+// A short list in a large array field, and a field default with a long zero tail, are the list and one
+// zero tail in a file-scope value. A local, `new D`, and a nested struct read the same values.
+type H struct {
+    tag i32;
+    raw [100000]u8;
+}
+type D struct {
+    tag i32;
+    raw [100000]u8 = {7, 8, 0...};
+    end i32 = 3;
+}
+type Outer struct {
+    inner H;
+    n i32;
+}
+var h = H{.tag = 1, .raw = {1, 0...}};
+var d D;
+var o = Outer{.inner = H{.tag = 2, .raw = {5, 0...}}, .n = 4};
+var hs [3]H = {H{.tag = 6, .raw = {9, 0...}}};
+func main() i32 {
+    var bad = 0;
+    if (h.tag != 1 || h.raw[0] != 1u8 || h.raw[99999] != 0u8) { bad |= 1; }
+    if (d.raw[0] != 7u8 || d.raw[1] != 8u8 || d.raw[99999] != 0u8 || d.end != 3) { bad |= 2; }
+    if (o.inner.tag != 2 || o.inner.raw[0] != 5u8 || o.n != 4) { bad |= 4; }
+    if (hs[0].tag != 6 || hs[0].raw[0] != 9u8 || hs[2].tag != 0) { bad |= 8; }
+    var local D;
+    if (local.raw[1] != 8u8 || local.end != 3) { bad |= 16; }
+    var made = new D;
+    if (made.raw[0] != 7u8 || made.end != 3) { bad |= 32; }
+    delete made;
+    return bad == 0 ? 42 : bad;
+}

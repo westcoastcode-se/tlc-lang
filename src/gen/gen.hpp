@@ -1830,6 +1830,13 @@ class CodeGen {
     bool same_layout(llvm::Type *got, llvm::Type *want) const;
     // `listed` then zeros, to `array_ty`'s length, as one struct.
     llvm::Constant *compact_array(llvm::ArrayType *array_ty, const std::vector<llvm::Constant *> &listed);
+    // `values` are the listed elements, then zeros to `array_ty`'s length. Compact when `compact` allows a long
+    // tail or an element is itself compact, otherwise the plain `[N x T]`.
+    llvm::Constant *finish_listed_array(llvm::ArrayType *array_ty, std::vector<llvm::Constant *> values, bool compact);
+    // A field value of the field's type, or of its layout while a file-scope value is built.
+    bool fits_field(llvm::Constant *value, llvm::Type *field) const {
+        return value->getType() == field || (compact_ok_ && same_layout(value->getType(), field));
+    }
     // Element `index` of an array constant, plain or compact. Null past its length.
     llvm::Constant *array_element(llvm::Constant *array, uint64_t index);
     // The global's initializer. A compact value waits in `compact_inits_`. False when the layouts differ.
@@ -1837,6 +1844,17 @@ class CodeGen {
     // Replace each global that waits for a compact initializer with one of that type.
     void finish_compact_globals();
     std::unordered_map<llvm::GlobalVariable *, llvm::Constant *> compact_inits_;
+    // Set while a file-scope initializer is built. A field or a field default may then be compact. A store
+    // at run time, `new [n]H` and a local's defaults, wants the exact type and leaves this clear.
+    bool compact_ok_ = false;
+    struct CompactScope {
+        CodeGen &gen;
+        bool saved;
+        explicit CompactScope(CodeGen &owner) : gen(owner), saved(owner.compact_ok_) { owner.compact_ok_ = true; }
+        ~CompactScope() { gen.compact_ok_ = saved; }
+        CompactScope(const CompactScope &) = delete;
+        CompactScope &operator=(const CompactScope &) = delete;
+    };
     // The constant array stored by `expr`, using that array's own global when `expr` is a name.
     llvm::Constant *const_array_base(const Expr &expr);
     // `expr` copied into `dest`. A list is filled as `dest`. A name or an index must match `dest`.

@@ -395,7 +395,16 @@ void CodeGen::declare_globals(const PackageNode &node) {
                     init = llvm::Constant::getNullValue(ty);
                 }
             }
+            // A compact default has the layout of `ty`, not its type. It waits for the swap at the end.
+            llvm::Constant *compact = nullptr;
+            if (init != nullptr && init->getType() != ty) {
+                compact = init;
+                init = llvm::Constant::getNullValue(ty);
+            }
             global = new llvm::GlobalVariable(module_, ty, var->is_const_decl, form.linkage, init, form.name);
+            if (compact != nullptr) {
+                set_global_initializer(global, compact);
+            }
             debug_global(key, global, var->loc, low, var->is_static);
         }
         Binding binding;
