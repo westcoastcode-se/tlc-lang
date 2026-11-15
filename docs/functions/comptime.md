@@ -16,7 +16,7 @@ A `new` or `delete` with no allocator uses the heap. That call is `not supported
 
 `new(&arena)` is allowed when `arena.malloc`, `arena.free`, and `arena.realloc` do not call `malloc`, `realloc`, or `free`. A call that reaches one of those functions is `not supported yet`.
 
-A local is at most 1 MiB, the same as in a runtime function. `var cells [2097152]u8` is `array too large for the stack: use a global or new`.
+A local is at most 1 MiB, the same as in a runtime function. `var cells [2097152]u8` is `array too large for the stack: use a global or new`. A length that comes from a parameter, `var buf [n]u8`, is checked once the call gives `n`. Past the limit the same message is reported at that call.
 
 A `comptime func` may use a file-scope array of any size, as an arena's storage, for example. Only the pages it writes use the compiler's memory, as counted by [`--max-memory`](../compiler/option.md#memory).
 

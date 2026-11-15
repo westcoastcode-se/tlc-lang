@@ -1,0 +1,11 @@
+// The length comes from the call. Past 1 MiB the local is reported at that call with the stack rule,
+// not as `not supported yet`.
+comptime func make(n i32) i64 {
+    var buf [n]u8;
+    return buf.len;
+}
+
+func main() i32 {
+    comptime const v = make(2000000);
+    return 0;
+}

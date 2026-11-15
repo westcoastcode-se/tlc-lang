@@ -3176,7 +3176,7 @@ Type Checker::fit_type(Type type, SourceLoc loc) {
     if (type.kind == TypeKind::Invalid || !type_overflows(type)) {
         return type;
     }
-    error(loc, "array too large");
+    error(loc, kArrayTooLarge);
     return type_invalid();
 }
 
@@ -3186,7 +3186,7 @@ void Checker::check_stack_local(const Type &type, SourceLoc loc) {
     }
     const std::optional<int64_t> size = type_size(type);
     if (size && *size > kMaxStackLocal) {
-        error(loc, "array too large for the stack: use a global or new");
+        error(loc, kStackLocal);
     }
 }
 
@@ -3224,7 +3224,7 @@ void Checker::check_struct_size(std::size_t id) {
                 break;
             }
         }
-        error(at, "array too large");
+        error(at, kArrayTooLarge);
     }
 }
 

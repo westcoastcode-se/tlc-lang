@@ -19,17 +19,12 @@ These were found by review and have a repro. They are not fixed yet.
 - An integer value parameter of a generic, `Buf[N i32]`, cannot take an array length past `i32`. That call is `type mismatch`.
 - An array length is a literal or a name. `[sizeof(Pair) + 1]u8` is `expected ']'`.
 - `?func` is not allowed as an array element, `[2]?func (i32) i32`, or behind a pointer, `*?func (i32) i32`. The cast form `?func (i32) i32(x)` is `expected an expression`.
-- Deeply nested blocks check in quadratic time. 4000 nested `if` take 1.6 seconds and 10000 take about 10, so the nesting limit stays at 10000 levels.
-- A `comptime func` called with 2147483647 as a length or loop bound takes more than 30 seconds to compile.
+- Deeply nested blocks check in quadratic time. In a release build 2000 nested `if` take 33 ms, 4000 take 98 ms, and 8000 take 0.35 seconds. The nesting limit stays at 10000 levels.
 
 ### Runtime
 
 - A thread that a C library creates on its own and that then calls a tlc callback has no signal stack. A stack overflow there ends the process with `SIGSEGV` and no message. `pthread_create` called from tlc is covered.
 - The stack overflow handler is Linux on x86-64 and AArch64 only. Other targets crash with no message.
-
-### Driver and language server
-
-- Semantic tokens on a file with thousands of locals that share one name stay slower than linear. `bare_candidates` checks every local of that name for each use.
 
 ## Generics and compile-time
 

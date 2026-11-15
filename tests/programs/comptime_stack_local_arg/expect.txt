@@ -1,0 +1,1 @@
+compile-error: main.tlc:9:24: error: array too large for the stack: use a global or new

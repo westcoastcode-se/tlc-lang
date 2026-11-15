@@ -18,6 +18,8 @@ namespace tlc {
 
 // A folded array length below zero. Zero is an empty array.
 inline constexpr const char kArrayLength[] = "array length must be >= 0";
+inline constexpr const char kStackLocal[] = "array too large for the stack: use a global or new";
+inline constexpr const char kArrayTooLarge[] = "array too large";
 
 struct SpecArg {
     bool is_value = false;

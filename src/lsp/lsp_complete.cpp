@@ -171,10 +171,33 @@ namespace {
 // scan of every symbol for each one is quadratic in the file. The vector must not change while it is active.
 class NameIndex {
   public:
+    // The locals of one name in one file, sorted by where their scope begins. Block scopes nest or sit side
+    // by side, so the scopes that hold an offset are the last scope that begins at or before it and that
+    // scope's parents. `laminar` is false when two scopes overlap without one holding the other. A lookup
+    // then scans them all, as before.
+    struct Locals {
+        std::vector<const Sym *> sorted;
+        std::vector<int> parent;
+        bool laminar = true;
+    };
+    struct Named {
+        std::vector<const Sym *> all;
+        std::unordered_map<std::string, Locals> locals;
+    };
+
     explicit NameIndex(const std::vector<Sym> &syms) : syms_(syms), outer_(active_) {
         for (const Sym &sym : syms) {
             if (sym.bare) {
-                by_name_[sym.name].push_back(&sym);
+                Named &named = by_name_[sym.name];
+                named.all.push_back(&sym);
+                if (sym.local) {
+                    named.locals[sym.uri].sorted.push_back(&sym);
+                }
+            }
+        }
+        for (auto &[name, named] : by_name_) {
+            for (auto &[uri, locals] : named.locals) {
+                build(locals);
             }
         }
         active_ = this;
@@ -183,18 +206,60 @@ class NameIndex {
     NameIndex &operator=(const NameIndex &) = delete;
     ~NameIndex() { active_ = outer_; }
 
-    static const std::vector<const Sym *> *bare(const std::vector<Sym> &syms, const std::string &name) {
+    static const Named *bare(const std::vector<Sym> &syms, const std::string &name) {
         if (active_ == nullptr || &active_->syms_ != &syms) {
             return nullptr;
         }
-        static const std::vector<const Sym *> none;
+        static const Named none;
         const auto found = active_->by_name_.find(name);
         return found == active_->by_name_.end() ? &none : &found->second;
     }
 
+    // The locals of `locals` whose scope holds `offset`, in `syms` order. Empty when `laminar` is false.
+    static std::vector<const Sym *> holding(const Locals &locals, uint32_t offset) {
+        std::vector<const Sym *> out;
+        const auto after = std::upper_bound(locals.sorted.begin(), locals.sorted.end(), offset,
+                                            [](uint32_t at, const Sym *sym) { return at < sym->scope_begin; });
+        int index = static_cast<int>(after - locals.sorted.begin()) - 1;
+        while (index >= 0 && locals.sorted[static_cast<std::size_t>(index)]->scope_end < offset) {
+            index = locals.parent[static_cast<std::size_t>(index)];
+        }
+        for (; index >= 0; index = locals.parent[static_cast<std::size_t>(index)]) {
+            out.push_back(locals.sorted[static_cast<std::size_t>(index)]);
+        }
+        // A pointer into `syms` orders the same way as the vector.
+        std::sort(out.begin(), out.end());
+        return out;
+    }
+
   private:
+    static void build(Locals &locals) {
+        std::stable_sort(locals.sorted.begin(), locals.sorted.end(), [](const Sym *a, const Sym *b) {
+            if (a->scope_begin != b->scope_begin) {
+                return a->scope_begin < b->scope_begin;
+            }
+            return a->scope_end > b->scope_end;
+        });
+        locals.parent.assign(locals.sorted.size(), -1);
+        std::vector<int> open;
+        for (std::size_t index = 0; index < locals.sorted.size(); ++index) {
+            const Sym &sym = *locals.sorted[index];
+            while (!open.empty() && locals.sorted[static_cast<std::size_t>(open.back())]->scope_end < sym.scope_begin) {
+                open.pop_back();
+            }
+            if (!open.empty()) {
+                if (sym.scope_end > locals.sorted[static_cast<std::size_t>(open.back())]->scope_end) {
+                    locals.laminar = false;
+                    return;
+                }
+                locals.parent[index] = open.back();
+            }
+            open.push_back(static_cast<int>(index));
+        }
+    }
+
     const std::vector<Sym> &syms_;
-    std::unordered_map<std::string, std::vector<const Sym *>> by_name_;
+    std::unordered_map<std::string, Named> by_name_;
     const NameIndex *outer_ = nullptr;
     static thread_local const NameIndex *active_;
 };
@@ -208,7 +273,34 @@ std::vector<const Sym *> bare_candidates(const std::vector<Sym> &syms, const std
     std::vector<const Sym *> found;
     int best_rank = 100;
     std::vector<const Sym *> every;
-    const std::vector<const Sym *> *named = NameIndex::bare(syms, name);
+    const NameIndex::Named *indexed = NameIndex::bare(syms, name);
+    const std::vector<const Sym *> *named = indexed == nullptr ? nullptr : &indexed->all;
+    if (indexed != nullptr) {
+        // A local in scope ranks first. The tree of this file's scopes finds those without a scan.
+        const auto file = indexed->locals.find(uri);
+        if (file != indexed->locals.end() && file->second.laminar) {
+            std::vector<const Sym *> held = NameIndex::holding(file->second, offset);
+            if (!held.empty()) {
+                return held;
+            }
+            // No local holds the offset. The rest ranks the other symbols of the name.
+            for (const Sym *entry : indexed->all) {
+                const Sym &sym = *entry;
+                if (sym.local) {
+                    continue;
+                }
+                const int rank = sym.uri == uri ? 1 : 2;
+                if (rank < best_rank) {
+                    best_rank = rank;
+                    found.clear();
+                }
+                if (rank == best_rank) {
+                    found.push_back(&sym);
+                }
+            }
+            return found;
+        }
+    }
     if (named == nullptr) {
         for (const Sym &sym : syms) {
             every.push_back(&sym);

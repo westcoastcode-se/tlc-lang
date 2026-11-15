@@ -5806,9 +5806,10 @@ bool Checker::recheck_comptime_copy(FunctionDecl &wrapper, bool force) {
     infer_running_.erase(&wrapper);
     infer_mismatch_.erase(&wrapper);
     const bool failed = quiet_errors_ != saved_errors;
-    // A negative array length is that rule. Other quiet failures stay `not supported yet`.
+    // A negative array length and an array past a size limit are those rules, once the call substitutes
+    // the length. Other quiet failures stay `not supported yet`.
     recheck_fault_.clear();
-    if (failed && note == kArrayLength) {
+    if (failed && (note == kArrayLength || note == kStackLocal || note == kArrayTooLarge)) {
         recheck_fault_ = note;
     }
     return !failed || only_unchecked;
