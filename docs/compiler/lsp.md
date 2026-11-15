@@ -40,7 +40,11 @@ An open file shows the diagnostics of its own check. A file that is not open sho
 
 ## Malformed input
 
-A header without a whole decimal `Content-Length`, such as `x`, `-1`, or `12abc`, is skipped. The server reads the next header. A body longer than 32 MiB is read and dropped.
+The header name may be in any case, and spaces or tabs may stand on either side of the colon: `content-length\t: 42` is a length.
+
+A header without a whole decimal `Content-Length`, such as `x`, `-1`, or `12abc`, or with none at all, has no known body. The server skips ahead to the next `Content-Length` and reads that header, so only the message without a length is lost. A body that itself contains the text `Content-Length` makes the server start there instead.
+
+A body longer than 32 MiB is read and dropped.
 
 A body that is not JSON is answered with error `-32700` and a null `id`. A JSON value that is not an object is answered with `-32600`.
 

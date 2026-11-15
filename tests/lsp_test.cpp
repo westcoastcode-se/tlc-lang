@@ -477,6 +477,27 @@ void check_bad_input(tlc::test::Check &check, const std::string &bin) {
     send_json(to_child[1], std::string(R"({"jsonrpc":"2.0","id":6,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
                                uri + R"("},"position":{"line":1,"character":4294967296}}})");
     EXPECT_HAS(check, read_until(from_child[0], "\"id\":6", 3000), "\"id\":6");
+    // Spaces and tabs may stand on either side of the colon, and the name may be in any case.
+    const auto hover = [&](int id) {
+        return std::string(R"({"jsonrpc":"2.0","id":)") + std::to_string(id) +
+               R"(,"method":"textDocument/hover","params":{"textDocument":{"uri":")" + uri +
+               R"("},"position":{"line":0,"character":5}}})";
+    };
+    const std::string tabbed = hover(7);
+    write_all(to_child[1], "Content-Length:\t" + std::to_string(tabbed.size()) + "\r\n\r\n" + tabbed);
+    EXPECT_HAS(check, read_until(from_child[0], "\"id\":7", 3000), "\"id\":7");
+    const std::string spaced = hover(8);
+    write_all(to_child[1], "content-length \t:  " + std::to_string(spaced.size()) + " \r\n\r\n" + spaced);
+    EXPECT_HAS(check, read_until(from_child[0], "\"id\":8", 3000), "\"id\":8");
+    // A message with no length is dropped. The reader finds the next `Content-Length`, so the
+    // message after it is answered.
+    const std::string lost = hover(10);
+    const std::string kept = hover(11);
+    write_all(to_child[1], "Content-Type: application/json\r\n\r\n" + lost + "Content-Length: " +
+                               std::to_string(kept.size()) + "\r\n\r\n" + kept);
+    const std::string after_lost = read_until(from_child[0], "\"id\":11", 3000);
+    EXPECT_HAS(check, after_lost, "\"id\":11");
+    EXPECT(check, after_lost.find("\"id\":10") == std::string::npos);
     send_json(to_child[1], R"({"jsonrpc":"2.0","id":9,"method":"shutdown"})");
     EXPECT_HAS(check, read_until(from_child[0], "\"id\":9", 3000), "\"id\":9");
     ::close(to_child[1]);

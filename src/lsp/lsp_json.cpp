@@ -10,6 +10,8 @@
 #include "check/sema.hpp"
 
 #include <algorithm>
+#include <optional>
+#include <string_view>
 #include <cerrno>
 #include <charconv>
 #include <cstdint>
@@ -179,76 +181,128 @@ bool read_exact(std::string &out, std::size_t count) {
     return true;
 }
 
-ReadStatus read_message(std::string &body) {
-    std::string header;
+namespace {
+
+char lower_ascii(char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; }
+
+bool header_space(char c) { return c == ' ' || c == '\t'; }
+
+// Reads until the name `Content-Length`, in any case, has been read. False at the end of input.
+bool skip_to_length_header() {
+    constexpr std::string_view kName = "content-length";
+    std::size_t matched = 0;
     char byte = 0;
-    while (header.size() < 4 || header.substr(header.size() - 4) != "\r\n\r\n") {
+    for (;;) {
         const ssize_t n = ::read(STDIN_FILENO, &byte, 1);
         if (n < 0 && errno == EINTR) {
             continue;
         }
         if (n <= 0) {
-            return ReadStatus::End;
+            return false;
         }
-        header.push_back(byte);
-        // A header this long is not one. The stream cannot be followed after it.
-        if (header.size() > 1024 * 1024) {
-            return ReadStatus::End;
+        const char c = lower_ascii(byte);
+        if (c == kName[matched]) {
+            ++matched;
+        } else {
+            // No letter of the name repeats its first letter, so a miss starts over at this byte.
+            matched = c == kName[0] ? 1 : 0;
         }
-        if (header.size() >= 2 && header.substr(header.size() - 2) == "\n\n") {
-            break;
+        if (matched == kName.size()) {
+            return true;
         }
     }
+}
+
+// The length in a `Content-Length` line. Spaces and tabs may stand on either side of the colon.
+std::optional<std::size_t> length_in(std::string_view row) {
+    constexpr std::string_view kName = "content-length";
+    if (row.size() < kName.size()) {
+        return std::nullopt;
+    }
+    for (std::size_t n = 0; n < kName.size(); ++n) {
+        if (lower_ascii(row[n]) != kName[n]) {
+            return std::nullopt;
+        }
+    }
+    row.remove_prefix(kName.size());
+    while (!row.empty() && header_space(row.front())) {
+        row.remove_prefix(1);
+    }
+    if (row.empty() || row.front() != ':') {
+        return std::nullopt;
+    }
+    row.remove_prefix(1);
+    while (!row.empty() && header_space(row.front())) {
+        row.remove_prefix(1);
+    }
+    while (!row.empty() && header_space(row.back())) {
+        row.remove_suffix(1);
+    }
+    // `Content-Length: x`, `-1`, and `12abc` are not a length. Every character is a digit.
+    std::size_t value = 0;
+    const auto parsed = std::from_chars(row.data(), row.data() + row.size(), value);
+    if (row.empty() || parsed.ec != std::errc{} || parsed.ptr != row.data() + row.size()) {
+        return std::nullopt;
+    }
+    return value;
+}
+
+} // namespace
+
+ReadStatus read_message(std::string &body) {
+    std::string header;
     std::size_t length = 0;
-    bool saw = false;
-    std::size_t line = 0;
-    while (line < header.size()) {
-        const std::size_t end = header.find('\n', line);
-        const std::size_t stop = end == std::string::npos ? header.size() : end;
-        std::string_view row(header.data() + line, stop - line);
-        if (!row.empty() && row.back() == '\r') {
-            row.remove_suffix(1);
-        }
-        constexpr std::string_view kKey = "content-length:";
-        if (row.size() >= kKey.size()) {
-            bool match = true;
-            for (std::size_t n = 0; n < kKey.size(); ++n) {
-                char c = row[n];
-                if (c >= 'A' && c <= 'Z') {
-                    c = static_cast<char>(c - 'A' + 'a');
-                }
-                if (c != kKey[n]) {
-                    match = false;
-                    break;
-                }
+    // A header with no length leaves the body unknown. The reader skips ahead to the next
+    // `Content-Length` and reads that header, so only the message without a length is lost.
+    for (bool resync = false;; resync = true) {
+        header.clear();
+        if (resync) {
+            if (!skip_to_length_header()) {
+                return ReadStatus::End;
             }
-            if (match) {
-                std::string_view digits = row.substr(kKey.size());
-                while (!digits.empty() && digits.front() == ' ') {
-                    digits.remove_prefix(1);
-                }
-                while (!digits.empty() && (digits.back() == ' ' || digits.back() == '\t')) {
-                    digits.remove_suffix(1);
-                }
-                // `Content-Length: x`, `-1`, and `12abc` are not a length. Every character is a digit.
-                std::size_t value = 0;
-                const auto parsed = std::from_chars(digits.data(), digits.data() + digits.size(), value);
-                if (parsed.ec == std::errc{} && parsed.ptr == digits.data() + digits.size() && !digits.empty()) {
-                    length = value;
-                    saw = true;
-                }
+            header = "Content-Length";
+        }
+        char byte = 0;
+        while (header.size() < 4 || header.substr(header.size() - 4) != "\r\n\r\n") {
+            const ssize_t n = ::read(STDIN_FILENO, &byte, 1);
+            if (n < 0 && errno == EINTR) {
+                continue;
+            }
+            if (n <= 0) {
+                return ReadStatus::End;
+            }
+            header.push_back(byte);
+            // A header this long is not one. The stream cannot be followed after it.
+            if (header.size() > 1024 * 1024) {
+                return ReadStatus::End;
+            }
+            if (header.size() >= 2 && header.substr(header.size() - 2) == "\n\n") {
+                break;
             }
         }
-        if (end == std::string::npos) {
+        bool saw = false;
+        std::size_t line = 0;
+        while (line < header.size()) {
+            const std::size_t end = header.find('\n', line);
+            const std::size_t stop = end == std::string::npos ? header.size() : end;
+            std::string_view row(header.data() + line, stop - line);
+            if (!row.empty() && row.back() == '\r') {
+                row.remove_suffix(1);
+            }
+            if (const std::optional<std::size_t> found = length_in(row)) {
+                length = *found;
+                saw = true;
+            }
+            if (end == std::string::npos) {
+                break;
+            }
+            line = end + 1;
+        }
+        if (saw) {
             break;
         }
-        line = end + 1;
     }
-    // A header without a length is skipped. The next header is read after it, so one bad message
-    // does not stop the server. A body past 32 MiB is read and dropped.
-    if (!saw) {
-        return ReadStatus::Skip;
-    }
+    // A body past 32 MiB is read and dropped.
     if (length > 32 * 1024 * 1024) {
         std::string chunk;
         while (length > 0) {

@@ -29,7 +29,6 @@ These were found by review and have a repro. They are not fixed yet.
 
 ### Driver and language server
 
-- A `Content-Length` header with a tab after the colon, or a space before it, is skipped. A header with no length is skipped, and its body is then read as the next header, so the message after it is lost.
 - Semantic tokens on a file with thousands of locals that share one name stay slower than linear. `bare_candidates` checks every local of that name for each use.
 
 ## Generics and compile-time
