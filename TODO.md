@@ -24,7 +24,6 @@ These were found by review and have a repro. They are not fixed yet.
 
 ### Runtime
 
-- A file-scope variable declared after an array that ends past 2 GiB of `.bss` cannot be linked. `var slot [2147483647]u8;` then `var used i32;` is `relocation truncated to fit: R_X86_64_PC32` from the linker. Declared before the array, it links. Code reaches a global only within 2 GiB.
 - A thread that a C library creates on its own and that then calls a tlc callback has no signal stack. A stack overflow there ends the process with `SIGSEGV` and no message. `pthread_create` called from tlc is covered.
 - The stack overflow handler is Linux on x86-64 and AArch64 only. Other targets crash with no message.
 

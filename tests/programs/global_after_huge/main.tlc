@@ -1,0 +1,14 @@
+// Variables declared after arrays that end past 2 GiB of zeros. Each large array is addressed with
+// 64 bits, so the small globals after it stay in reach and the program links.
+var slot [2147483647]u8;
+var used i32;
+var more [3000000000]u8;
+var last i64;
+
+func main() i32 {
+    slot[2147483646] = 2;
+    used = 40;
+    more[2999999999] = 1;
+    last = 1;
+    return used + i32(slot[2147483646]) + i32(more[2999999999]) - i32(last);
+}

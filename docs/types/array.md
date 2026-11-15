@@ -24,6 +24,8 @@ A local is at most 1 MiB, 1048576 bytes. A larger local is reported as `array to
 
 A file-scope array and a `new` array have no such limit. A parameter is not counted.
 
+On x86-64, a file-scope variable of 64 KiB or more is placed in the large data section and is addressed with 64 bits. Code reaches the other globals within 2 GiB, so a variable declared after a 2 GiB array still links.
+
 A thread stack is usually 8 MiB. Locals that fit one at a time can still run past it in deep recursion. That is `panic: stack overflow`, as described in [panic](../builtin/panic.md#stack-overflow).
 
 ## Shorter lists

@@ -23,6 +23,8 @@
 namespace tlc {
 namespace {
 
+constexpr uint64_t kLargeGlobalBytes = uint64_t{1} << 16;
+
 struct TargetState {
     llvm::Triple triple;
     std::unique_ptr<llvm::TargetMachine> machine;
@@ -145,6 +147,18 @@ CodegenOutput codegen(const PackageGraph &graph, DiagnosticEngine &diags, const 
         gen.set_allocator(std::move(allocator));
     }
     gen.emit(graph);
+    // Code reaches a small-model global only within 2 GiB. A large array goes to `.lbss` or `.ldata`
+    // and is addressed with 64 bits, so a variable declared after a 2 GiB array still links. 64 KiB is
+    // the x86-64 medium model's own line between small and large data.
+    if (target.triple.getArch() == llvm::Triple::x86_64) {
+        const llvm::DataLayout &layout = module->getDataLayout();
+        for (llvm::GlobalVariable &global : module->globals()) {
+            if (!global.isDeclaration() && !global.isThreadLocal() && global.getValueType()->isSized() &&
+                layout.getTypeAllocSize(global.getValueType()) >= kLargeGlobalBytes) {
+                global.setCodeModel(llvm::CodeModel::Large);
+            }
+        }
+    }
     lower_large_aggregates(*module);
     check_stores(*module);
     std::string verify_error;
