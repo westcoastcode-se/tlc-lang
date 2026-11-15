@@ -388,6 +388,9 @@ void CodeGen::declare_globals(const PackageNode &node) {
                     init = llvm::Constant::getNullValue(ty);
                 } else if (low.trait_id >= 0 && low.struct_id < 0 && low.depth == 0 && !low.is_array) {
                     init = llvm::ConstantAggregateZero::get(ty);
+                } else if (fills_at_start(*var, low, ty)) {
+                    // Zero here. `tlc.fill` writes the defaults at start, after the global exists.
+                    init = llvm::ConstantAggregateZero::get(ty);
                 } else if (low.is_array || (low.depth == 0 && low.struct_id >= 0)) {
                     // Unset fields are zero, or the field's default.
                     init = bare_initializer(low, ty);
@@ -404,6 +407,10 @@ void CodeGen::declare_globals(const PackageNode &node) {
             global = new llvm::GlobalVariable(module_, ty, var->is_const_decl, form.linkage, init, form.name);
             if (compact != nullptr) {
                 set_global_initializer(global, compact);
+            }
+            if (!var->is_extern && !low.is_slice && fills_at_start(*var, low, ty)) {
+                pending_fills_.push_back(
+                    PendingFill{global, low.struct_id, leaf_count(ty, structs_[static_cast<std::size_t>(low.struct_id)].type)});
             }
             debug_global(key, global, var->loc, low, var->is_static);
         }
@@ -547,7 +554,9 @@ void CodeGen::emit_dynamic_inits() {
             order.push_back(FileOrder{&node, depth_of(node.file_id)});
         }
     }
-    if (order.empty()) {
+    // Field defaults of a large array come first, so an initializer below that reads one sees it.
+    llvm::Function *fill = emit_fill_function();
+    if (order.empty() && fill == nullptr) {
         return;
     }
     // An imported package runs before the file that imports it. One package runs in path order.
@@ -586,6 +595,9 @@ void CodeGen::emit_dynamic_inits() {
     extern_ret_struct_ = nullptr;
     llvm::BasicBlock *entry = llvm::BasicBlock::Create(context_, "entry", init);
     builder_.SetInsertPoint(entry);
+    if (fill != nullptr) {
+        builder_.CreateCall(fill, {});
+    }
 
     for (const FileOrder &item : order) {
         if (terminated()) {

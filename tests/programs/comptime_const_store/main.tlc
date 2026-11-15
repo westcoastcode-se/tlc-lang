@@ -1,0 +1,10 @@
+// A comptime call runs in the compiler. Its store into a file-scope `const` is `type mismatch`, and the
+// run does not stop the compiler on read-only memory.
+const a i32 = 40;
+comptime func us(p i32) i32 {
+    a = 41;
+    return p;
+}
+func main() i32 {
+    return us(42);
+}

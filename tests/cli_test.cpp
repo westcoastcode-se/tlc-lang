@@ -321,6 +321,27 @@ int run_cli_tests() {
     EXPECT_HAS(check, fields_ir.out, "[99999999 x i8] zeroinitializer");
     EXPECT_HAS(check, fields_ir.out, "[99999998 x i8] zeroinitializer");
     std::remove(fields.c_str());
+    // 100 million structs with field defaults are zero in the binary. `tlc.fill` writes them at start.
+    const std::string defaults = "/tmp/tlc-array-defaults.tlc";
+    {
+        std::ofstream out(defaults);
+        out << "type Point struct {\n"
+               "    x i32 = 3;\n"
+               "    y i32 = 4;\n"
+               "}\n"
+               "var pts [100000000]Point;\n"
+               "\n"
+               "func main() i32 {\n"
+               "    return pts[99999999].x + pts[0].y + 35;\n"
+               "}\n";
+    }
+    const tlc::test::Proc defaults_ir = tlc::test::spawn({bin, "--max-memory", "128M", "--emit-llvm", defaults});
+    EXPECT(check, defaults_ir.code == 0);
+    EXPECT(check, defaults_ir.err.empty());
+    EXPECT_HAS(check, defaults_ir.out, "Point] zeroinitializer");
+    EXPECT_HAS(check, defaults_ir.out, "[100000000 x %");
+    EXPECT_HAS(check, defaults_ir.out, "define internal void @tlc.fill()");
+    std::remove(defaults.c_str());
 
     const tlc::test::Proc missing_lsp_lib = tlc::test::spawn({bin, "lsp", "--lib"});
     EXPECT(check, missing_lsp_lib.code != 0);

@@ -134,6 +134,11 @@ inline llvm::Error add_comptime_module(llvm::orc::LLJIT &jit, std::unique_ptr<ll
     llvm::orc::SymbolMap symbols;
     int index = 0;
     for (llvm::GlobalVariable &global : module->globals()) {
+        // A comptime run is in the compiler's own process. A store into a `const` that the checker reports
+        // later would hit read-only memory and stop the compiler, so every global is writable here.
+        if (!global.isDeclaration()) {
+            global.setConstant(false);
+        }
         if (global.isDeclaration() || global.isThreadLocal() || !global.hasInitializer() ||
             global.getAlign().valueOrOne().value() > 4096) {
             continue;
@@ -167,7 +172,16 @@ inline llvm::Error add_comptime_module(llvm::orc::LLJIT &jit, std::unique_ptr<ll
             return err;
         }
     }
-    return jit.addIRModule(llvm::orc::ThreadSafeModule(std::move(module), std::move(context)));
+    if (llvm::Error err = jit.addIRModule(llvm::orc::ThreadSafeModule(std::move(module), std::move(context)))) {
+        return err;
+    }
+    // `tlc.fill` writes the field defaults of a large array, as `tlc.init` does when a program starts.
+    if (auto fill = jit.lookup("tlc.fill")) {
+        fill->toPtr<void (*)()>()();
+    } else {
+        llvm::consumeError(fill.takeError());
+    }
+    return llvm::Error::success();
 }
 
 } // namespace tlc

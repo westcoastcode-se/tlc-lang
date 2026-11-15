@@ -776,6 +776,19 @@ void CodeGen::paint_omitted_elements(llvm::Value *slot, llvm::ArrayType *array_t
     const unsigned written = list == nullptr ? 0 : static_cast<unsigned>(list->elements.size());
     llvm::Type *elem = array_ty->getElementType();
     auto *inner = llvm::dyn_cast<llvm::ArrayType>(elem);
+    // With no list, every element gets the same defaults. Past a few elements that is one loop, not a store
+    // sequence per element.
+    if (list == nullptr && struct_id < static_cast<int>(structs_.size())) {
+        llvm::StructType *leaf = structs_[static_cast<std::size_t>(struct_id)].type;
+        const uint64_t leaves = leaf == nullptr ? 0 : leaf_count(array_ty, leaf);
+        if (leaves >= kLoopDefaults) {
+            llvm::Constant *image = default_struct(struct_id);
+            if (image != nullptr && image->getType() == leaf) {
+                store_each_element(slot, const_len(static_cast<int64_t>(leaves)), leaf, image);
+                return;
+            }
+        }
+    }
     for (unsigned index = 0; index < count; ++index) {
         if (terminated()) {
             return;

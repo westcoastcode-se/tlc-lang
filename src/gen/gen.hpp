@@ -1826,6 +1826,8 @@ class CodeGen {
     }
     // A zero tail this long is one `zeroinitializer`. A shorter one is spelled out, as before.
     static constexpr uint64_t kCompactTail = 4096;
+    // A local array of structs with defaults this long is filled by one loop.
+    static constexpr uint64_t kLoopDefaults = 64;
     // The same bytes, size, and alignment. A compact array has the layout of its `[N x T]`.
     bool same_layout(llvm::Type *got, llvm::Type *want) const;
     // `listed` then zeros, to `array_ty`'s length, as one struct.
@@ -1844,6 +1846,53 @@ class CodeGen {
     // Replace each global that waits for a compact initializer with one of that type.
     void finish_compact_globals();
     std::unordered_map<llvm::GlobalVariable *, llvm::Constant *> compact_inits_;
+    // `var pts [N]Point;` when `Point` has field defaults and the array has `kCompactTail` elements or more.
+    // The global is zero, in `.bss`, and `tlc.fill` writes the defaults when the program or a comptime call
+    // starts. One constant per element took the whole array in the compiler and in the binary.
+    struct PendingFill {
+        llvm::GlobalVariable *global = nullptr;
+        int struct_id = -1;
+        uint64_t count = 0;
+    };
+    std::vector<PendingFill> pending_fills_;
+    llvm::Function *fill_fn_ = nullptr;
+    // Elements of `leaf` in `type`, through nested arrays. Zero when the leaf is another type.
+    static uint64_t leaf_count(llvm::Type *type, llvm::Type *leaf) {
+        uint64_t count = 1;
+        while (auto *array = llvm::dyn_cast<llvm::ArrayType>(type)) {
+            if (array->getNumElements() != 0 && count > UINT64_MAX / array->getNumElements()) {
+                return 0;
+            }
+            count *= array->getNumElements();
+            type = array->getElementType();
+        }
+        return type == leaf ? count : 0;
+    }
+    // `tlc.fill`, made once, or null when no global waits. A comptime module's is external, so the host
+    // runs it before the call.
+    llvm::Function *emit_fill_function();
+    // A `var` with no initializer whose leaf is a struct with field defaults, `kCompactTail` elements or more.
+    bool fills_at_start(const VarDecl &var, const Lowered &low, llvm::Type *ty) {
+        if (var.is_const_decl || var.init != nullptr || !low.is_array || low.depth != 0 || low.is_slice ||
+            low.struct_id < 0 || low.struct_id >= static_cast<int>(structs_.size()) ||
+            !pointer_free_shells(low)) {
+            return false;
+        }
+        const StructLayout &layout = structs_[static_cast<std::size_t>(low.struct_id)];
+        if (layout.type == nullptr || layout.is_union) {
+            return false;
+        }
+        std::unordered_set<int> seen;
+        return struct_has_default(low.struct_id, seen) && leaf_count(ty, layout.type) >= kCompactTail;
+    }
+    static bool pointer_free_shells(const Lowered &low) {
+        for (const TypeShell &shell : low.shells) {
+            if (shell.kind != TypeShell::Kind::Array) {
+                return false;
+            }
+        }
+        return true;
+    }
     // Set while a file-scope initializer is built. A field or a field default may then be compact. A store
     // at run time, `new [n]H` and a local's defaults, wants the exact type and leaves this clear.
     bool compact_ok_ = false;

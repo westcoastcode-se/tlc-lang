@@ -1,0 +1,33 @@
+// A large array of structs with field defaults is zero in the binary. The defaults are written when the
+// program starts, before an initializer that reads them, and when a comptime call starts. A local array
+// of them is filled by one loop.
+type Point struct {
+    x i32 = 3;
+    y i32 = 4;
+}
+var pts [100000]Point;
+var grid [100][100]Point;
+func peek() i32 {
+    return pts[99999].y + grid[99][99].x;
+}
+var seen = peek();
+comptime func last() i32 {
+    var total = 0;
+    total += pts[50000].x;
+    return total;
+}
+func local_sum() i32 {
+    var row [200]Point;
+    var box [10][10]Point;
+    return row[199].y + box[9][9].x;
+}
+func main() i32 {
+    var bad = 0;
+    if (pts[0].x != 3 || pts[0].y != 4 || pts[99999].x != 3) { bad |= 1; }
+    if (grid[0][0].y != 4 || grid[99][99].x != 3) { bad |= 2; }
+    if (seen != 7) { bad |= 4; }
+    comptime const c = last();
+    if (c != 3) { bad |= 8; }
+    if (local_sum() != 7) { bad |= 16; }
+    return bad == 0 ? 42 : bad;
+}

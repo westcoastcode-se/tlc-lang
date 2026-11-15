@@ -138,7 +138,44 @@ bool CodeGen::set_global_initializer(llvm::GlobalVariable *global, llvm::Constan
     return true;
 }
 
+llvm::Function *CodeGen::emit_fill_function() {
+    if (fill_fn_ != nullptr || pending_fills_.empty()) {
+        return fill_fn_;
+    }
+    auto *type = llvm::FunctionType::get(llvm::Type::getVoidTy(context_), false);
+    fill_fn_ = llvm::Function::Create(type, eval_ ? llvm::GlobalValue::ExternalLinkage : llvm::GlobalValue::InternalLinkage,
+                                      "tlc.fill", module_);
+    fill_fn_->setCallingConv(llvm::CallingConv::C);
+    llvm::Function *saved_function = function_;
+    llvm::Type *saved_return = return_type_;
+    const llvm::IRBuilderBase::InsertPoint saved = builder_.saveIP();
+    const llvm::DebugLoc saved_loc = builder_.getCurrentDebugLocation();
+    function_ = fill_fn_;
+    return_type_ = fill_fn_->getReturnType();
+    builder_.SetInsertPoint(llvm::BasicBlock::Create(context_, "entry", fill_fn_));
+    builder_.SetCurrentDebugLocation(llvm::DebugLoc());
+    for (const PendingFill &fill : pending_fills_) {
+        const StructLayout &layout = structs_[static_cast<std::size_t>(fill.struct_id)];
+        // One element's defaults, copied into each element.
+        llvm::Constant *image = default_struct(fill.struct_id);
+        if (image == nullptr || image->getType() != layout.type) {
+            continue;
+        }
+        store_each_element(fill.global, const_len(static_cast<int64_t>(fill.count)), layout.type, image);
+    }
+    builder_.CreateRetVoid();
+    builder_.restoreIP(saved);
+    builder_.SetCurrentDebugLocation(saved_loc);
+    function_ = saved_function;
+    return_type_ = saved_return;
+    return fill_fn_;
+}
+
 void CodeGen::finish_compact_globals() {
+    // A comptime module has no `tlc.init`. Its fill is made here, before the swap below.
+    if (eval_) {
+        emit_fill_function();
+    }
     const auto pending = std::move(compact_inits_);
     compact_inits_.clear();
     for (const auto &[old_global, value] : pending) {
