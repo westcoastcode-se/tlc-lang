@@ -138,7 +138,8 @@ bool CodeGen::set_global_initializer(llvm::GlobalVariable *global, llvm::Constan
     return true;
 }
 
-void CodeGen::struct_fills(int struct_id, uint64_t base, std::vector<PendingFill> &out, int depth) {
+void CodeGen::struct_fills(int struct_id, uint64_t base, std::vector<PendingFill> &out, int depth,
+                           const Expr::Init *overlay) {
     if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size()) || depth > 64) {
         return;
     }
@@ -149,11 +150,28 @@ void CodeGen::struct_fills(int struct_id, uint64_t base, std::vector<PendingFill
     const llvm::StructLayout *offsets = module_.getDataLayout().getStructLayout(layout.type);
     for (std::size_t index = 0; index < layout.fields.size() && index < layout.type->getNumElements(); ++index) {
         const FieldLayout &field = layout.fields[index];
+        const uint64_t at = base + offsets->getElementOffset(static_cast<unsigned>(index));
+        // A field the literal names takes that value. A struct literal there has omitted fields of its own.
+        const Expr *named = nullptr;
+        if (overlay != nullptr) {
+            for (const Expr::FieldInit &item : overlay->fields) {
+                if (item.value != nullptr && item.field == field.name) {
+                    named = item.value.get();
+                }
+            }
+        }
+        if (named != nullptr) {
+            const auto *nested = std::get_if<Expr::Init>(&named->data);
+            if (nested != nullptr && !field.is_array && field.depth == 0 && field.struct_id >= 0 && !nested->is_tuple &&
+                !nested->array_literal && nested->elements.empty()) {
+                struct_fills(field.struct_id, at, out, depth + 1, nested);
+            }
+            continue;
+        }
         // A field with its own value is that value, not the element defaults.
         if (field.init != nullptr || field.depth != 0 || field.is_slice || field.struct_id < 0) {
             continue;
         }
-        const uint64_t at = base + offsets->getElementOffset(static_cast<unsigned>(index));
         if (field.is_array) {
             if (big_default_array(field.type, field.struct_id)) {
                 const StructLayout &leaf = structs_[static_cast<std::size_t>(field.struct_id)];

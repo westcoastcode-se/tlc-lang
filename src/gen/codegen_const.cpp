@@ -7,6 +7,11 @@
 namespace tlc {
 
 llvm::Constant *CodeGen::const_default_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags) {
+    ++default_array_depth_;
+    struct Leave {
+        int &depth;
+        ~Leave() { --depth; }
+    } leave{default_array_depth_};
     if (array_ty == nullptr || init.is_tuple || !init.fields.empty() || init.elements.size() > array_ty->getNumElements()) {
         return nullptr;
     }
@@ -896,6 +901,12 @@ const VarDecl *CodeGen::global_decl(const std::string &name) const {
 
 llvm::Constant *CodeGen::fill_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags,
                                     bool zero_pad, bool compact) {
+    // An element of a list is inside an array. Its large default fields are built, not filled at start.
+    ++default_array_depth_;
+    struct Leave {
+        int &depth;
+        ~Leave() { --depth; }
+    } leave{default_array_depth_};
     if (array_ty == nullptr || !init.fields.empty() || init.elements.size() > array_ty->getNumElements()) {
         return nullptr;
     }
@@ -2287,11 +2298,23 @@ void CodeGen::apply_initializer(const VarDecl &var) {
             error(var.loc, "type mismatch");
             return;
         }
+        // An omitted large array field of defaulted structs is zero here, and `tlc.fill` writes it at start.
+        std::vector<PendingFill> fills;
+        if (!var.is_const_decl) {
+            struct_fills(found_early->second.struct_id, 0, fills, 0, init);
+        }
+        const bool saved_skip = skip_big_defaults_;
+        skip_big_defaults_ = !fills.empty();
         llvm::Constant *value = const_struct(*init, found_early->second.struct_id);
+        skip_big_defaults_ = saved_skip;
         auto *global = llvm::cast<llvm::GlobalVariable>(found_early->second.value);
         if (value == nullptr || !set_global_initializer(global, value)) {
             error(var.loc, "global initializer is not a constant");
             return;
+        }
+        for (PendingFill &fill : fills) {
+            fill.global = global;
+            pending_fills_.push_back(fill);
         }
         file.folded.insert(key);
         return;

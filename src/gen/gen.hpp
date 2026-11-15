@@ -1861,7 +1861,10 @@ class CodeGen {
     bool skip_big_defaults_ = false;
     int default_array_depth_ = 0;
     // Each field of `struct_id`, through nested struct fields, that is such an array. `base` is the byte offset.
-    void struct_fills(int struct_id, uint64_t base, std::vector<PendingFill> &out, int depth = 0);
+    // `overlay` is the literal the global was written with. A field it names is not a default; a struct
+    // literal there is searched with its own list.
+    void struct_fills(int struct_id, uint64_t base, std::vector<PendingFill> &out, int depth = 0,
+                      const Expr::Init *overlay = nullptr);
     // A large array whose leaf is a struct with field defaults, `kCompactTail` elements or more.
     bool big_default_array(llvm::Type *type, int struct_id) {
         if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
