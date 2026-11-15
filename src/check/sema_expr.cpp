@@ -2723,7 +2723,10 @@ Type Checker::finish_value_method(Expr &expr, const Expr::Selector &selector, co
             }
         } else if (selector.base != nullptr) {
             init_require_receiver(*selector.base);
-            expect(object, receiver, expr_loc(*selector.base));
+            // A value receiver is a copy, so `*const Rect` may call it, the same as a const variable.
+            Type copied = object;
+            copied.is_const = false;
+            expect(copied, receiver, expr_loc(*selector.base));
         }
     }
     uint32_t trait_home = 0;

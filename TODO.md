@@ -12,7 +12,6 @@ These were found by review and have a repro. They are not fixed yet.
 
 ### Checker
 
-- A value receiver method called through `*const T` in a generic `func use[T Shape](p *const T)` is reported as `type mismatch: expected Rect, found Rect`. `p.area()` with `Rect::area(self this)` copies the value and should be accepted, and the message names the same type twice.
 - A file-scope `comptime const k = f(2)` used as an array length in a struct field, `type S struct { buf [k]u8; }`, is `not supported yet` twice. Types are resolved before the call runs. A `const` or a `var` that names `k` binds it first.
 - A C function pointer type that differs from the tlc one has no spelling of its own. A local or a tlc struct field holds it only by inference, `var f = get_cb()`. A generic parameter `func (T) i32` is a tlc type, so a C pointer that passes a struct is `type mismatch` there.
 - Each `if` in a function with held `k := i` locals copies and merges every held name, so a function with H held names and B branches costs H times B. 1500 of each take 0.8 seconds in a release build, 3000 take 3.6, and 6000 take 15. Before, each merge also scanned both arms for each name, and 1500 took 57 seconds in a debug build. Recording each change to a held name, instead of copying them all, would make an `if` cost only what its arms change. There are 31 places that change that state.

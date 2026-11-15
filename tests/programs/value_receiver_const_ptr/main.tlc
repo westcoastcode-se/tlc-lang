@@ -1,0 +1,31 @@
+// A value receiver copies the object, so `*const Rect` may call it, directly, through a generic
+// `*const T`, and through a trait constraint. Before, each call was `type mismatch: expected Rect,
+// found Rect`.
+type Shape trait {
+    func area() i32;
+};
+
+type Rect struct {
+    w i32;
+};
+
+func Rect::area(self this) i32 {
+    return self.w;
+}
+
+func direct(p *const Rect) i32 {
+    return p.area();
+}
+
+func any[T type](p *const T) i32 {
+    return p.area();
+}
+
+func shaped[T Shape](p *const T) i32 {
+    return p.area();
+}
+
+func main() i32 {
+    const r Rect = {.w = 14};
+    return direct(&r) + any(&r) + shaped(&r);
+}

@@ -2141,7 +2141,11 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                         }
                                     } else {
                                         init_require_receiver(*selector->base);
-                                        expect(object, receiver, expr_loc(*selector->base));
+                                        // A value receiver is a copy, so `*const Rect` may call it, the same as a
+                                        // const variable.
+                                        Type copied = object;
+                                        copied.is_const = false;
+                                        expect(copied, receiver, expr_loc(*selector->base));
                                     }
                                 }
                                 uint32_t trait_home = 0;
