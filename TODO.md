@@ -20,7 +20,7 @@ These were found by review and have a repro. They are not fixed yet.
 - `?func` is not allowed as an array element, `[2]?func (i32) i32`, or behind a pointer, `*?func (i32) i32`. The cast form `?func (i32) i32(x)` is `expected an expression`.
 - Deeply nested blocks check in quadratic time. In a release build 2000 nested `if` take 33 ms, 4000 take 98 ms, and 8000 take 0.35 seconds. The nesting limit stays at 10000 levels.
 - An array of structs with field defaults inside a file-scope struct, `var w World;` where `World` has `pts [100000000]Point`, is still one constant per element. A file-scope array of them is zero and is filled at start.
-- A file-scope struct copied from another, `var copy = h;`, is `global initializer is not a constant`. An array copy, `var copy = grid;`, works.
+- A file-scope copy of a global whose value comes from a call, `var h = make();` then `var copy = h;`, is `global initializer is not a constant`, for a struct and an array alike. The copy could run at start after `h`, as `var h = make()` does.
 
 ### Runtime
 

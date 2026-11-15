@@ -1904,6 +1904,8 @@ class CodeGen {
         CompactScope(const CompactScope &) = delete;
         CompactScope &operator=(const CompactScope &) = delete;
     };
+    // The constant of the struct global `expr` names, built from that global's own initializer.
+    llvm::Constant *const_struct_base(const Expr &expr, int struct_id);
     // The constant array stored by `expr`, using that array's own global when `expr` is a name.
     llvm::Constant *const_array_base(const Expr &expr);
     // `expr` copied into `dest`. A list is filled as `dest`. A name or an index must match `dest`.

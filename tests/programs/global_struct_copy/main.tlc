@@ -1,0 +1,30 @@
+// A file-scope struct copied from another holds that struct's constant: through a chain, as a `const`,
+// from a struct with field defaults, from a large compact one, and in a comptime call. The copy is its own.
+type H struct {
+    tag i32;
+    raw [100000]u8;
+}
+type D struct {
+    x i32 = 5;
+    y i32 = 6;
+}
+var h = H{.tag = 40, .raw = {2, 0...}};
+var copy = h;
+var chain = copy;
+const frozen = h;
+var d D;
+var dcopy = d;
+comptime func peek() i32 {
+    return chain.tag;
+}
+func main() i32 {
+    var bad = 0;
+    if (copy.tag != 40 || copy.raw[0] != 2u8 || copy.raw[99999] != 0u8) { bad |= 1; }
+    if (chain.tag != 40 || frozen.tag != 40) { bad |= 2; }
+    if (dcopy.x != 5 || dcopy.y != 6) { bad |= 4; }
+    copy.tag = 1;
+    if (h.tag != 40) { bad |= 8; }
+    comptime const p = peek();
+    if (p != 40) { bad |= 16; }
+    return bad == 0 ? 42 : bad;
+}

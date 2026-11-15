@@ -311,6 +311,8 @@ A later store into the parameter does not change `kept`.
 
 A file-scope `var copy = row`, `const copy = row`, and `var copy [2]i32 = row` copy that array into the binary.
 
+A file-scope `var copy = h` and `const frozen = h` copy that struct the same way, including a copy of a copy and a struct whose fields have defaults. A source whose value comes from a call, `var h = make()`, has no constant, and the copy is `global initializer is not a constant`, for an array too.
+
 ## A length written as `_`
 
 `[_]i32{10, 20, 12}` is an array.

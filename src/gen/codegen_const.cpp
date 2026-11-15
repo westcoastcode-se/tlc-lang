@@ -994,6 +994,43 @@ llvm::Constant *CodeGen::const_array_base(const Expr &expr) {
     return copied;
 }
 
+llvm::Constant *CodeGen::const_struct_base(const Expr &expr, int struct_id) {
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return nullptr;
+    }
+    const auto file = files_.find(current_file_);
+    if (file == files_.end()) {
+        return nullptr;
+    }
+    const auto found = file->second.globals.find(named->text);
+    if (found == file->second.globals.end() || found->second.struct_id != struct_id || found->second.depth != 0 ||
+        found->second.is_array || found->second.is_slice) {
+        return nullptr;
+    }
+    // `var a = b` and `var b = a` are no constant.
+    if (!const_names_.insert(named->text).second) {
+        return nullptr;
+    }
+    llvm::Constant *copied = nullptr;
+    const VarDecl *written = global_decl(named->text);
+    if (written != nullptr && written->init != nullptr) {
+        if (written->runtime_init) {
+            copied = nullptr;
+        } else if (const auto *init = std::get_if<Expr::Init>(&written->init->data)) {
+            copied = const_struct(*init, struct_id);
+        } else {
+            copied = const_struct_base(*written->init, struct_id);
+        }
+    } else if (auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found->second.value)) {
+        // No initializer: the struct's defaults, as the source global holds them.
+        const auto pending = compact_inits_.find(global);
+        copied = pending != compact_inits_.end() ? pending->second : global->getInitializer();
+    }
+    const_names_.erase(named->text);
+    return copied;
+}
+
 llvm::Constant *CodeGen::const_array_copied(const Expr &expr, const Binding &dest) {
     auto *slot = llvm::dyn_cast_or_null<llvm::GlobalVariable>(dest.value);
     if (slot == nullptr || !slot->getValueType()->isArrayTy()) {
@@ -2292,6 +2329,19 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         llvm::Constant *value = global == nullptr ? nullptr : const_initializer(*var.init, found_early->second);
         // A compact array is accepted. It waits for the global of its own type.
         if (value == nullptr || global == nullptr || !set_global_initializer(global, value)) {
+            error(var.loc, "global initializer is not a constant");
+            return;
+        }
+        file.folded.insert(key);
+        return;
+    }
+    // `var copy = h` copies that struct's constant. The source is built again from what it was written as.
+    if (found_early != file.globals.end() && found_early->second.struct_id >= 0 && found_early->second.depth == 0 &&
+        !found_early->second.is_array && !found_early->second.is_slice &&
+        std::holds_alternative<Expr::Name>(var.init->data)) {
+        auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found_early->second.value);
+        llvm::Constant *value = global == nullptr ? nullptr : const_struct_base(*var.init, found_early->second.struct_id);
+        if (value == nullptr || !set_global_initializer(global, value)) {
             error(var.loc, "global initializer is not a constant");
             return;
         }
