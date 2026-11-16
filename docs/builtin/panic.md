@@ -64,7 +64,9 @@ Before its first statement, `main` installs a `SIGSEGV` handler that runs on a 6
 
 A `SIGSEGV` that is not an overflow goes to the handler that was installed before `main`. A null pointer read in C is one. With no earlier handler, the default action ends the process.
 
-This works on Linux on x86-64 and AArch64. A thread that a C library starts on its own and that then calls back into tlc has no signal stack, and an overflow there ends the process with `SIGSEGV`.
+A thread that C starts on its own gets its signal stack the first time it calls a tlc function through a C function pointer. The wrapper that C calls sets it up and frees it when the thread exits. Each tlc function passed to C has that wrapper.
+
+This works on Linux on x86-64 and AArch64.
 
 ## Rejected calls
 

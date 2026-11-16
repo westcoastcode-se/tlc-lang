@@ -1329,7 +1329,9 @@ std::string Checker::c_ext_of(const Type &signature) const {
 bool Checker::c_thunk(const Expr &expr, const Type &want) {
     // Only a function named here has a body to wrap. A tlc function pointer value has no C wrapper,
     // and storing it where C expects a callback stays `type mismatch`.
-    if (!fn_pointer(want) || !want.pointee->c_abi || want.pointee->variadic || c_same_convention(*want.pointee)) {
+    // A signature that is the same in both conventions still gets the wrapper. It is where a thread that C
+    // started gets its signal stack, so an overflow in the callback is reported.
+    if (!fn_pointer(want) || !want.pointee->c_abi || want.pointee->variadic) {
         return false;
     }
     Type tlc_signature = *want.pointee;

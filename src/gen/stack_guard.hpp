@@ -108,6 +108,18 @@ llvm::Function *CodeGen::guard_function(const char *name) {
         llvm::Function *handler = make("tlc.guard.handler", void_ty, {i32(), ptr_type(), ptr_type()});
         llvm::Function *thread_fn = make("tlc.guard.thread", void_ty, {ptr_type()});
         guard_start_ = make("tlc.guard.start", void_ty, {});
+        // A thread that C started and that calls a tlc callback. The callback's C wrapper calls `adopt`.
+        llvm::Function *adopt = make("tlc.guard.adopt", void_ty, {});
+        llvm::Function *once_init = make("tlc.guard.once_init", void_ty, {});
+        llvm::Function *release = make("tlc.guard.release", void_ty, {ptr_type()});
+        auto *key = front(new llvm::GlobalVariable(module_, i32(), false, llvm::GlobalValue::InternalLinkage,
+                                                   const_i32(0), "tlc.guard.key"));
+        // `pthread_once_t` and `pthread_key_t` are an `int` and an `unsigned` on glibc and musl.
+        auto *once = front(new llvm::GlobalVariable(module_, i32(), false, llvm::GlobalValue::InternalLinkage,
+                                                    const_i32(0), "tlc.guard.once"));
+        llvm::FunctionCallee once_fn = libc("pthread_once", i32(), {ptr_type(), ptr_type()});
+        llvm::FunctionCallee key_create_fn = libc("pthread_key_create", i32(), {ptr_type(), ptr_type()});
+        llvm::FunctionCallee set_specific_fn = libc("pthread_setspecific", i32(), {i32(), ptr_type()});
         llvm::Function *boot = make("tlc.guard.boot", ptr_type(), {ptr_type()});
         llvm::Function *spawn = make("tlc.guard.spawn", i32(), {ptr_type(), ptr_type(), ptr_type(), ptr_type()});
         panic_fn->addFnAttr(llvm::Attribute::NoReturn);
@@ -214,6 +226,66 @@ llvm::Function *CodeGen::guard_function(const char *name) {
             builder_.CreateStore(const_i32(kSaSiginfo | kSaOnstack), at(action, kSaFlagsOffset));
             builder_.CreateCall(thread_fn, {main_stack});
             builder_.CreateCall(sigaction_fn, {const_i32(kSigsegv), action, old_action});
+            builder_.CreateBr(done);
+            builder_.SetInsertPoint(done);
+            builder_.CreateRetVoid();
+        }
+        // Once per process, from the first callback of a C thread. The key frees each thread's signal stack
+        // when it exits. The handler is installed here when no `main` of tlc ran.
+        {
+            builder_.SetInsertPoint(block(once_init, "entry"));
+            llvm::BasicBlock *install = block(once_init, "install");
+            llvm::BasicBlock *done = block(once_init, "done");
+            builder_.CreateCall(key_create_fn, {key, release});
+            builder_.CreateCondBr(builder_.CreateLoad(i1(), installed), done, install);
+            builder_.SetInsertPoint(install);
+            builder_.CreateStore(llvm::ConstantInt::getTrue(context_), installed);
+            auto *action = builder_.CreateAlloca(llvm::ArrayType::get(i8(), kSigactionBytes));
+            action->setAlignment(llvm::Align(8));
+            builder_.CreateMemSet(action, llvm::ConstantInt::get(i8(), 0), kSigactionBytes, llvm::Align(8));
+            builder_.CreateStore(handler, action);
+            builder_.CreateStore(const_i32(kSaSiginfo | kSaOnstack), at(action, kSaFlagsOffset));
+            builder_.CreateCall(sigaction_fn, {const_i32(kSigsegv), action, old_action});
+            builder_.CreateBr(done);
+            builder_.SetInsertPoint(done);
+            builder_.CreateRetVoid();
+        }
+        // A thread exits. Its signal stack is turned off and freed.
+        {
+            builder_.SetInsertPoint(block(release, "entry"));
+            auto *off = builder_.CreateAlloca(llvm::ArrayType::get(i8(), kStackBytes));
+            off->setAlignment(llvm::Align(8));
+            builder_.CreateMemSet(off, llvm::ConstantInt::get(i8(), 0), kStackBytes, llvm::Align(8));
+            builder_.CreateStore(const_i32(kSsDisable), at(off, 8));
+            builder_.CreateCall(sigaltstack_fn, {off, null_ptr()});
+            builder_.CreateStore(llvm::ConstantInt::get(i64(), 0), guard_low_);
+            builder_.CreateCall(free_fn, {release->getArg(0)});
+            builder_.CreateRetVoid();
+        }
+        // A thread with a signal stack returns at once: `main`, a thread from `pthread_create`, or one adopted
+        // before. Another gets one on the heap. Bounds that cannot be read are marked 1, so a fault chains.
+        {
+            builder_.SetInsertPoint(block(adopt, "entry"));
+            llvm::BasicBlock *fresh = block(adopt, "fresh");
+            llvm::BasicBlock *mapped = block(adopt, "mapped");
+            llvm::BasicBlock *mark = block(adopt, "mark");
+            llvm::BasicBlock *keep = block(adopt, "keep");
+            llvm::BasicBlock *done = block(adopt, "done");
+            llvm::Value *low = builder_.CreateLoad(i64(), guard_low_);
+            builder_.CreateCondBr(builder_.CreateICmpNE(low, llvm::ConstantInt::get(i64(), 0)), done, fresh);
+            builder_.SetInsertPoint(fresh);
+            builder_.CreateCall(once_fn, {once, once_init});
+            llvm::Value *memory = builder_.CreateCall(malloc_fn, {llvm::ConstantInt::get(i64(), kSignalStackBytes)});
+            builder_.CreateCondBr(builder_.CreateICmpEQ(memory, null_ptr()), done, mapped);
+            builder_.SetInsertPoint(mapped);
+            builder_.CreateCall(thread_fn, {memory});
+            llvm::Value *bounds = builder_.CreateLoad(i64(), guard_low_);
+            builder_.CreateCondBr(builder_.CreateICmpEQ(bounds, llvm::ConstantInt::get(i64(), 0)), mark, keep);
+            builder_.SetInsertPoint(mark);
+            builder_.CreateStore(llvm::ConstantInt::get(i64(), 1), guard_low_);
+            builder_.CreateBr(keep);
+            builder_.SetInsertPoint(keep);
+            builder_.CreateCall(set_specific_fn, {builder_.CreateLoad(i32(), key), memory});
             builder_.CreateBr(done);
             builder_.SetInsertPoint(done);
             builder_.CreateRetVoid();

@@ -623,6 +623,13 @@ llvm::Function *CodeGen::c_thunk_for(llvm::Function *target, const std::string &
     llvm::BasicBlock *entry = llvm::BasicBlock::Create(context_, "entry", thunk);
     builder_.SetInsertPoint(entry);
     builder_.SetCurrentDebugLocation(llvm::DebugLoc());
+    // C may call this on a thread it started. That thread gets a signal stack, so an overflow in the callback
+    // is `panic: stack overflow`.
+    if (stack_guard_enabled()) {
+        if (llvm::Function *adopt = guard_function("tlc.guard.adopt")) {
+            builder_.CreateCall(adopt, {});
+        }
+    }
     const auto slot_of = [&](llvm::Type *type, unsigned align) {
         llvm::AllocaInst *slot = builder_.CreateAlloca(type);
         slot->setAlignment(llvm::Align(std::max(align, 8u)));

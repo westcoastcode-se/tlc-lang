@@ -1,0 +1,38 @@
+// A struct global written as a literal fills each omitted large array field of defaulted structs at start,
+// through a nested literal too. A named field keeps its own value. A list of such structs is built as before.
+type Point struct {
+    x i32 = 3;
+    y i32 = 4;
+}
+type World struct {
+    n i32 = 7;
+    pts [100000]Point;
+    tail i32 = 9;
+}
+type Outer struct {
+    tag i32 = 1;
+    world World;
+}
+type Pair struct {
+    a World;
+    b World;
+}
+var w = World{.n = 1};
+var o = Outer{.tag = 2, .world = World{.tail = 5}};
+var named = World{.pts = {Point{.x = 8, .y = 9}, 0...}};
+var both = Pair{.a = World{.n = 11}};
+var listed [2]World = {World{.n = 6}};
+comptime func peek() i32 {
+    return w.pts[99999].y + o.world.pts[1].x;
+}
+func main() i32 {
+    var bad = 0;
+    if (w.n != 1 || w.tail != 9 || w.pts[0].x != 3 || w.pts[99999].y != 4) { bad |= 1; }
+    if (o.tag != 2 || o.world.n != 7 || o.world.tail != 5 || o.world.pts[50000].x != 3) { bad |= 2; }
+    if (named.pts[0].x != 8 || named.pts[1].x != 0 || named.n != 7) { bad |= 4; }
+    if (both.a.n != 11 || both.a.pts[7].y != 4 || both.b.n != 7 || both.b.pts[99999].x != 3) { bad |= 8; }
+    if (listed[0].n != 6 || listed[0].pts[5].x != 3) { bad |= 16; }
+    comptime const p = peek();
+    if (p != 7) { bad |= 32; }
+    return bad == 0 ? 42 : bad;
+}

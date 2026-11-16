@@ -1,0 +1,19 @@
+// A thread that C starts calls a tlc callback. The callback's C wrapper gives that thread a signal stack,
+// so an overflow there is `panic: stack overflow` with the thread's calls.
+extern(abi="c") func run_in_thread(cb func (*void) *void, arg *void) i32;
+
+func down(n i32) i32 {
+    var frame [4096]u8;
+    frame[0] = u8(n & 1);
+    return down(n + 1) + i32(frame[0]);
+}
+
+func work(arg *void) *void {
+    var _ = down(0);
+    return arg;
+}
+
+func main() i32 {
+    var n i32 = 1;
+    return run_in_thread(work, *void(&n));
+}
