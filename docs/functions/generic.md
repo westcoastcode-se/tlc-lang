@@ -22,6 +22,8 @@ A value that does not fit the type is `type mismatch`: `small[300]()` when `smal
 
 One body is specialized for each call.
 
+A message names a specialization the way it is written: `type mismatch: expected Box[i32], found Box[u8]`.
+
 A generic function has no `impl` and no runtime table.
 
 A parameter the function does not use is `unused parameter`.

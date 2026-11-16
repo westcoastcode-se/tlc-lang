@@ -8057,8 +8057,8 @@ int run_sema_tests() {
             "  ints = floats;\n"
             "  return take(chars);\n"
             "}\n");
-        EXPECT_HAS(check, errors, "type mismatch: expected Box.spec.i32, found Box.spec.f32");
-        EXPECT_HAS(check, errors, "type mismatch: expected Box.spec.i32, found Box.spec.u8");
+        EXPECT_HAS(check, errors, "type mismatch: expected Box[i32], found Box[f32]");
+        EXPECT_HAS(check, errors, "type mismatch: expected Box[i32], found Box[u8]");
     }
 
     {

@@ -23,7 +23,7 @@ void Checker::check_assert(SourceLoc loc, const Expr *cond, const std::string &m
         if (got.kind == TypeKind::Pointer) {
             error(loc, "compare with null");
         } else {
-            error(loc, "type mismatch: expected bool, found " + type_desc(got));
+            error(loc, "type mismatch: expected bool, found " + display_type(got));
         }
         return;
     }
@@ -2830,7 +2830,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     if (!null_pointer && !widened && !scalar && !accepts_slice(got, want) && !added &&
                         (want.kind == TypeKind::Void ||
                          (got.kind != TypeKind::Invalid && want.kind != TypeKind::Invalid && !same_type(got, want)))) {
-                        error(node.loc, "return type: expected " + type_desc(want) + ", found " + type_desc(got));
+                        error(node.loc, "return type: expected " + display_type(want) + ", found " + display_type(got));
                     }
                 };
                 std::vector<const Expr *> exprs;
@@ -2916,7 +2916,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                         if (exprs.size() == 1 && exprs.front() != nullptr) {
                             match_return(check_expr(*exprs.front(), true), return_type_);
                         } else {
-                            error(node.loc, "return type: expected " + type_desc(return_type_) + ", found " +
+                            error(node.loc, "return type: expected " + display_type(return_type_) + ", found " +
                                                 std::to_string(exprs.size()) + " results");
                             for (const Expr *expr : exprs) {
                                 check_expr(*expr, true);
@@ -2940,7 +2940,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                         }
                     }
                 } else if (!node.extra.empty()) {
-                    error(node.loc, "return type: expected " + type_desc(return_type_) + ", found " +
+                    error(node.loc, "return type: expected " + display_type(return_type_) + ", found " +
                                         std::to_string(exprs.size()) + " results");
                     for (const Expr *expr : exprs) {
                         check_expr(*expr, true);
@@ -4818,7 +4818,7 @@ bool Checker::report_inferred_mismatch() {
         const bool saved_quiet = quiet_;
         quiet_ = false;
         error(inferred_returns_[i].loc,
-              "return type: expected " + type_desc(want) + ", found " + type_desc(spelled[i]));
+              "return type: expected " + display_type(want) + ", found " + display_type(spelled[i]));
         quiet_ = saved_quiet;
     }
     return mismatch;

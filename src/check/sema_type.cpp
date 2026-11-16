@@ -3501,7 +3501,7 @@ Checker::TypeFacts Checker::classify_type_facts(const Type &type) const {
     return facts;
 }
 
-std::string Checker::type_desc(const Type &type) const {
+std::string Checker::type_desc(const Type &type, bool display) const {
     if (type.alias_id > 0 && static_cast<std::size_t>(type.alias_id) < alias_names_.size()) {
         return alias_names_[static_cast<std::size_t>(type.alias_id)];
     }
@@ -3547,11 +3547,11 @@ std::string Checker::type_desc(const Type &type) const {
         if (type.pointee != nullptr && type.pointee->is_const) {
             text += "const ";
         }
-        text += type_desc(type.pointee ? *type.pointee : type_invalid());
+        text += type_desc(type.pointee ? *type.pointee : type_invalid(), display);
         return text;
     }
     case TypeKind::Array: {
-        std::string element = type_desc(type.element ? *type.element : type_invalid());
+        std::string element = type_desc(type.element ? *type.element : type_invalid(), display);
         // `*const u8` already spells its const. `const u8` is written in front of the element.
         if (type.element != nullptr && type.element->is_const && type.element->kind != TypeKind::Pointer) {
             element = "const " + element;
@@ -3572,6 +3572,15 @@ std::string Checker::type_desc(const Type &type) const {
             if (name.rfind(".union.", 0) == 0 && name.find('.', std::string(".union.").size()) == std::string::npos) {
                 return "union";
             }
+            // A message names a specialization as it is written, `Box[i32]`, not `Box.spec.i32`.
+            const StructInfo &info = structs_[static_cast<std::size_t>(type.struct_id)];
+            if (display && !info.template_name.empty()) {
+                std::string text = info.template_name + "[";
+                for (std::size_t i = 0; i < info.spec_args.size(); ++i) {
+                    text += (i == 0 ? "" : ", ") + spec_arg_desc(info.spec_args[i]);
+                }
+                return text + "]";
+            }
             return name;
         }
         return "struct";
@@ -3591,7 +3600,7 @@ std::string Checker::type_desc(const Type &type) const {
             if (i != 0) {
                 text += ", ";
             }
-            text += type_desc(type.results[i]);
+            text += type_desc(type.results[i], display);
         }
         text += ")";
         return text;
@@ -3603,17 +3612,52 @@ std::string Checker::type_desc(const Type &type) const {
             if (i != 0) {
                 text += ", ";
             }
-            text += type_desc(type.params[i]);
+            text += type_desc(type.params[i], display);
         }
         if (type.variadic) {
             text += type.params.empty() ? "..." : ", ...";
         }
         text += ") ";
-        text += type.result ? type_desc(*type.result) : "void";
+        text += type.result ? type_desc(*type.result, display) : "void";
         return text;
     }
     }
     return "invalid";
+}
+
+std::string Checker::spec_arg_desc(const SpecArg &arg) const {
+    if (arg.is_value) {
+        return std::to_string(arg.value);
+    }
+    if (arg.is_text) {
+        return "\"" + arg.text + "\"";
+    }
+    std::string leaf;
+    if (arg.struct_id >= 0) {
+        Type type;
+        type.kind = TypeKind::Struct;
+        type.struct_id = arg.struct_id;
+        leaf = type_desc(type, true);
+    } else if (arg.enum_id >= 0 && arg.enum_id < static_cast<int>(enum_types_.size())) {
+        leaf = enum_types_[static_cast<std::size_t>(arg.enum_id)].name;
+    } else {
+        leaf = arg.type_package.empty() ? arg.type_name : arg.type_package + "." + arg.type_name;
+    }
+    if (arg.is_array) {
+        leaf = (arg.array_len < 0 ? std::string("[]") : "[" + std::to_string(arg.array_len) + "]") +
+               (arg.elem_const ? "const " : "") + leaf;
+    }
+    std::string prefix;
+    for (int star = 0; star < arg.indirections; ++star) {
+        if ((arg.optional & (1U << star)) != 0) {
+            prefix += "?";
+        }
+        prefix += "*";
+        if ((arg.const_pointee & (1U << star)) != 0) {
+            prefix += "const ";
+        }
+    }
+    return prefix + leaf;
 }
 
 void Checker::ensure_field_info() {

@@ -551,8 +551,8 @@ class Checker {
         trait.is_const = false;
         Type frozen = trait;
         frozen.is_const = true;
-        error(loc, "type mismatch: expected " + type_desc(type_pointer(trait)) + ", found " +
-                       type_desc(type_pointer(frozen)));
+        error(loc, "type mismatch: expected " + display_type(type_pointer(trait)) + ", found " +
+                       display_type(type_pointer(frozen)));
     }
     // A struct method `self *this` for a trait method that only reads, reported once.
     std::unordered_set<const FunctionDecl *> reads_only_reported_;
@@ -632,7 +632,11 @@ class Checker {
     bool indexed_type(const Type &base, Type &out, bool &pointee_void) const;
     // `allow_incomplete` is a tuple alias registered before struct bodies exist.
     Type type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_incomplete = false);
-    std::string type_desc(const Type &type) const;
+    // The type's name. `display` is a message's spelling: a specialization is `Box[i32]`. Without it the name is
+    // the internal one, `Box.spec.i32`, which code writes back as a type name.
+    std::string type_desc(const Type &type, bool display = false) const;
+    std::string display_type(const Type &type) const { return type_desc(type, true); }
+    std::string spec_arg_desc(const SpecArg &arg) const;
     // `builtin.Type`, the pointer `*const CompiledType`. A synthetic pointer until that alias exists.
     Type type_value() const;
     // True when `type` is that pointer.

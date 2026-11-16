@@ -123,7 +123,14 @@ uint32_t Checker::trait_signature_home(const Type &signature, const Expr *callee
 }
 
 void Checker::mismatch(SourceLoc loc, const Type &want, const Type &got) {
-    error(loc, "type mismatch: expected " + type_desc(want) + ", found " + type_desc(got));
+    std::string wanted = display_type(want);
+    std::string found = display_type(got);
+    // Two spellings that only `const` tells apart name it, so the message is not `expected Rect, found Rect`.
+    // Elsewhere a `const` value is not the mismatch and stays unnamed, as in `found i32`.
+    if (wanted == found && want.is_const != got.is_const) {
+        (want.is_const ? wanted : found).insert(0, "const ");
+    }
+    error(loc, "type mismatch: expected " + wanted + ", found " + found);
 }
 
 void Checker::expect(const Type &got, const Type &want, SourceLoc loc) {
@@ -214,7 +221,7 @@ void Checker::expect_integer(const Type &got, SourceLoc loc) {
     if (got.kind == TypeKind::Invalid || is_integer(got) || is_c_enum(got)) {
         return;
     }
-    error(loc, "type mismatch: expected an integer, found " + type_desc(got));
+    error(loc, "type mismatch: expected an integer, found " + display_type(got));
 }
 
 void Checker::expect_condition(const Type &got, SourceLoc loc) {
@@ -225,7 +232,7 @@ void Checker::expect_condition(const Type &got, SourceLoc loc) {
         error(loc, "compare with null");
         return;
     }
-    error(loc, "type mismatch: expected bool, found " + type_desc(got));
+    error(loc, "type mismatch: expected bool, found " + display_type(got));
 }
 
 FunctionDecl *Checker::inferred_function(const Expr &expr) const {
