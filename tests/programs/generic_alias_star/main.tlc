@@ -1,8 +1,8 @@
-type Vec[T type] struct {
+type Vec<T type> struct {
     n T;
 };
 
-type MyAlias[T type] *Vec[T];
+type MyAlias<T type> *Vec<T>;
 
 func main() i32 {
     return 0;

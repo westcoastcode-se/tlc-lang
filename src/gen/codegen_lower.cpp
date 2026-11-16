@@ -418,7 +418,7 @@ bool CodeGen::alias_base_ready(uint32_t file, const TypedefDecl &item) const {
         if (find_alias(target, type_name) != nullptr) {
             return true;
         }
-        // `type Wrap[N i32] Mine[N]` names another spec that is still queued.
+        // `type Wrap<N i32> Mine<N>` names another spec that is still queued.
         if (eval_aliases_ != nullptr) {
             for (const auto &extra : *eval_aliases_) {
                 if (extra.second != nullptr && extra.second->name == type_name && extra.second->type_params.empty()) {

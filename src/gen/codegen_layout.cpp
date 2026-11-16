@@ -1773,7 +1773,7 @@ const Binding *CodeGen::function_designator(uint32_t file, const Expr &expr) con
     if (selector == nullptr || selector->base == nullptr) {
         return nullptr;
     }
-    // `Box[i32].from`. Sema stored the specialization on the selector.
+    // `Box<i32>.from`. Sema stored the specialization on the selector.
     if (!selector->resolved_owner.empty()) {
         const Binding *method = static_selector_binding(file, *selector);
         if (method != nullptr && method->value != nullptr && !method->is_generic) {

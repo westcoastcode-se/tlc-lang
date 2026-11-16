@@ -1,13 +1,13 @@
-type Vec[T type] struct {
+type Vec<T type> struct {
     len i32;
 };
 
-func Vec[T]::ignore(value T) i32 {
+func Vec<T>::ignore(value T) i32 {
     return 0;
 }
 
 func main() i32 {
-    var v Vec[[][]i32];
+    var v Vec<[][]i32>;
     v.len = 4;
     return v.len;
 }

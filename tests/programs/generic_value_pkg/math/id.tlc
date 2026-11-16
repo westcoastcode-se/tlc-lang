@@ -1,5 +1,5 @@
 package math;
 
-export func id[T type](value T) T {
+export func id<T type>(value T) T {
     return value;
 }

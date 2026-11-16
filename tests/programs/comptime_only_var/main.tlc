@@ -1,8 +1,8 @@
-func only[T type](comptime value T) i32 {
+func only<T type>(comptime value T) i32 {
     return 1;
 }
 
 func main() i32 {
     var n = 1;
-    return only[i32](n);
+    return only<i32>(n);
 }

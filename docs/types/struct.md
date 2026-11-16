@@ -28,7 +28,7 @@ A pointer is written `*Point` and `*i32`, in a parameter, a result, and every ot
 
 A later `Point` is `not supported yet`. The same name in that block is `redefinition`. A nested block may declare `Point` again, and that name hides the outer one until the nested block ends.
 
-`type Box[T type] struct` inside that block is that generic until the block ends. `var b Box[i32]` is one specialization. A later `Box[i32]` is `type mismatch`.
+`type Box<T type> struct` inside that block is that generic until the block ends. `var b Box<i32>` is one specialization. A later `Box<i32>` is `type mismatch`.
 
 An untagged `type Num union` inside that block is that union until the block ends. Its fields share one address. One field may carry a value. A second value is `not supported yet`.
 
@@ -72,7 +72,7 @@ A file-scope variable stores 0 in an element the list does not name. Naming the 
 
 `pair (i32, i32) = (40, 2)` is that value for a tuple. `var box Box` reads 40 from `pair[0]` and 2 from `pair[1]`. Naming the field replaces the tuple. `{0...}` stores 0.
 
-`pair (T, i32) = (40, 2)` on `type Box[T type] struct` is that value for `Box[i32]`.
+`pair (T, i32) = (40, 2)` on `type Box<T type> struct` is that value for `Box<i32>`.
 
 ```c
 type Box struct {
@@ -264,39 +264,39 @@ The program returns 42. `Entity.next` is the constant. `e.id` is the field.
 
 ## Generics
 
-`type Vec[T type] struct` is generic. A use writes the arguments after the name, `Vec[i32]`. Another package writes `pkg.Vec[i32]` when the struct is exported.
+`type Vec<T type> struct` is generic. A use writes the arguments after the name, `Vec<i32>`. Another package writes `pkg.Vec<i32>` when the struct is exported.
 
-A struct value writes that application in front of the braces: `Vec[i32]{}`, `Vec[i32]{.n = 1}`, `pkg.Vec[i32]{}`, `Buf[4, i32]{}`, and `pkg.Buf[4, i32]{}`.
+A struct value writes that application in front of the braces: `Vec<i32>{}`, `Vec<i32>{.n = 1}`, `pkg.Vec<i32>{}`, `Buf<4, i32>{}`, and `pkg.Buf<4, i32>{}`.
 
-A field that is left out takes the value written on the field, or zero when the field has none. A value list such as `Vec[i32]{1, 2}` is reported as `type mismatch`.
+A field that is left out takes the value written on the field, or zero when the field has none. A value list such as `Vec<i32>{1, 2}` is reported as `type mismatch`.
 
 A struct that is not exported is reported as `name is not exported`.
 
-A method is `func Vec[T]::get(self *this, i i32) T` in the same file. The names in `Vec[T]` are the struct's parameters, in that order.
+A method is `func Vec<T>::get(self *this, i i32) T` in the same file. The names in `Vec<T>` are the struct's parameters, in that order.
 
-`type Buf[N i32, T type] struct` uses `func Buf[N, T]::get`. Leaving the list out, or writing a different name, is reported as `type mismatch`. The wrong count is reported as `argument count`.
+`type Buf<N i32, T type> struct` uses `func Buf<N, T>::get`. Leaving the list out, or writing a different name, is reported as `type mismatch`. The wrong count is reported as `argument count`.
 
-`func Vec[T type]::get` is reported as `type mismatch`. `Vec` with no arguments is reported as `type mismatch`. `Vec[i32]` and `Vec[u8]` are different types.
+`func Vec<T type>::get` is reported as `type mismatch`. `Vec` with no arguments is reported as `type mismatch`. `Vec<i32>` and `Vec<u8>` are different types.
 
-A parameter that no field, method, or associated variable uses is `unused parameter`. `func Vec[T]::get` does not use `T` by repeating `Vec[T]`. `func Buf[N]::width` uses `N` when the body reads `N`.
+A parameter that no field, method, or associated variable uses is `unused parameter`. `func Vec<T>::get` does not use `T` by repeating `Vec<T>`. `func Buf<N>::width` uses `N` when the body reads `N`.
 
-A variable on that struct is `var Vec[T]::count i32`, and `Vec[i32].count` is a different variable from `Vec[u8].count`. A constant is `const Vec[T]::limit`, and `Vec[i32].limit` is a different constant from `Vec[u8].limit`.
+A variable on that struct is `var Vec<T>::count i32`, and `Vec<i32>.count` is a different variable from `Vec<u8>.count`. A constant is `const Vec<T>::limit`, and `Vec<i32>.limit` is a different constant from `Vec<u8>.limit`.
 
-A static function is `func Vec[T]::make(value T) Vec[T]`, called as `Vec[i32].make(1)` or `Buf[4, i32].width()`. Another package calls `pkg.Vec[i32].make(1)` when the function is exported.
+A static function is `func Vec<T>::make(value T) Vec<T>`, called as `Vec<i32>.make(1)` or `Buf<4, i32>.width()`. Another package calls `pkg.Vec<i32>.make(1)` when the function is exported.
 
 Assigning one to the other, or passing one where the parameter is the other, is reported as `type mismatch`.
 
 ```c
-type Vec[T type] struct {
+type Vec<T type> struct {
     n T;
 };
 
-func Vec[T]::get(self this) T {
+func Vec<T>::get(self this) T {
     return self.n;
 }
 
 func main() i32 {
-    var v Vec[i32];
+    var v Vec<i32>;
     v.n = 42;
     return v.get();
 }
@@ -309,12 +309,12 @@ movl -8(%rsp), %eax              # move
 retq                             # return
 ```
 
-`data union { n T; m T; }` inside `type Box[T type] struct` is that union. `n` and `m` share one address. `data union(Kind)` there is the tagged union. `Kind(box.data)` reads the tag.
+`data union { n T; m T; }` inside `type Box<T type> struct` is that union. `n` and `m` share one address. `data union(Kind)` there is the tagged union. `Kind(box.data)` reads the tag.
 
 A value on one field, `n T = 4`, is the value stored when an initializer does not name a field. A second value on that union is `not supported yet`.
 
 ```c
-type Box[T type] struct {
+type Box<T type> struct {
     data union {
         n T;
         m T;
@@ -322,7 +322,7 @@ type Box[T type] struct {
 };
 
 func main() i32 {
-    var box Box[i32];
+    var box Box<i32>;
     box.data.n = 42;
     return box.data.m;
 }
@@ -337,10 +337,10 @@ retq                             # return
 
 The program returns 42.
 
-`point struct { x T = 40; y T = 2; }` inside that struct stores those values when an initializer does not name the field. `var box Box[i32]` reads 40 from `x` and 2 from `y`. `Box[i32]{.point = {.x = 1}}` replaces `x` and leaves `y` as 2. `Box[i32]{.point = {0...}}` stores 0. A call is `global initializer is not a constant`.
+`point struct { x T = 40; y T = 2; }` inside that struct stores those values when an initializer does not name the field. `var box Box<i32>` reads 40 from `x` and 2 from `y`. `Box<i32>{.point = {.x = 1}}` replaces `x` and leaves `y` as 2. `Box<i32>{.point = {0...}}` stores 0. A call is `global initializer is not a constant`.
 
 ```c
-type Box[T type] struct {
+type Box<T type> struct {
     point struct {
         x T = 40;
         y T = 2;
@@ -348,7 +348,7 @@ type Box[T type] struct {
 };
 
 func main() i32 {
-    var box Box[i32];
+    var box Box<i32>;
     return box.point.x + box.point.y;
 }
 ```
@@ -364,19 +364,19 @@ retq                             # return
 
 The program returns 42.
 
-`op func (T, T) T = add` on `type Box[T type] struct` is that function pointer for `Box[i32]`. `var box Box[i32]` stores `add`. `box.op(40, 2)` calls it. Naming the field replaces the pointer. A call is `global initializer is not a constant`.
+`op func (T, T) T = add` on `type Box<T type> struct` is that function pointer for `Box<i32>`. `var box Box<i32>` stores `add`. `box.op(40, 2)` calls it. Naming the field replaces the pointer. A call is `global initializer is not a constant`.
 
 ```c
 func add(a i32, b i32) i32 {
     return a + b;
 }
 
-type Box[T type] struct {
+type Box<T type> struct {
     op func (T, T) T = add;
 };
 
 func main() i32 {
-    var box Box[i32];
+    var box Box<i32>;
     return box.op(40, 2);
 }
 ```
@@ -469,7 +469,7 @@ retq                             # return
 
 An empty struct has no fields. `sizeof` is 0. It can have methods, so a trait parameter accepts it.
 
-`type Empty struct {}` is the same empty struct. `type Tag[T type] struct {}` is `unused parameter`.
+`type Empty struct {}` is the same empty struct. `type Tag<T type> struct {}` is `unused parameter`.
 
 ```c
 type Empty struct;
@@ -519,17 +519,17 @@ A struct defined in another file of the same package is already visible, includi
 
 A struct value names its fields. The type comes from the place the value is used: the variable, the assignment, the argument, or the result.
 
-It also comes from a type name written in front of the braces: `Point{}`, `Point{.x = 1}`, `geom.Point{}`, `Vec[i32]{}`, `Vec[i32]{.n = 1}`, `pkg.Vec[i32]{}`, `Buf[4, i32]{}`, and `pkg.Buf[4, i32]{}`.
+It also comes from a type name written in front of the braces: `Point{}`, `Point{.x = 1}`, `geom.Point{}`, `Vec<i32>{}`, `Vec<i32>{.n = 1}`, `pkg.Vec<i32>{}`, `Buf<4, i32>{}`, and `pkg.Buf<4, i32>{}`.
 
 A field that is left out takes the value written on the field, or zero when the field has none. Naming a field twice is reported as `redefinition`. An unknown field is reported as `undeclared identifier`.
 
 Used where the type is not a struct, the initializer is reported as `type mismatch`. A name that is not a struct, such as `Integer{}`, is reported as `type mismatch`.
 
-A type application that is not a generic struct, such as `Integer[i32]{}`, is reported as `type mismatch`. The wrong number of type arguments is reported as `argument count`.
+A type application that is not a generic struct, such as `Integer<i32>{}`, is reported as `type mismatch`. The wrong number of type arguments is reported as `argument count`.
 
 A generic struct that is not exported is reported as `name is not exported`.
 
-`{10, 20}`, `Point{10, 20}`, and `Vec[i32]{1, 2}` are value lists, so where a struct is expected any one is reported as `type mismatch`. `(10, 20)` is a tuple, so where a struct is expected it is reported as `type mismatch`.
+`{10, 20}`, `Point{10, 20}`, and `Vec<i32>{1, 2}` are value lists, so where a struct is expected any one is reported as `type mismatch`. `(10, 20)` is a tuple, so where a struct is expected it is reported as `type mismatch`.
 
 An empty `{}` leaves every field zero and still needs a type from the place it is used. Mixing a named field and a positional value is reported as `type mismatch`.
 
@@ -602,7 +602,7 @@ The program returns 42. `origin` is a constant, so `origin.x = 1` is reported as
 
 An `extern(abi="c") struct` is marked so it can be used with an `extern(abi="c")` function. An empty body is an opaque handle: the type has no fields and occupies one byte, and a library uses it through a pointer.
 
-`extern struct` uses the compiler's own layout. `extern(abi="c") type Vec[T type] struct` is `extern(abi="c") on a trait or a generic`. `extern type Vec[T type] struct` is `not supported yet`.
+`extern struct` uses the compiler's own layout. `extern(abi="c") type Vec<T type> struct` is `extern(abi="c") on a trait or a generic`. `extern type Vec<T type> struct` is `not supported yet`.
 
 ```c
 extern(abi="c") type Pair struct {

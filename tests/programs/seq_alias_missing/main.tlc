@@ -2,7 +2,7 @@ import "std/seq";
 
 type Row []i32;
 
-func use(items seq.Seq[i32]) i32 {
+func use(items seq.Seq<i32>) i32 {
     return items.len();
 }
 

@@ -26,7 +26,7 @@ std::unique_ptr<Expr> sizeof_type(std::string type_name, bool align) {
     return expr;
 }
 
-// `unsafe func Allocator::malloc[T type](self *this) ?*T`. The pointer stays in `owned_defaults_`.
+// `unsafe func Allocator::malloc<T type>(self *this) ?*T`. The pointer stays in `owned_defaults_`.
 FunctionDecl allocator_malloc_default() {
     FunctionDecl fn;
     fn.name = "malloc";
@@ -966,7 +966,7 @@ bool Checker::require_satisfies(int struct_id, int trait_id, bool through_pointe
         return true;
     };
     for (const TraitInfo::Method &method : traits_[static_cast<std::size_t>(trait_id)].methods) {
-        // `ref` has a pointer receiver. A value `Seq[T]` checks `len` and `at` and does not require it.
+        // `ref` has a pointer receiver. A value `Seq<T>` checks `len` and `at` and does not require it.
         if (!through_pointer && method.iteration_ref) {
             continue;
         }
@@ -1091,7 +1091,7 @@ bool Checker::accept_iteration(const Type &got, const Type &want, SourceLoc loc)
     if (element == nullptr) {
         return false;
     }
-    // `[]const u8` indexes a const byte. `Seq[u8]` still accepts that string.
+    // `[]const u8` indexes a const byte. `Seq<u8>` still accepts that string.
     return allows_added_const(*trait.iteration_elem, *element);
 }
 
@@ -1531,7 +1531,7 @@ void Checker::declare_struct_tags(const TranslationUnit &unit, uint32_t file_id)
         if (item == nullptr || item->name.empty()) {
             continue;
         }
-        // `One struct { value T; }` is specialized with `Shape[T]`. The bare arm still names `T`.
+        // `One struct { value T; }` is specialized with `Shape<T>`. The bare arm still names `T`.
         if (item->anonymous) {
             const auto dot = item->name.find('.');
             if (dot != std::string::npos && generic_names.contains(item->name.substr(0, dot))) {
@@ -2981,13 +2981,13 @@ void Checker::register_tuple_alias_template(const TypedefDecl &item) {
     if (item.name.empty()) {
         return;
     }
-    // `type Name[T type] const T` is not this alias. A concrete `type Name const i32` is.
+    // `type Name<T type> const T` is not this alias. A concrete `type Name const i32` is.
     if (item.is_const) {
         error(item.loc, "not supported yet");
         return;
     }
-    // `type MyAlias[T type] Vec[T]` and `type MyAlias[N i32] Buf[N]` name another generic type.
-    // `type Name[T type] T` names the parameter. A trait constraint is not this alias.
+    // `type MyAlias<T type> Vec<T>` and `type MyAlias<N i32> Buf<N>` name another generic type.
+    // `type Name<T type> T` names the parameter. A trait constraint is not this alias.
     // A pointer and a bare name that is not a parameter are not this alias.
     const bool application = !item.is_tuple && !item.type_args.empty() && !item.type_name.empty() &&
                              item.indirections == 0 && !item.is_array && item.shells.empty() && !item.is_fn_ptr;
@@ -3005,7 +3005,7 @@ void Checker::register_tuple_alias_template(const TypedefDecl &item) {
         return;
     }
     for (const TypeParam &param : item.type_params) {
-        // `N i32` is only a type application, `Buf[N]`. A trait constraint stays rejected.
+        // `N i32` is only a type application, `Buf<N>`. A trait constraint stays rejected.
         if (param.is_pack || param.is_trait || (!param.is_type && !param.is_value) || (param.is_value && !application)) {
             error(item.loc, "not supported yet");
             return;
@@ -3572,14 +3572,14 @@ std::string Checker::type_desc(const Type &type, bool display) const {
             if (name.rfind(".union.", 0) == 0 && name.find('.', std::string(".union.").size()) == std::string::npos) {
                 return "union";
             }
-            // A message names a specialization as it is written, `Box[i32]`, not `Box.spec.i32`.
+            // A message names a specialization as it is written, `Box<i32>`, not `Box.spec.i32`.
             const StructInfo &info = structs_[static_cast<std::size_t>(type.struct_id)];
             if (display && !info.template_name.empty()) {
-                std::string text = info.template_name + "[";
+                std::string text = info.template_name + "<";
                 for (std::size_t i = 0; i < info.spec_args.size(); ++i) {
                     text += (i == 0 ? "" : ", ") + spec_arg_desc(info.spec_args[i]);
                 }
-                return text + "]";
+                return text + ">";
             }
             return name;
         }

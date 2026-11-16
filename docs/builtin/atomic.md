@@ -82,8 +82,8 @@ import "builtin";
 var n i32;
 
 func main() i32 {
-    builtin.atomic_store[i32](&n, 42, 4);
-    return builtin.atomic_rmw[i32](&n, 1, 1, 0);
+    builtin.atomic_store<i32>(&n, 42, 4);
+    return builtin.atomic_rmw<i32>(&n, 1, 1, 0);
 }
 ```
 
@@ -116,13 +116,13 @@ A `seq_cst` compare-exchange of an `f32` is `lock cmpxchgl` of those bits.
 
 ## Signatures
 
-`atomic_load[T](p *T, comptime order i32)` returns `T`.
+`atomic_load<T>(p *T, comptime order i32)` returns `T`.
 
-`atomic_store[T](p *T, value T, comptime order i32)` has no result.
+`atomic_store<T>(p *T, value T, comptime order i32)` has no result.
 
-`atomic_rmw[T](p *T, comptime op i32, value T, comptime order i32)` returns the previous `T`.
+`atomic_rmw<T>(p *T, comptime op i32, value T, comptime order i32)` returns the previous `T`.
 
-`atomic_cmpxchg[T](p *T, expected T, desired T, comptime success i32, comptime failure i32)` returns `(T, bool)`.
+`atomic_cmpxchg<T>(p *T, expected T, desired T, comptime success i32, comptime failure i32)` returns `(T, bool)`.
 
 `fence(comptime order i32)` has no result.
 

@@ -1,1 +1,1 @@
-compile-error: expected ']'
+compile-error: main.tlc:3:47: error: expected an expression

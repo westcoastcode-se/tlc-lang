@@ -1,7 +1,7 @@
 // `at(i i32)` on a `seq.Seq` converts its argument as any call does. `items.at(1.0)` reads element 1.
 import "std/seq";
 
-func use(items seq.Seq[i32]) i32 {
+func use(items seq.Seq<i32>) i32 {
     return items.at(1.0);
 }
 

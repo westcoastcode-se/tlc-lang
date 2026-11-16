@@ -7,5 +7,5 @@ type Point struct {
 
 func main() i32 {
     var point Point;
-    return builtin.atomic_load[Point](&point, 0).a;
+    return builtin.atomic_load<Point>(&point, 0).a;
 }

@@ -3,7 +3,7 @@ type Point struct {
     y i32;
 };
 
-type Box[T type] struct {
+type Box<T type> struct {
     value T;
     extra i32;
 };
@@ -27,8 +27,8 @@ unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 {
     return null;
 }
 
-func make[T type](value T) *Box[T] {
-    return new Box[T]{.value = value, .extra = 2};
+func make<T type>(value T) *Box<T> {
+    return new Box<T>{.value = value, .extra = 2};
 }
 
 func main() i32 {
@@ -47,11 +47,11 @@ func main() i32 {
     pts[0].x = 6;
     pts[1].y = 2;
 
-    var box *Box[i32] = make[i32](40);
+    var box *Box<i32> = make<i32>(40);
     if (box.value != 40 || box.extra != 2) {
         return 3;
     }
-    var direct *Box[i32] = new Box[i32]{.value = 1, .extra = 0};
+    var direct *Box<i32> = new Box<i32>{.value = 1, .extra = 0};
     if (direct.value != 1 || direct.extra != 0) {
         return 4;
     }

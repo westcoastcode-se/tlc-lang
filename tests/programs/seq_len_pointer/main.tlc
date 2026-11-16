@@ -12,7 +12,7 @@ func Bag::at(self this, i i32) i32 {
     return self.n;
 }
 
-func use(items seq.Seq[i32]) i32 {
+func use(items seq.Seq<i32>) i32 {
     return items.len();
 }
 

@@ -44,7 +44,7 @@ The compiler supplies the bodies of `name` and `fields`. `fields` returns `[]con
 
 `typeof(Point.ptr)` for `self *this` spells `func(*Point) i32`. `typeof(Point.make)` for a static method has `has_this` false and spells `func(i32) Point`.
 
-`typeof(id)` for `func id[T type](value T) T` spells `func[T type](T) T` and `generic` is true. `return f` when `f` names that generic is `not supported yet`. `var f = Point.get` is reported as `type mismatch`.
+`typeof(id)` for `func id<T type>(value T) T` spells `func<T type>(T) T` and `generic` is true. `return f` when `f` names that generic is `not supported yet`. `var f = Point.get` is reported as `type mismatch`.
 
 A function pointer is `Other`.
 
@@ -58,7 +58,7 @@ A function pointer is `Other`.
 
 `p.name()` on a `*builtin.Type` uses the `Type` `p` points at when `p` is a `comptime const`.
 
-`name` returns `*const u8`. The text is the spelling diagnostics use: `i32`, `*i32`, `?*Point`, `[4]i32`, `Box[i32]`, `func(i32, i32) i32`, `*func(i32, i32) i32`.
+`name` returns `*const u8`. The text is the spelling diagnostics use: `i32`, `*i32`, `?*Point`, `[4]i32`, `Box<i32>`, `func(i32, i32) i32`, `*func(i32, i32) i32`.
 
 The bytes are constant. `*text = 0` and `text[0] = 0` are reported as `type mismatch`.
 
@@ -78,7 +78,7 @@ Storing through `fields[i].kind` is `type mismatch`. The field is `kind` because
 
 An alias of a struct lists that struct's fields. `typeof(Alias)` stays different from `typeof(Point)`.
 
-A generic struct lists the fields of that specialization. When `box` is `Box[i32]`, `typeof(box)` has `value` of type `i32`.
+A generic struct lists the fields of that specialization. When `box` is `Box<i32>`, `typeof(box)` has `value` of type `i32`.
 
 Any other type has length 0, including `i32`, a pointer, an array, a slice, a function, an alias of a primitive, an anonymous struct, and a union.
 

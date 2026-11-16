@@ -26,8 +26,8 @@ A `var` or a local `const` chooses the overload without `comptime`, and that cal
 import "std/mem";
 
 func main() i32 {
-    assert(mem.memeql[u8]("hi", "hi"), "eq");
-    const order = mem.memcmp[u8]("ab", "ac");
+    assert(mem.memeql<u8>("hi", "hi"), "eq");
+    const order = mem.memcmp<u8>("ab", "ac");
     return order;
 }
 ```
@@ -48,10 +48,10 @@ Each name has two forms. Both take `[]const T`.
 A raw `*T` is not an argument. `p[0:n]` is the slice.
 
 ```c
-export func memeql[T type](comptime lhs []const T, comptime rhs []const T) bool;
-export func memeql[T type](lhs []const T, rhs []const T) bool;
-export func memcmp[T type](comptime lhs []const T, comptime rhs []const T) i32;
-export func memcmp[T type](lhs []const T, rhs []const T) i32;
+export func memeql<T type>(comptime lhs []const T, comptime rhs []const T) bool;
+export func memeql<T type>(lhs []const T, rhs []const T) bool;
+export func memcmp<T type>(comptime lhs []const T, comptime rhs []const T) i32;
+export func memcmp<T type>(lhs []const T, rhs []const T) i32;
 ```
 
 ```asm
@@ -76,45 +76,45 @@ An `i32` element is compared as that number, which is a different order from the
 
 ## Constant strings
 
-`mem.memeql[u8]("hi", "hi")` is true.
+`mem.memeql<u8>("hi", "hi")` is true.
 
-`mem.memeql[u8]("hi", "ha")` and `mem.memeql[u8]("hi", "hi!")` are false.
+`mem.memeql<u8>("hi", "ha")` and `mem.memeql<u8>("hi", "hi!")` are false.
 
-`mem.memeql[u8]("", "")` is true.
+`mem.memeql<u8>("", "")` is true.
 
-`mem.memeql[u8]("hello"[0:2], "he")` is true, and so is `mem.memeql[u8](label, label)` when `label` is a `comptime const` string in the same file.
+`mem.memeql<u8>("hello"[0:2], "he")` is true, and so is `mem.memeql<u8>(label, label)` when `label` is a `comptime const` string in the same file.
 
 A null in the middle is a byte.
 
-`mem.memeql[u8]("a\000b", "a\000b")` is true, and `mem.memeql[u8]("a\000b", "ab")` is false.
+`mem.memeql<u8>("a\000b", "a\000b")` is true, and `mem.memeql<u8>("a\000b", "ab")` is false.
 
 The terminating null is not a byte of the slice.
 
 Omitting `[u8]` infers `u8` when both arguments are constant strings.
 
-`mem.memcmp[u8]("ab", "ab")` is `0`.
+`mem.memcmp<u8>("ab", "ab")` is `0`.
 
-`mem.memcmp[u8]("ab", "ac")` is `-1`, and `mem.memcmp[u8]("ac", "ab")` is `1`.
+`mem.memcmp<u8>("ab", "ac")` is `-1`, and `mem.memcmp<u8>("ac", "ab")` is `1`.
 
-`mem.memcmp[u8]("a", "ab")` is `-1`, and `mem.memcmp[u8]("ab", "a")` is `1`.
+`mem.memcmp<u8>("a", "ab")` is `-1`, and `mem.memcmp<u8>("ab", "a")` is `1`.
 
-`mem.memcmp[u8]("", "")` is `0`.
+`mem.memcmp<u8>("", "")` is `0`.
 
 ## Folding into a constant
 
-`assert(mem.memeql[u8]("hi", "hi"), "eq")` folds and adds no code.
+`assert(mem.memeql<u8>("hi", "hi"), "eq")` folds and adds no code.
 
 A false comparison fails the assert, and the diagnostic is the message.
 
-`const same = mem.memeql[u8]("hi", "hi")` is the integer `1`.
+`const same = mem.memeql<u8>("hi", "hi")` is the integer `1`.
 
-`const diff = mem.memeql[u8]("hi", "ha")` is `0`.
+`const diff = mem.memeql<u8>("hi", "ha")` is `0`.
 
-`var live = mem.memeql[u8]("hi", "hi")` is a `bool`.
+`var live = mem.memeql<u8>("hi", "hi")` is a `bool`.
 
-`const order = mem.memcmp[u8]("ab", "ac")` is the integer `-1`.
+`const order = mem.memcmp<u8>("ab", "ac")` is the integer `-1`.
 
-`var live_cmp = mem.memcmp[u8]("ab", "ac")` is an `i32`.
+`var live_cmp = mem.memcmp<u8>("ab", "ac")` is an `i32`.
 
 ## Calls the compiler rejects
 
@@ -126,9 +126,9 @@ A `var` or a local `const` runs the body.
 
 A bound past the string is not a constant slice.
 
-`const n = mem.memeql[u8]("hello"[1:9], "ell")` is `global initializer is not a constant`.
+`const n = mem.memeql<u8>("hello"[1:9], "ell")` is `global initializer is not a constant`.
 
-`mem.memeql[i32]("hi", "hi")`, `mem.memeql[bool]("hi", "hi")`, and `mem.memeql[u8](1, 2)` are `type mismatch`.
+`mem.memeql<i32>("hi", "hi")`, `mem.memeql<bool>("hi", "hi")`, and `mem.memeql<u8>(1, 2)` are `type mismatch`.
 
 One argument is `argument count`.
 

@@ -1,13 +1,13 @@
-// A message names a specialization the way it is written, `Box[i32]`, not by its internal name.
-type Box[T type] struct {
+// A message names a specialization the way it is written, `Box<i32>`, not by its internal name.
+type Box<T type> struct {
     v T;
 }
 
-func take(b Box[i32]) i32 {
+func take(b Box<i32>) i32 {
     return b.v;
 }
 
 func main() i32 {
-    var b Box[u8] = {.v = 1u8};
+    var b Box<u8> = {.v = 1u8};
     return take(b);
 }

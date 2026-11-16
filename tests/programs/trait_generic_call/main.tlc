@@ -2,7 +2,7 @@ type Box trait {
     func id() i32;
 };
 
-func Box::keep[T type](self *this, n T) T {
+func Box::keep<T type>(self *this, n T) T {
     return n;
 }
 
@@ -15,7 +15,7 @@ func Cell::id(self *this) i32 {
 }
 
 func take(b *Box) i32 {
-    return b.keep[i32](40) + b.id();
+    return b.keep<i32>(40) + b.id();
 }
 
 func main() i32 {

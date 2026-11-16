@@ -1,4 +1,4 @@
-type Seq[T type] trait {
+type Seq<T type> trait {
     n T;
     func at(i i32) T;
     func put(value T) i32;
@@ -37,13 +37,13 @@ func Bytes::echo(self this, p *u8) *u8 {
     return p;
 }
 
-func use(items Seq[i32]) i32 {
+func use(items Seq<i32>) i32 {
     var n i32 = items.at(2);
     var p *i32 = items.echo(&n);
     return *p;
 }
 
-func use_byte(items *Seq[u8]) i32 {
+func use_byte(items *Seq<u8>) i32 {
     return i32(items.at(0)) + items.put(items.n);
 }
 

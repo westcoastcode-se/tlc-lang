@@ -1,0 +1,1 @@
+compile-error: main.tlc:11:12: error: argument count

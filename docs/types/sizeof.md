@@ -26,7 +26,7 @@ The compiler reports `sizeof(add)` as `not supported yet` when `add` is a functi
 
 `sizeof(builtin.Type)` is 8. `sizeof(builtin.CompiledType)` is 24.
 
-That `i32` may be a compile-time integer type argument, so `width[sizeof(Point)]()` is `width[8]()`.
+That `i32` may be a compile-time integer type argument, so `width<sizeof(Point)>()` is `width<8>()`.
 
 ## alignof
 

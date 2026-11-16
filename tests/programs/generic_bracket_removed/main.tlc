@@ -1,0 +1,8 @@
+// `[T]` is not a generic list. `type Box[T type]` starts an array alias whose length is `T`.
+type Box[T type] struct {
+    v T;
+}
+
+func main() i32 {
+    return 0;
+}

@@ -74,9 +74,9 @@ Its value methods are library source in [`std/unicode`](../std/unicode.md) and [
 
 A method template on the alias puts the type parameters after the name.
 
-`func Integer::id[T type](self this, value T) i32` is called as `Integer(2).id[i32](40)`.
+`func Integer::id<T type>(self this, value T) i32` is called as `Integer(2).id<i32>(40)`.
 
-`func Integer::make[T type](value T) i32` is the static function, called as `Integer.make[i32](20)`.
+`func Integer::make<T type>(value T) i32` is the static function, called as `Integer.make<i32>(20)`.
 
 A call without the brackets is reported as `undeclared identifier`.
 
@@ -85,12 +85,12 @@ A static template called on a value is reported as `type mismatch`.
 ```c
 type Integer i32;
 
-func Integer::id[T type](self this, value T) i32 {
+func Integer::id<T type>(self this, value T) i32 {
     return i32(self) + value;
 }
 
 func main() i32 {
-    return Integer(2).id[i32](40);
+    return Integer(2).id<i32>(40);
 }
 ```
 

@@ -40,17 +40,17 @@ type Point struct {
     x i32;
 };
 
-type Box[T type] struct {
+type Box<T type> struct {
     value T;
 };
 
-var Box[T]::extra i32 = 1;
+var Box<T>::extra i32 = 1;
 
-type Buf[N i32, T type] struct {
+type Buf<N i32, T type> struct {
     value T;
 };
 
-var Buf[N, T]::count i32 = N;
+var Buf<N, T>::count i32 = N;
 
 type Color enum { Red };
 
@@ -59,8 +59,8 @@ var Color::label i32;
 func main() i32 {
     var e = Entity.make();
     var p = &Entity.next;
-    Box[Point].extra = 9;
-    return e.id + Box[i32].extra + *p + Buf[4, Point].count + Entity.bias + Entity.spare + Color.label - 44;
+    Box<Point>.extra = 9;
+    return e.id + Box<i32>.extra + *p + Buf<4, Point>.count + Entity.bias + Entity.spare + Color.label - 44;
 }
 ```
 
@@ -84,9 +84,9 @@ The program returns 42.
 
 `Entity.next` is one variable for `Entity`.
 
-`Box[i32].extra` and `Box[Point].extra` are two variables.
+`Box<i32>.extra` and `Box<Point>.extra` are two variables.
 
-`Buf[4, Point].count` is `N`, which is 4 for that instantiation.
+`Buf<4, Point>.count` is `N`, which is 4 for that instantiation.
 
 Omitting `=` zeroes the variable, the same as any other file-scope `var`.
 
@@ -155,11 +155,11 @@ A member may use the same name: `e.next` is the member and `Entity.next` is the 
 
 Another package reads and assigns `pkg.Entity.next` when `Entity` is exported.
 
-`export var Box[T]::extra` publishes that variable on a generic struct.
+`export var Box<T>::extra` publishes that variable on a generic struct.
 
-Another package reads and assigns `pkg.Box[i32].extra` when `Box` and the variable are exported.
+Another package reads and assigns `pkg.Box<i32>.extra` when `Box` and the variable are exported.
 
-`Box[i32].extra` and `Box[Point].extra` stay two variables.
+`Box<i32>.extra` and `Box<Point>.extra` stay two variables.
 
 Without `export`, the name is reported as `next is not exported`.
 
@@ -167,7 +167,7 @@ An unexported type is reported as `Box is not exported`.
 
 `extern` on the variable is reported as `not supported yet`.
 
-`extern(abi="c") var Box[T]::extra` and `extern(abi="c")` on a trait are `extern(abi="c") on a trait or a generic`.
+`extern(abi="c") var Box<T>::extra` and `extern(abi="c")` on a trait are `extern(abi="c") on a trait or a generic`.
 
 A member another package can name is `export next i32` inside the struct.
 
@@ -213,11 +213,11 @@ The program returns 42.
 ```c
 package math;
 
-export type Box[T type] struct {
+export type Box<T type> struct {
     value T;
 };
 
-export var Box[T]::extra i32 = 40;
+export var Box<T>::extra i32 = 40;
 ```
 
 ```asm
@@ -230,14 +230,14 @@ retq                             # return
 import "math";
 
 func main() i32 {
-    math.Box[i32].extra = math.Box[i32].extra + 2;
-    return math.Box[i32].extra;
+    math.Box<i32>.extra = math.Box<i32>.extra + 2;
+    return math.Box<i32>.extra;
 }
 ```
 
 ```asm
 main:
-movq (%rip), %rax                # address of Box[i32].extra
+movq (%rip), %rax                # address of Box<i32>.extra
 movl (%rax), %ecx                # load it
 addl $2, %ecx                    # add 2
 movq (%rip), %rax
@@ -249,6 +249,6 @@ retq
 
 The program returns 42.
 
-`math.Box[i32].extra` and `math.Box[Point].extra` are two globals.
+`math.Box<i32>.extra` and `math.Box<Point>.extra` are two globals.
 
 [Index](../README.md) · [Previous: Methods on primitive aliases](alias.md) · [Next: Constants on a type](constant.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

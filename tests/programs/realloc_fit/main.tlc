@@ -30,12 +30,12 @@ func main() i32 {
     var arena Arena;
     arena.used = 0;
     arena.calls = 0;
-    var buf = arena.alloc[i32](3);
+    var buf = arena.alloc<i32>(3);
     buf[0] = 10;
     buf[1] = 20;
     buf[2] = 12;
-    var same = arena.realloc[i32](buf, 3);
-    var wide = arena.realloc[i32](same, 1);
+    var same = arena.realloc<i32>(buf, 3);
+    var wide = arena.realloc<i32>(same, 1);
     if (arena.calls != 0) {
         return 1;
     }
@@ -48,7 +48,7 @@ func main() i32 {
     if (wide[0] + wide[1] + wide[2] != 42) {
         return 4;
     }
-    var grown = arena.realloc[i32](wide, 4);
+    var grown = arena.realloc<i32>(wide, 4);
     if (arena.calls != 1) {
         return 5;
     }

@@ -2,10 +2,10 @@ func id(n i32) i32 {
     return n;
 }
 
-func apply[T type](op func (T, T) T, a T, b T) T {
+func apply<T type>(op func (T, T) T, a T, b T) T {
     return op(a, b);
 }
 
 func main() i32 {
-    return apply[i32](id, 40, 2);
+    return apply<i32>(id, 40, 2);
 }

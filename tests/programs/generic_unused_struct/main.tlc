@@ -1,6 +1,6 @@
-type Tag[T type] struct {}
+type Tag<T type> struct {}
 
-func Tag[T]::id(self this) i32 {
+func Tag<T>::id(self this) i32 {
     return 1;
 }
 

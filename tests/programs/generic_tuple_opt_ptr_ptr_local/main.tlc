@@ -1,4 +1,4 @@
-func num[T type](value ?**T) i32 {
+func num<T type>(value ?**T) i32 {
     var q ?**T = value;
     if (q == null) {
         return 0;
@@ -6,7 +6,7 @@ func num[T type](value ?**T) i32 {
     return **q;
 }
 
-func read[T type](value ?**T) i32 {
+func read<T type>(value ?**T) i32 {
     var q ?**T = value;
     if (q == null) {
         return 0;
@@ -14,7 +14,7 @@ func read[T type](value ?**T) i32 {
     return (**q)[0] + (**q)[1];
 }
 
-func deep[T type](value ?**T) i32 {
+func deep<T type>(value ?**T) i32 {
     var q ?**T = value;
     if (q == null) {
         return 0;

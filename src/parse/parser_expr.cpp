@@ -147,14 +147,16 @@ bool Parser::skip_type_base(std::size_t &index, int leading, bool cast) const {
     if (head.kind != TokenKind::Identifier) {
         return false;
     }
-    // `ShapeType(value)` and `Getter[i32](value)` after the type is declared in this file.
+    // `ShapeType(value)` and `Getter<i32>(value)` after the type is declared in this file.
     // `f()` stays a call. `*Point(p)` is a cast. `*f()` stays a dereference.
     if (cast && type_names_.count(head.text) != 0) {
         ++index;
-        if (peek(index).kind == TokenKind::LBracket) {
-            if (!skip_balanced(index, TokenKind::LBracket, TokenKind::RBracket)) {
+        if (peek(index).kind == TokenKind::Lt) {
+            std::size_t after = 0;
+            if (!angle_list_at(index, after)) {
                 return false;
             }
+            index = after;
         }
         if (peek(index).kind == TokenKind::LParen) {
             return true;
@@ -269,8 +271,12 @@ bool Parser::skip_placed_type(std::size_t &ahead) const {
     } else {
         return false;
     }
-    if (peek(ahead).kind == TokenKind::LBracket) {
-        return skip_balanced(ahead, TokenKind::LBracket, TokenKind::RBracket);
+    if (peek(ahead).kind == TokenKind::Lt) {
+        std::size_t after = 0;
+        if (!angle_list_at(ahead, after)) {
+            return false;
+        }
+        ahead = after;
     }
     return true;
 }
@@ -389,8 +395,8 @@ Parser::ParenType Parser::parse_cast_type() {
         type.name = peek().text;
         ++pos_;
     }
-    // `Getter[i32](value)`. `[N]T` is written with the brackets in front, so these are type arguments.
-    if (!type.name.empty() && type.name != "invalid" && check(TokenKind::LBracket)) {
+    // `Getter<i32>(value)`.
+    if (!type.name.empty() && type.name != "invalid" && check(TokenKind::Lt)) {
         type.type_args = parse_type_args();
     }
     if (check(TokenKind::Star)) {
@@ -465,7 +471,7 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
     node.loc = loc;
     node.allocator = std::move(allocator);
     // `new [n]T` reserves n elements. `new [_]T` takes the length from the element list.
-    // `new Vec[i32]` is a type argument list, so those brackets follow the name.
+    // `new Vec<i32>` is a type argument list, so those brackets follow the name.
     std::unique_ptr<Expr> count;
     bool inferred = false;
     if (check(TokenKind::LBracket)) {
@@ -556,7 +562,7 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
         node.type_name = peek().text;
         ++pos_;
     }
-    if (check(TokenKind::LBracket)) {
+    if (check(TokenKind::Lt)) {
         node.type_args = parse_type_args();
     }
     // `new Point{.x = 1}` writes the named fields after the block is reserved.
@@ -784,13 +790,18 @@ std::unique_ptr<Expr> Parser::finish_postfix(std::unique_ptr<Expr> expr) {
             expr = make_expr(std::move(selector));
             continue;
         }
-        // `Buf[4, i32].count` and `pkg.Buf[4, i32].count`. `arr[i].field` has no comma and stays an index.
+        // `id<i32>(1)`, `Vec<i32>{}`, and `Buf<4, i32>.count` after a name. Any other `<` is a comparison.
         const bool package_type = std::holds_alternative<Expr::Selector>(expr->data) &&
                                   std::get<Expr::Selector>(expr->data).base != nullptr &&
                                   std::holds_alternative<Expr::Name>(std::get<Expr::Selector>(expr->data).base->data) &&
                                   std::get<Expr::Selector>(expr->data).type_args.empty();
-        if (check(TokenKind::LBracket) &&
-            (std::holds_alternative<Expr::Name>(expr->data) || package_type) && bracket_comma_then_dot()) {
+        const bool named = std::holds_alternative<Expr::Name>(expr->data) || package_type;
+        const bool member = std::holds_alternative<Expr::Selector>(expr->data);
+        std::size_t after = 0;
+        const TokenKind follow = check(TokenKind::Lt) && (named || member) && angle_list_at(0, after)
+                                     ? peek(after).kind
+                                     : TokenKind::End;
+        if (follow == TokenKind::Dot && named) {
             Expr::Selector selector;
             selector.loc = expr_loc(*expr);
             selector.base = std::move(expr);
@@ -805,7 +816,7 @@ std::unique_ptr<Expr> Parser::finish_postfix(std::unique_ptr<Expr> expr) {
             expr = make_expr(std::move(selector));
             continue;
         }
-        if (check(TokenKind::LBracket) && bracket_then_paren()) {
+        if (follow == TokenKind::LParen) {
             Expr::Call call;
             call.loc = expr_loc(*expr);
             call.callee = std::move(expr);
@@ -823,9 +834,7 @@ std::unique_ptr<Expr> Parser::finish_postfix(std::unique_ptr<Expr> expr) {
             expr = make_expr(std::move(call));
             continue;
         }
-        // `Vec[i32]{}` and `pkg.Vec[i32]{}`. `a[i]` and `(f())[i]` stay indexes.
-        if (check(TokenKind::LBracket) &&
-            (std::holds_alternative<Expr::Name>(expr->data) || package_type) && bracket_then_brace()) {
+        if (follow == TokenKind::LBrace && named) {
             std::string type_name;
             std::string type_package;
             if (const auto *name = std::get_if<Expr::Name>(&expr->data)) {
@@ -1169,141 +1178,6 @@ std::unique_ptr<Expr> Parser::parse_init() {
     return make_expr(std::move(init));
 }
 
-bool Parser::known_type_name(const std::string &name) const {
-    if (is_type_alias(name) || type_names_.count(name) != 0) {
-        return true;
-    }
-    for (const std::string &open : open_type_params_) {
-        if (open == name) {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool Parser::scan_type_core(std::size_t &ahead, bool &value_shaped) const {
-    bool pointed = false;
-    while (peek(ahead).kind == TokenKind::Star ||
-           (peek(ahead).kind == TokenKind::Question && peek(ahead + 1).kind == TokenKind::Star)) {
-        pointed = true;
-        if (peek(ahead).kind == TokenKind::Question) {
-            ++ahead;
-        }
-        ++ahead;
-        if (peek(ahead).kind == TokenKind::KwConst) {
-            ++ahead;
-        }
-    }
-    if (peek(ahead).kind == TokenKind::LBracket) {
-        bool nested_value = false;
-        if (!scan_type_arg(ahead, nested_value)) {
-            return false;
-        }
-        value_shaped = pointed ? false : nested_value;
-        return true;
-    }
-    if (peek(ahead).kind == TokenKind::KwConst) {
-        ++ahead;
-    }
-    if (peek(ahead).kind == TokenKind::KwBool || peek(ahead).kind == TokenKind::KwVoid ||
-        peek(ahead).kind == TokenKind::KwFloat || peek(ahead).kind == TokenKind::KwDouble || is_int_spec(peek(ahead).kind)) {
-        ++ahead;
-        value_shaped = false;
-        return true;
-    }
-    if (peek(ahead).kind != TokenKind::Identifier) {
-        return false;
-    }
-    const bool name_is_type = known_type_name(peek(ahead).text);
-    ++ahead;
-    if (peek(ahead).kind == TokenKind::Dot && peek(ahead + 1).kind == TokenKind::Identifier) {
-        const bool member_is_type = known_type_name(peek(ahead + 1).text);
-        ahead += 2;
-        if (peek(ahead).kind == TokenKind::LBracket) {
-            ++ahead;
-            bool inner_value = false;
-            if (!scan_type_arg_list(ahead, inner_value)) {
-                return false;
-            }
-            // `pkg.Vec[i32]` is a type. `row.cell[0]` is an index.
-            value_shaped = inner_value;
-            return true;
-        }
-        value_shaped = !member_is_type && !name_is_type;
-        return true;
-    }
-    if (peek(ahead).kind == TokenKind::LBracket) {
-        ++ahead;
-        bool inner_value = false;
-        if (!scan_type_arg_list(ahead, inner_value)) {
-            return false;
-        }
-        // `Vec[i32]` is a type. `row[0]` is an index.
-        value_shaped = inner_value;
-        return true;
-    }
-    // `i32` and `*i32` are types. `i` and `*p` are values.
-    value_shaped = !name_is_type;
-    return true;
-}
-
-bool Parser::scan_type_arg(std::size_t &ahead, bool &value_shaped) const {
-    value_shaped = false;
-    if (peek(ahead).kind == TokenKind::IntLiteral) {
-        value_shaped = true;
-        ++ahead;
-        return true;
-    }
-    if (peek(ahead).kind == TokenKind::LBracket) {
-        if (!skip_balanced(ahead, TokenKind::LBracket, TokenKind::RBracket)) {
-            return false;
-        }
-        if (peek(ahead).kind == TokenKind::LBrace) {
-            return false;
-        }
-        if (!scan_type_core(ahead, value_shaped)) {
-            return false;
-        }
-        if (peek(ahead).kind == TokenKind::LBrace) {
-            return false;
-        }
-        // `[4]i32` is a type even when the length is a literal.
-        value_shaped = false;
-        return true;
-    }
-    return scan_type_core(ahead, value_shaped);
-}
-
-bool Parser::scan_type_arg_list(std::size_t &ahead, bool &value_shaped) const {
-    value_shaped = false;
-    bool any = false;
-    bool comma = false;
-    while (peek(ahead).kind != TokenKind::RBracket && peek(ahead).kind != TokenKind::End) {
-        bool item_value = false;
-        if (!scan_type_arg(ahead, item_value)) {
-            return false;
-        }
-        any = true;
-        if (item_value) {
-            value_shaped = true;
-        }
-        if (peek(ahead).kind == TokenKind::Comma) {
-            comma = true;
-            ++ahead;
-            continue;
-        }
-        break;
-    }
-    if (!any || peek(ahead).kind != TokenKind::RBracket) {
-        return false;
-    }
-    ++ahead;
-    if (comma) {
-        value_shaped = false;
-    }
-    return true;
-}
-
 bool Parser::paren_generic_call() const {
     std::size_t ahead = 0;
     int wraps = 0;
@@ -1321,12 +1195,8 @@ bool Parser::paren_generic_call() const {
         }
         ahead += 2;
     }
-    if (peek(ahead).kind != TokenKind::LBracket) {
-        return false;
-    }
-    ++ahead;
-    bool value_shaped = false;
-    if (!scan_type_arg_list(ahead, value_shaped) || value_shaped) {
+    // `(id<i32>)(42)`. `(a < b)` is a comparison.
+    if (!angle_list_at(ahead, ahead)) {
         return false;
     }
     for (int i = 0; i < wraps; ++i) {

@@ -15,12 +15,12 @@ type Wide struct {
 }
 
 func main() i32 {
-    var flag atomic.Atomic[Flag];
+    var flag atomic.Atomic<Flag>;
     flag.store({.bit = 1});
     if (flag.load().bit != 1) {
         return 1;
     }
-    var pair atomic.Atomic[Pair];
+    var pair atomic.Atomic<Pair>;
     pair.store({.a = 1, .b = 2});
     var got = pair.load();
     if (got.a != 1 || got.b != 2) {
@@ -38,7 +38,7 @@ func main() i32 {
     if (no || miss.a != 5 || miss.b != 6) {
         return 5;
     }
-    var wide atomic.Atomic[Wide];
+    var wide atomic.Atomic<Wide>;
     wide.store_order({.a = 8, .b = 9}, atomic.Order.relaxed);
     var read = wide.load_order(atomic.Order.acquire);
     if (read.a != 8 || read.b != 9) {

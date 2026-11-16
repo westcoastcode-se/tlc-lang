@@ -1,6 +1,6 @@
 import "hidden";
 
-func use(items hidden.Seq[i32]) i32 {
+func use(items hidden.Seq<i32>) i32 {
     return 0;
 }
 

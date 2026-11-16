@@ -3,17 +3,17 @@ type Point struct {
     y i32;
 };
 
-func box[T type]() *T {
+func box<T type>() *T {
     return new T;
 }
 
 func main() i32 {
-    var n *i32 = box[i32]();
+    var n *i32 = box<i32>();
     *n = 40;
     var saved i32 = *n;
     delete n;
 
-    var p *Point = box[Point]();
+    var p *Point = box<Point>();
     p.x = 2;
     saved = saved + p.x;
     delete p;

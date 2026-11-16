@@ -1,4 +1,4 @@
-type Box[T type] struct {
+type Box<T type> struct {
     data union {
         n T = 4;
         m T = 5;
@@ -6,6 +6,6 @@ type Box[T type] struct {
 };
 
 func main() i32 {
-    var box Box[i32];
+    var box Box<i32>;
     return box.data.n;
 }

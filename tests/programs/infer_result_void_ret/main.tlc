@@ -2,7 +2,7 @@ type Point struct {
     x i32;
 };
 
-type Box[T type] struct {
+type Box<T type> struct {
     n T;
 };
 
@@ -28,12 +28,12 @@ func Point::clear(self *this) {
     return touch();
 }
 
-func hold[T type](value T) {
+func hold<T type>(value T) {
     var kept = value;
     return touch();
 }
 
-func Box[T]::wipe(self *this) {
+func Box<T>::wipe(self *this) {
     var kept = self.n;
     return touch();
 }
@@ -58,7 +58,7 @@ func main() i32 {
     p.x = 7;
     p.clear();
     hold(1);
-    var box Box[i32];
+    var box Box<i32>;
     box.n = 4;
     box.wipe();
     nest();

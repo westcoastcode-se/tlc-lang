@@ -10,12 +10,12 @@ func bump(n i32) i32 {
     return n;
 }
 
-func pick[T type](flag bool, a T, b T) T {
+func pick<T type>(flag bool, a T, b T) T {
     return flag ? a : b;
 }
 
 func main() i32 {
-    if (pick[i32](true, 40, 2) != 40) {
+    if (pick<i32>(true, 40, 2) != 40) {
         return 1;
     }
     if ((true ? 40 : 2) != 40) {

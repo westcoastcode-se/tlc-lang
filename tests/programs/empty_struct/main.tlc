@@ -16,7 +16,7 @@ func take(value Marker) i32 {
     return value.id();
 }
 
-func keep[T type](value T) T {
+func keep<T type>(value T) T {
     return value;
 }
 

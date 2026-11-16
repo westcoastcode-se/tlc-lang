@@ -1,8 +1,8 @@
-type Seq[T type] trait {
+type Seq<T type> trait {
     func at(i i32) T;
 };
 
-func use(items Seq[i32, u8]) i32 {
+func use(items Seq<i32, u8>) i32 {
     return 0;
 }
 

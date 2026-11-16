@@ -1,4 +1,4 @@
-type Arm[T type] struct {
+type Arm<T type> struct {
     value T;
 };
 
@@ -6,8 +6,8 @@ type Kind enum {
     One,
 };
 
-type Shape[T type] union(Kind) {
-    One Arm[T] = {.value = 4};
+type Shape<T type> union(Kind) {
+    One Arm<T> = {.value = 4};
 };
 
 func main() i32 {

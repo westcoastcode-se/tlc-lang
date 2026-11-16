@@ -209,17 +209,17 @@ func os_rw_destroy(lock *RwLock) {
 // `raw` is 0, then 1 while `entry` runs, then 2. A zero i32 is not a macOS
 // pthread_once_t, so this does not call pthread_once.
 func os_once(once *Once, entry func () void) {
-    if (builtin.atomic_load[i32](&once.raw, 4) == 2) {
+    if (builtin.atomic_load<i32>(&once.raw, 4) == 2) {
         return;
     }
-    var prev, won = builtin.atomic_cmpxchg[i32](&once.raw, 0, 1, 4, 4);
+    var prev, won = builtin.atomic_cmpxchg<i32>(&once.raw, 0, 1, 4, 4);
     if (won) {
         entry();
-        builtin.atomic_store[i32](&once.raw, 2, 4);
+        builtin.atomic_store<i32>(&once.raw, 2, 4);
         return;
     }
     while (prev != 2) {
         os_yield();
-        prev = builtin.atomic_load[i32](&once.raw, 4);
+        prev = builtin.atomic_load<i32>(&once.raw, 4);
     }
 }

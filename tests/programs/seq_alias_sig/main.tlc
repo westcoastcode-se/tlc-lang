@@ -10,7 +10,7 @@ func Row::at(self this, i i32) u8 {
     return 2;
 }
 
-func use(items seq.Seq[i32]) i32 {
+func use(items seq.Seq<i32>) i32 {
     return items.len() + items.at(0);
 }
 

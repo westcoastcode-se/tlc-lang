@@ -152,7 +152,7 @@ Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc, bool paramet
     bool is_array = false;
     int64_t array_len = 0;
     std::string array_len_name;
-    // A function pointer stores the result in `type_name`. `Box[i32]` is `type_args` on that result.
+    // A function pointer stores the result in `type_name`. `Box<i32>` is `type_args` on that result.
     if (written.is_fn_ptr) {
         prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum,
                         written.ret_indirections, written.ret_optional, is_array, array_len, array_len_name,
@@ -341,7 +341,7 @@ Type Checker::deferred_struct_type(const std::string &name, const std::string &p
     if (id >= 0) {
         return type_struct(id);
     }
-    // `type Mine[N i32] Buf[N]`. The stand-in is that alias, not `Buf`.
+    // `type Mine<N i32> Buf<N>`. The stand-in is that alias, not `Buf`.
     Type alias;
     if (package_typedef(owner, spec, alias)) {
         return alias;
@@ -937,7 +937,7 @@ int Checker::enum_designator(const Expr &expr) {
         return find_enum(file_id_, named->text);
     }
     // A package selector is an enum only when that name is an exported enum.
-    // A missing name is not an error here. `math.Buf[4, i32].count` is not an enumerator.
+    // A missing name is not an error here. `math.Buf<4, i32>.count` is not an enumerator.
     if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
         if (selector->base == nullptr || !selector->type_args.empty()) {
             return -1;

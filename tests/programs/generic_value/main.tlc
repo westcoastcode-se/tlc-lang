@@ -1,8 +1,8 @@
-func id[T type](value T) T {
+func id<T type>(value T) T {
     return value;
 }
 
-func id[T type](value T, extra i32) T {
+func id<T type>(value T, extra i32) T {
     return value + extra;
 }
 
@@ -15,5 +15,5 @@ func main() i32 {
         var local = f;
         return local(1);
     }
-    return f(40) + f[i32](0) + g(0) + h(1, 0) + k[i32](0) + inner();
+    return f(40) + f<i32>(0) + g(0) + h(1, 0) + k<i32>(0) + inner();
 }

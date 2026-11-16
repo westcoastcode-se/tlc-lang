@@ -1,6 +1,6 @@
 import "std/seq";
 
-func use(rows seq.Seq[[]i32]) i32 {
+func use(rows seq.Seq<[]i32>) i32 {
     return rows.at(0).len * 20 + rows.at(1)[0];
 }
 

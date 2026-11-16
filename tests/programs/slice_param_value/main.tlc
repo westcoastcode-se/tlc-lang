@@ -33,7 +33,7 @@ func local_view(row [4]i32) i32 {
     return s[1] + s.len;
 }
 
-func sized[N i32](row [N]i32) []i32 {
+func sized<N i32>(row [N]i32) []i32 {
     return row;
 }
 
@@ -80,7 +80,7 @@ func main() i32 {
     if (local_view(data) != 12) {
         return 8;
     }
-    var part = sized[4](data);
+    var part = sized<4>(data);
     if (part.len != 4 || part[0] != 10) {
         return 9;
     }

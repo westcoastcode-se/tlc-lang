@@ -8,11 +8,11 @@ This page describes a function pointer's type, a returned pointer, a cast, and a
 
 A function pointer type is `func (argument types) result`. The arguments are types, with no names. The result is written the same way as a function result: one type, or a parenthesized list of several types.
 
-A function name used as a value is a pointer to that function. A generic name is not a function pointer. `var f = id` names the generic, and the call is `f(1)` or `f[i32](1)`. See [Generics](generic.md).
+A function name used as a value is a pointer to that function. A generic name is not a function pointer. `var f = id` names the generic, and the call is `f(1)` or `f<i32>(1)`. See [Generics](generic.md).
 
 The type can be inferred. `var ptr = add` is that pointer, and `ptr(1, 2)` calls it.
 
-A static function is the same kind of value, as in `var ptr = Point.make` and `take(Point.make)`. On a generic struct it is `var ptr = Box[i32].from`. Another package uses `var ptr = pkg.Point.make`.
+A static function is the same kind of value, as in `var ptr = Point.make` and `take(Point.make)`. On a generic struct it is `var ptr = Box<i32>.from`. Another package uses `var ptr = pkg.Point.make`.
 
 The compiler reports `type mismatch` when an instance method is used as a value.
 

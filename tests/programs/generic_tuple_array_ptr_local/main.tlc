@@ -1,11 +1,11 @@
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func fill[T type](a T, b T, c T, d T) [2][2]T {
+func fill<T type>(a T, b T, c T, d T) [2][2]T {
     var g [2][2]T;
     g[0][0] = a;
     g[0][1] = b;
@@ -14,22 +14,22 @@ func fill[T type](a T, b T, c T, d T) [2][2]T {
     return g;
 }
 
-func plain[T type](value **T) i32 {
+func plain<T type>(value **T) i32 {
     var q **T = value;
     return (**q)[0] + (**q)[1];
 }
 
-func id[T type](value **T) i32 {
+func id<T type>(value **T) i32 {
     var q **T = value;
     return (**q)[0][0] + (**q)[1][1];
 }
 
-func wide[T type](value **T) i32 {
+func wide<T type>(value **T) i32 {
     var q **T = value;
     return (**q)[0][0][0] + (**q)[1][1][1];
 }
 
-func tri[T type](value ***T) i32 {
+func tri<T type>(value ***T) i32 {
     var q ***T = value;
     return (***q)[0][0] + (***q)[1][1];
 }

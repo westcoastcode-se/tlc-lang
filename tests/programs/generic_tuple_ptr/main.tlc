@@ -1,8 +1,8 @@
-func id[T type](value *T) i32 {
+func id<T type>(value *T) i32 {
     return (*value)[0] + (*value)[1];
 }
 
-func wide[T type](value *T) i32 {
+func wide<T type>(value *T) i32 {
     return (*value)[0][0] + (*value)[1];
 }
 

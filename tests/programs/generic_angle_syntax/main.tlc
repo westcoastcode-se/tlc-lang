@@ -1,0 +1,44 @@
+// Generics use angle brackets. A comparison and a shift stay what they are, `>>` and `>>=` end two lists,
+// and an index followed by a call calls the element.
+type Box<T type> struct {
+    v T;
+}
+func Box<T>::get(self this) T {
+    return self.v;
+}
+func id<T type>(x T) T {
+    return x;
+}
+func width<N i32>() i32 {
+    return N;
+}
+func add(a i32, b i32) i32 {
+    return a + b;
+}
+func pick(a bool, b bool) i32 {
+    return a && b ? 1 : 0;
+}
+func main() i32 {
+    var bad = 0;
+    var a = 1;
+    var b = 2;
+    var c = 3;
+    var d = 1;
+    // Comparisons.
+    if (!(a < b) || a > b || !(a < b && c > d)) { bad |= 1; }
+    // A shift after `<` is still a shift.
+    if (!(a < c >> 1 || a < b)) { bad |= 2; }
+    // Two comparisons in a call need the parentheses.
+    if (pick((a < b), c > (d)) != 1) { bad |= 4; }
+    // `>>` ends two lists, in a type and in an expression.
+    var nested Box<Box<i32>> = {.v = {.v = 5}};
+    var made = Box<Box<i32>>{.v = {.v = 6}};
+    var eq Box<Box<i32>>= {.v = {.v = 7}};
+    if (nested.v.v != 5 || made.v.v != 6 || eq.v.v != 7) { bad |= 8; }
+    if (id<i32>(4) != 4 || width<3>() != 3 || (id<i32>)(9) != 9) { bad |= 16; }
+    // An index and then a call.
+    comptime const ops = (add, 1);
+    if (ops[0](40, 2) != 42 || (ops[0])(1, 1) != 2) { bad |= 32; }
+    if (nested.get().get() != 5) { bad |= 64; }
+    return bad == 0 ? 42 : bad;
+}

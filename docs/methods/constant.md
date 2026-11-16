@@ -18,9 +18,9 @@ A field may use the same name.
 
 Each specialization of a generic struct has its own constant.
 
-`const Box[T]::extra = 8` and `const Buf[N, T]::count = N` are those constants.
+`const Box<T>::extra = 8` and `const Buf<N, T>::count = N` are those constants.
 
-The use is `Entity.next`, `Box[i32].extra`, or `Buf[4, i32].count`.
+The use is `Entity.next`, `Box<i32>.extra`, or `Buf<4, i32>.count`.
 
 `const spare = 2` inside the braces is `not supported yet`. It is not a member.
 
@@ -40,9 +40,9 @@ A field store through a struct constant is reported as `type mismatch`.
 
 ## Export and extern
 
-`export const Entity::next` publishes it, including `export const Box[T]::limit` on a generic struct.
+`export const Entity::next` publishes it, including `export const Box<T>::limit` on a generic struct.
 
-Another package reads `pkg.Entity.next` and `pkg.Box[i32].limit` when the type and the constant are exported.
+Another package reads `pkg.Entity.next` and `pkg.Box<i32>.limit` when the type and the constant are exported.
 
 Without `export`, the name is reported as `next is not exported`.
 
@@ -56,13 +56,13 @@ An unexported type is reported as `Entity is not exported`.
 
 A use in this file still folds.
 
-`extern(abi="c") const Box[T]::limit` is `extern(abi="c") on a trait or a generic`.
+`extern(abi="c") const Box<T>::limit` is `extern(abi="c") on a trait or a generic`.
 
 `extern var Entity::next` is `not supported yet`.
 
-`export var Box[T]::extra` publishes that variable.
+`export var Box<T>::extra` publishes that variable.
 
-Another package reads and assigns `pkg.Box[i32].extra`.
+Another package reads and assigns `pkg.Box<i32>.extra`.
 
 ```c
 type Entity struct {
@@ -71,22 +71,22 @@ type Entity struct {
 
 comptime const Entity::next = 28;
 
-type Box[T type] struct {
+type Box<T type> struct {
     value T;
 };
 
-comptime const Box[T]::extra = 8;
+comptime const Box<T>::extra = 8;
 
-type Buf[N i32, T type] struct {
+type Buf<N i32, T type> struct {
     value T;
 };
 
-const Buf[N, T]::count = N;
+const Buf<N, T>::count = N;
 
 func main() i32 {
     var e Entity;
     e.id = 2;
-    return Entity.next + e.id + Box[i32].extra + Buf[4, i32].count;
+    return Entity.next + e.id + Box<i32>.extra + Buf<4, i32>.count;
 }
 ```
 
@@ -102,9 +102,9 @@ retq                             # return
 
 The program returns 42.
 
-`Buf[4, i32].count` is `N`, which is 4 for that instantiation.
+`Buf<4, i32>.count` is `N`, which is 4 for that instantiation.
 
-`Box[i32].extra` and `Box[Point].extra` are two constants.
+`Box<i32>.extra` and `Box<Point>.extra` are two constants.
 
 `const Entity::spare = 2` and `const Entity::next = 40` beside the struct are the same kind of constant.
 

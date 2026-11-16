@@ -286,9 +286,9 @@ The value has to satisfy the trait that was written.
 
 A generic trait takes its type from the value.
 
-`Getter(h)` is `Getter[i32]` when `h.get()` returns `i32`, and `seq.Seq(items)` is `seq.Seq[i32]` when `items` is an array of `i32`.
+`Getter(h)` is `Getter<i32>` when `h.get()` returns `i32`, and `seq.Seq(items)` is `seq.Seq<i32>` when `items` is an array of `i32`.
 
-`Getter[i32](h)` and `seq.Seq[i32](items)` write that type.
+`Getter<i32>(h)` and `seq.Seq<i32>(items)` write that type.
 
 `var d Drawable = Drawable(s)` is `trait has no size`.
 
@@ -658,11 +658,11 @@ retq                             # return
 
 `use(&r)` is 60.
 
-`a.malloc[i32]()` when `a` is `*Allocator` is the same default as `arena.malloc[i32]()`.
+`a.malloc<i32>()` when `a` is `*Allocator` is the same default as `arena.malloc<i32>()`.
 
 The call is specialized for the struct that was passed.
 
-A struct method `Arena::malloc[T type]` wins over that default.
+A struct method `Arena::malloc<T type>` wins over that default.
 
 The result is `?*T`, and the caller handles `null`.
 
@@ -768,19 +768,19 @@ retq                             # return
 
 ## A generic trait
 
-`type Seq[T type] trait` names one type parameter.
+`type Seq<T type> trait` names one type parameter.
 
 A parameter the trait does not use is `unused parameter`.
 
-`Seq[i32]` and `Seq[u8]` are different traits.
+`Seq<i32>` and `Seq<u8>` are different traits.
 
 A method may use `T` as a parameter or a result, and a field may use `T` as well.
 
-A struct satisfies `Seq[i32]` by defining those methods and fields with `i32` in place of `T`.
+A struct satisfies `Seq<i32>` by defining those methods and fields with `i32` in place of `T`.
 
 There is no `impl`.
 
-The parameter is `items Seq[i32]` or `items *Seq[i32]`.
+The parameter is `items Seq<i32>` or `items *Seq<i32>`.
 
 `Seq` without arguments is reported as `type mismatch`.
 
@@ -790,7 +790,7 @@ An integer parameter, a pack, several parameters, and `trait(Parent)` on that li
 
 `export` publishes the trait.
 
-Another package names `pkg.Seq[i32]`.
+Another package names `pkg.Seq<i32>`.
 
 A bare `extern` and `extern(abi="tlc")` on that trait are `not supported yet`.
 
@@ -798,10 +798,10 @@ The trait has no size and no symbol.
 
 `extern(abi="c")` is reported as `extern(abi="c") on a trait or a generic`.
 
-`func use[T type](items Seq[T])` takes `T` from the value. `use(bag)` is `Seq[i32]` when `at` returns `i32`. `func Bag::read[T type](self *this, items Seq[T])` is that parameter on a method. `bag.read(bag)` infers `T`. `s Shape` beside `[T type]` is `not supported yet`.
+`func use<T type>(items Seq<T>)` takes `T` from the value. `use(bag)` is `Seq<i32>` when `at` returns `i32`. `func Bag::read<T type>(self *this, items Seq<T>)` is that parameter on a method. `bag.read(bag)` infers `T`. `s Shape` beside `[T type]` is `not supported yet`.
 
 ```c
-type Seq[T type] trait {
+type Seq<T type> trait {
     func at(i i32) T;
 };
 
@@ -813,7 +813,7 @@ func Bag::at(self this, i i32) i32 {
     return self.n + i;
 }
 
-func use(items Seq[i32]) i32 {
+func use(items Seq<i32>) i32 {
     return items.at(2);
 }
 
@@ -851,15 +851,15 @@ retq                             # return
 
 `at` is a direct call of `Bag.at`.
 
-Passing a struct whose `at` returns `u8` where `Seq[i32]` is expected is reported as `type mismatch`.
+Passing a struct whose `at` returns `u8` where `Seq<i32>` is expected is reported as `type mismatch`.
 
 `import "std/seq"` names that trait as the iteration trait.
 
-`seq.Seq[T]` and `*seq.Seq[T]` check `len` and `at`.
+`seq.Seq<T>` and `*seq.Seq<T>` check `len` and `at`.
 
 A pointer to an element is `ptr_of`.
 
-An array `[N]E` and a slice `[]E` satisfy `seq.Seq[E]`.
+An array `[N]E` and a slice `[]E` satisfy `seq.Seq<E>`.
 
 On those values `len` is `.len` and `at` is the index.
 

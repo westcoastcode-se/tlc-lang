@@ -661,7 +661,7 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
     type.ret_indirections = first.indirections;
     type.ret_optional = first.optional;
     type.ret_const_pointee = first.const_pointee;
-    // One result keeps its arguments here. `func (i32) Box[i32]` is that result.
+    // One result keeps its arguments here. `func (i32) Box<i32>` is that result.
     // Several results keep each argument list on `fn_results`.
     if (results.size() == 1) {
         type.type_args = first.type_args;
@@ -929,12 +929,20 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_fn_dec
     type.indirections = leading;
     type.optional = leading_optional;
     type.const_pointee = leading_const;
-    if (check(TokenKind::LBracket)) {
-        // `Vec[i32]` is a type argument list. An array is prefix only: `[4]i32`.
+    // `Vec<i32>` is a type argument list. A primitive takes none.
+    if (check(TokenKind::Lt)) {
         const bool named = !primitive_type_name(type.type_name) && !type.type_name.empty() && type.type_name != "invalid";
+        if (!named) {
+            diags_.error(peek().loc, "type mismatch");
+        }
+        std::vector<TypeArg> args = parse_type_args();
         if (named) {
-            type.type_args = parse_type_args();
-        } else {
+            type.type_args = std::move(args);
+        }
+    }
+    // An array is prefix only: `[4]i32`. `i32[4]` is not a type.
+    if (check(TokenKind::LBracket)) {
+        {
             diags_.error(peek().loc, "type mismatch");
             while (eat(TokenKind::LBracket)) {
                 while (!check(TokenKind::RBracket) && !check(TokenKind::Semicolon) && !check(TokenKind::Comma) &&
@@ -1082,7 +1090,7 @@ Parser::PlacedType Parser::parse_go_type(bool allow_value_const) {
         type.indirections = prefix.count;
         type.optional = prefix.optional;
         type.const_pointee = prefix.const_pointee;
-        if (check(TokenKind::LBracket)) {
+        if (check(TokenKind::Lt)) {
             type.type_args = parse_type_args();
         }
         project(type);
@@ -1320,7 +1328,7 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
         fn.name = peek().text;
         fn.loc = peek().loc;
         ++pos_;
-        if (bracket_then_colon_colon()) {
+        if (angle_then(TokenKind::ColonColon)) {
             fn.method_params = parse_method_params();
             fn.method_struct = fn.name;
             expect(TokenKind::ColonColon, "expected '::'");
@@ -1347,8 +1355,8 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
     } else {
         error_here("expected an identifier");
     }
-    if (check(TokenKind::LBracket)) {
-        // `func Type::name[T type]` and `func Vec[T]::get[U type]` are method templates.
+    if (check(TokenKind::Lt)) {
+        // `func Type::name<T type>` and `func Vec<T>::get<U type>` are method templates.
         fn.type_params = parse_type_params();
     }
     // `comptime` on a parameter is a value known while compiling. A `comptime func` requires
@@ -1390,7 +1398,7 @@ FunctionDecl Parser::parse_function(bool exported, bool is_static, bool is_exter
     // Bare `extern` is only a generic function the compiler implements. No TLC body follows.
     const bool bare = fn.is_extern && !fn.extern_c && !fn.extern_compiler && fn.link_name.empty();
     if (bare) {
-        // `Vec[T]::get` and `id[T]` are generic. `Point::read` is not.
+        // `Vec<T>::get` and `id<T>` are generic. `Point::read` is not.
         const bool generic = !fn.type_params.empty() || !fn.method_params.empty();
         bool comptime = false;
         for (const Param &param : fn.params) {
@@ -1625,145 +1633,123 @@ Parser::ArrayMark Parser::parse_array_suffix(bool allow_slice) {
     return mark;
 }
 
-bool Parser::looks_like_type_params() const {
-    if (!check(TokenKind::LBracket)) {
+bool Parser::at_angle_close() const {
+    return check(TokenKind::Gt) || check(TokenKind::GtGt) || check(TokenKind::Ge) || check(TokenKind::GtGtEq);
+}
+
+bool Parser::close_angle() {
+    if (check(TokenKind::Gt)) {
+        ++pos_;
+        return true;
+    }
+    // `Box<Box<i32>>`, `Box<i32>= value`, and `Box<Box<i32>>= value`. The list takes the first `>`.
+    if (at_angle_close()) {
+        Token &token = tokens_[pos_];
+        token.kind = token.kind == TokenKind::GtGt   ? TokenKind::Gt
+                     : token.kind == TokenKind::Ge   ? TokenKind::Eq
+                                                      : TokenKind::Ge;
+        token.loc.offset += 1;
+        token.length = token.length > 0 ? token.length - 1 : 0;
+        token.text = token.text.empty() ? token.text : token.text.substr(1);
+        return true;
+    }
+    error_here("expected '>'");
+    return false;
+}
+
+bool Parser::angle_list_at(std::size_t start, std::size_t &after) const {
+    if (peek(start).kind != TokenKind::Lt) {
         return false;
     }
     int depth = 0;
-    bool named = false;
-    // The identifier waiting for `type`. `N i32` and `T Shape` are not that parameter.
-    std::string pending;
-    std::vector<std::string> type_names;
-    for (std::size_t ahead = 0; peek(ahead).kind != TokenKind::End; ++ahead) {
+    int parens = 0;
+    for (std::size_t ahead = start; ahead < start + 4096; ++ahead) {
         const TokenKind kind = peek(ahead).kind;
-        if (kind == TokenKind::LBracket) {
-            ++depth;
-            continue;
+        if (kind == TokenKind::End) {
+            return false;
         }
-        if (kind == TokenKind::RBracket) {
-            --depth;
-            if (depth == 0) {
-                const TokenKind next = peek(ahead + 1).kind;
-                // `type Something[K type, V type] (K, V)`. A tuple alias takes the list.
-                // `type MyAlias[T type] Vec[T]` and `type MyAlias[T type] pkg.Vec[T]` name another
-                // generic type. `type Name[T type] T` names that parameter. `type Name[T type] i32`
-                // stays an array length. `enum` is included so `type Name[T type] enum` is one error.
-                // An enum does not take the list.
-                if (!named) {
-                    return false;
-                }
-                if (next == TokenKind::KwStruct || next == TokenKind::KwEnum || next == TokenKind::KwTrait ||
-                    next == TokenKind::KwUnion || next == TokenKind::LParen) {
-                    return true;
-                }
-                if (next == TokenKind::Identifier && peek(ahead + 2).kind == TokenKind::LBracket) {
-                    return true;
-                }
-                if (next == TokenKind::Identifier && peek(ahead + 2).kind == TokenKind::Dot &&
-                    peek(ahead + 3).kind == TokenKind::Identifier && peek(ahead + 4).kind == TokenKind::LBracket) {
-                    return true;
-                }
-                if (next == TokenKind::Identifier) {
-                    const std::string &follow = peek(ahead + 1).text;
-                    for (const std::string &param : type_names) {
-                        if (param == follow) {
-                            return true;
-                        }
-                    }
-                }
+        // `width<add(3)>()` and `Vec<func(i32) i32>`. Anything but the end of a statement fits in parentheses.
+        if (parens > 0) {
+            if (kind == TokenKind::LParen) {
+                ++parens;
+            } else if (kind == TokenKind::RParen) {
+                --parens;
+            } else if (kind == TokenKind::Semicolon || kind == TokenKind::LBrace || kind == TokenKind::RBrace) {
                 return false;
             }
             continue;
         }
-        if (depth == 1) {
-            if (!named) {
-                if (kind == TokenKind::Ellipsis) {
-                    continue;
-                }
-                if (kind != TokenKind::Identifier) {
-                    return false;
-                }
-                named = true;
-                pending = peek(ahead).text;
-            } else if (kind == TokenKind::KwType && !pending.empty()) {
-                type_names.push_back(std::move(pending));
-                pending.clear();
-            } else if (kind == TokenKind::Comma) {
-                pending.clear();
-            } else if (kind == TokenKind::Identifier && pending.empty()) {
-                pending = peek(ahead).text;
-            } else if (kind == TokenKind::Identifier) {
-                pending.clear();
+        switch (kind) {
+        case TokenKind::Lt:
+            ++depth;
+            break;
+        case TokenKind::Gt:
+        case TokenKind::GtGt: {
+            // A `>>` that would end the list halfway is a shift, as in `a < b >> c`.
+            const int closes = kind == TokenKind::Gt ? 1 : 2;
+            if (closes > depth) {
+                return false;
             }
+            depth -= closes;
+            if (depth == 0) {
+                after = ahead + 1;
+                return true;
+            }
+            break;
         }
-        if (ahead > 4096) {
-            return false;
+        case TokenKind::LParen:
+            ++parens;
+            break;
+        case TokenKind::Minus:
+            // `width<-5>` reaches the argument parser, which reports it.
+            if (peek(ahead + 1).kind != TokenKind::IntLiteral) {
+                return false;
+            }
+            break;
+        case TokenKind::Identifier:
+        case TokenKind::Dot:
+        case TokenKind::Star:
+        case TokenKind::Question:
+        case TokenKind::Comma:
+        case TokenKind::LBracket:
+        case TokenKind::RBracket:
+        case TokenKind::IntLiteral:
+        case TokenKind::Ellipsis:
+        case TokenKind::KwConst:
+        case TokenKind::KwFunc:
+        case TokenKind::KwType:
+        case TokenKind::KwBool:
+        case TokenKind::KwVoid:
+        case TokenKind::KwFloat:
+        case TokenKind::KwDouble:
+        case TokenKind::KwSizeof:
+        case TokenKind::KwAlignof:
+            break;
+        default:
+            if (!is_int_spec(kind)) {
+                return false;
+            }
+            break;
         }
     }
     return false;
 }
 
-bool Parser::bracket_comma_then_dot() const {
-    if (!check(TokenKind::LBracket)) {
-        return false;
-    }
-    int depth = 0;
-    bool comma = false;
-    for (std::size_t ahead = 0; peek(ahead).kind != TokenKind::End; ++ahead) {
-        const TokenKind kind = peek(ahead).kind;
-        if (kind == TokenKind::LBracket) {
-            ++depth;
-        } else if (kind == TokenKind::RBracket) {
-            --depth;
-            if (depth == 0) {
-                return comma && peek(ahead + 1).kind == TokenKind::Dot;
-            }
-        } else if (depth == 1 && kind == TokenKind::Comma) {
-            comma = true;
-        } else if (depth == 1 && (kind == TokenKind::Semicolon || kind == TokenKind::LBrace || kind == TokenKind::RBrace)) {
-            return false;
-        }
-        if (ahead > 4096) {
-            return false;
-        }
-    }
-    return false;
-}
-
-bool Parser::bracket_then_colon_colon() const {
-    if (!check(TokenKind::LBracket)) {
-        return false;
-    }
-    int depth = 0;
-    for (std::size_t ahead = 0; peek(ahead).kind != TokenKind::End; ++ahead) {
-        const TokenKind kind = peek(ahead).kind;
-        if (kind == TokenKind::LBracket) {
-            ++depth;
-        } else if (kind == TokenKind::RBracket) {
-            --depth;
-            if (depth == 0) {
-                return peek(ahead + 1).kind == TokenKind::ColonColon;
-            }
-        } else if (depth == 1 && (kind == TokenKind::Semicolon || kind == TokenKind::LBrace || kind == TokenKind::RBrace)) {
-            return false;
-        }
-        if (ahead > 4096) {
-            return false;
-        }
-    }
-    return false;
+bool Parser::angle_then(TokenKind next) const {
+    std::size_t after = 0;
+    return angle_list_at(0, after) && peek(after).kind == next;
 }
 
 std::vector<std::string> Parser::parse_method_params() {
     std::vector<std::string> names;
     const SourceLoc loc = peek().loc;
-    expect(TokenKind::LBracket, "expected '['");
-    if (check(TokenKind::RBracket)) {
+    expect(TokenKind::Lt, "expected '<'");
+    if (at_angle_close()) {
         diags_.error(loc, "type mismatch");
-        ++pos_;
+        close_angle();
         return names;
     }
-    while (!check(TokenKind::RBracket) && !check(TokenKind::LBrace) && !check(TokenKind::LParen) && !eof()) {
+    while (!at_angle_close() && !check(TokenKind::LBrace) && !check(TokenKind::LParen) && !eof()) {
         if (!check(TokenKind::Identifier)) {
             error_here("expected an identifier");
             break;
@@ -1776,10 +1762,10 @@ std::vector<std::string> Parser::parse_method_params() {
                 diags_.error(name_loc, "redefinition");
             }
         }
-        // `Vec[T]` names the struct's parameter. `Vec[T type]` declares one, which a method does not do.
-        if (!check(TokenKind::Comma) && !check(TokenKind::RBracket)) {
+        // `Vec<T>` names the struct's parameter. `Vec<T type>` declares one, which a method does not do.
+        if (!check(TokenKind::Comma) && !at_angle_close()) {
             diags_.error(peek().loc, "type mismatch");
-            if (!check(TokenKind::RBracket) && !check(TokenKind::Comma) && !eof()) {
+            if (!at_angle_close() && !check(TokenKind::Comma) && !eof()) {
                 ++pos_;
             }
         }
@@ -1788,56 +1774,8 @@ std::vector<std::string> Parser::parse_method_params() {
             break;
         }
     }
-    expect(TokenKind::RBracket, "expected ']'");
+    close_angle();
     return names;
-}
-
-bool Parser::bracket_then_paren() const {
-    if (!check(TokenKind::LBracket)) {
-        return false;
-    }
-    int depth = 0;
-    for (std::size_t ahead = 0; peek(ahead).kind != TokenKind::End; ++ahead) {
-        const TokenKind kind = peek(ahead).kind;
-        if (kind == TokenKind::LBracket) {
-            ++depth;
-        } else if (kind == TokenKind::RBracket) {
-            --depth;
-            if (depth == 0) {
-                return peek(ahead + 1).kind == TokenKind::LParen;
-            }
-        } else if (depth == 1 && (kind == TokenKind::Semicolon || kind == TokenKind::LBrace || kind == TokenKind::RBrace)) {
-            return false;
-        }
-        if (ahead > 4096) {
-            return false;
-        }
-    }
-    return false;
-}
-
-bool Parser::bracket_then_brace() const {
-    if (!check(TokenKind::LBracket)) {
-        return false;
-    }
-    int depth = 0;
-    for (std::size_t ahead = 0; peek(ahead).kind != TokenKind::End; ++ahead) {
-        const TokenKind kind = peek(ahead).kind;
-        if (kind == TokenKind::LBracket) {
-            ++depth;
-        } else if (kind == TokenKind::RBracket) {
-            --depth;
-            if (depth == 0) {
-                return peek(ahead + 1).kind == TokenKind::LBrace;
-            }
-        } else if (depth == 1 && (kind == TokenKind::Semicolon || kind == TokenKind::LBrace || kind == TokenKind::RBrace)) {
-            return false;
-        }
-        if (ahead > 4096) {
-            return false;
-        }
-    }
-    return false;
 }
 
 bool Parser::primitive_type_name(const std::string &name) const {
@@ -1854,13 +1792,13 @@ bool Parser::integer_constraint_name(const std::string &name) const {
 std::vector<TypeParam> Parser::parse_type_params() {
     std::vector<TypeParam> params;
     const SourceLoc loc = peek().loc;
-    expect(TokenKind::LBracket, "expected '['");
-    if (check(TokenKind::RBracket)) {
+    expect(TokenKind::Lt, "expected '<'");
+    if (at_angle_close()) {
         diags_.error(loc, "type mismatch");
-        ++pos_;
+        close_angle();
         return params;
     }
-    while (!check(TokenKind::RBracket) && !check(TokenKind::LBrace) && !check(TokenKind::LParen) && !eof()) {
+    while (!at_angle_close() && !check(TokenKind::LBrace) && !check(TokenKind::LParen) && !eof()) {
         TypeParam param;
         param.loc = peek().loc;
         if (check(TokenKind::Ellipsis)) {
@@ -1882,15 +1820,15 @@ std::vector<TypeParam> Parser::parse_type_params() {
                     diags_.error(pack_loc, "redefinition");
                 }
             }
-            if (!check(TokenKind::Comma) && !check(TokenKind::RBracket)) {
+            if (!check(TokenKind::Comma) && !at_angle_close()) {
                 diags_.error(peek().loc, "type mismatch");
-                if (!check(TokenKind::RBracket) && !eof()) {
+                if (!at_angle_close() && !eof()) {
                     ++pos_;
                 }
             }
             params.push_back(std::move(param));
             if (eat(TokenKind::Comma)) {
-                while (!check(TokenKind::RBracket) && !eof()) {
+                while (!at_angle_close() && !eof()) {
                     ++pos_;
                 }
             }
@@ -1945,20 +1883,27 @@ std::vector<TypeParam> Parser::parse_type_params() {
             break;
         }
     }
-    expect(TokenKind::RBracket, "expected ']'");
+    close_angle();
     return params;
 }
 
 TypeArg Parser::parse_one_type_arg() {
     TypeArg arg;
     arg.loc = peek().loc;
-    // `width[sizeof(Point)]`. The operand is the same `sizeof` expression. It is not folded here.
+    // `alignof` is not a type argument. It is parsed so the list still closes.
+    if (check(TokenKind::KwAlignof)) {
+        diags_.error(peek().loc, "expected a type");
+        parse_unary();
+        arg.type_name = "invalid";
+        return arg;
+    }
+    // `width<sizeof(Point)>`. The operand is the same `sizeof` expression. It is not folded here.
     if (check(TokenKind::KwSizeof)) {
         arg.is_value = true;
         arg.value_expr = std::shared_ptr<Expr>(parse_unary());
         return arg;
     }
-    // `width[add(3)]` and `width[math.add(3)]`. A call is a value. `Vec[i32]` stays a type.
+    // `width<add(3)>` and `width<math.add(3)>`. A call is a value. `Vec<i32>` stays a type.
     if (check(TokenKind::Identifier) &&
         (peek(1).kind == TokenKind::LParen ||
          (peek(1).kind == TokenKind::Dot && peek(2).kind == TokenKind::Identifier &&
@@ -2057,7 +2002,7 @@ TypeArg Parser::parse_one_type_arg() {
         arg.type_name = "invalid";
         return arg;
     }
-    if (check(TokenKind::LBracket)) {
+    if (check(TokenKind::Lt)) {
         arg.args = parse_type_args();
     }
     return arg;
@@ -2065,13 +2010,13 @@ TypeArg Parser::parse_one_type_arg() {
 
 std::vector<TypeArg> Parser::parse_type_args() {
     std::vector<TypeArg> args;
-    expect(TokenKind::LBracket, "expected '['");
-    if (check(TokenKind::RBracket)) {
+    expect(TokenKind::Lt, "expected '<'");
+    if (at_angle_close()) {
         diags_.error(peek().loc, "type mismatch");
-        ++pos_;
+        close_angle();
         return args;
     }
-    while (!check(TokenKind::RBracket) && !check(TokenKind::LBrace) && !check(TokenKind::LParen) &&
+    while (!at_angle_close() && !check(TokenKind::LBrace) && !check(TokenKind::LParen) &&
            !check(TokenKind::Semicolon) && !eof()) {
         const std::size_t before = pos_;
         args.push_back(parse_one_type_arg());
@@ -2082,7 +2027,7 @@ std::vector<TypeArg> Parser::parse_type_args() {
             break;
         }
     }
-    expect(TokenKind::RBracket, "expected ']'");
+    close_angle();
     return args;
 }
 

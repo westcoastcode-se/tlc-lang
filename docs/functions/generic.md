@@ -12,17 +12,17 @@ A generic function names its parameters in brackets.
 
 `N i32` is a compile-time integer.
 
-The written type is `N`'s type. `N i64` takes a value up to the `i64` maximum, and `N` is an `i64` in the body: `width[3000000000]()` and `type Buf[N i64] struct { raw [N]u8; }` with `Buf[3000000000]` are that value. `N u8` takes 0 through 255, and `N` is a `u8`. `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64` are those types. A `u64` holds a value up to the `i64` maximum.
+The written type is `N`'s type. `N i64` takes a value up to the `i64` maximum, and `N` is an `i64` in the body: `width<3000000000>()` and `type Buf<N i64> struct { raw [N]u8; }` with `Buf<3000000000>` are that value. `N u8` takes 0 through 255, and `N` is a `u8`. `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64` are those types. A `u64` holds a value up to the `i64` maximum.
 
-A value that does not fit the type is `type mismatch`: `small[300]()` when `small` takes `N u8`, the same as `width[3000000000]()` for `N i32`. A suffix narrower than 32 bits names its own type, so `4i8` binds `N i8` and not `N u8` or `N i32`. `4i64` and `4u32` bind any type that holds 4.
+A value that does not fit the type is `type mismatch`: `small<300>()` when `small` takes `N u8`, the same as `width<3000000000>()` for `N i32`. A suffix narrower than 32 bits names its own type, so `4i8` binds `N i8` and not `N u8` or `N i32`. `4i64` and `4u32` bind any type that holds 4.
 
-`Buf[200]` and `Buf[200u8]` are one type when `Buf` takes `N u8`.
+`Buf<200>` and `Buf<200u8>` are one type when `Buf` takes `N u8`.
 
 `T Shape` is a type that must have the methods and the fields of the trait `Shape`.
 
 One body is specialized for each call.
 
-A message names a specialization the way it is written: `type mismatch: expected Box[i32], found Box[u8]`.
+A message names a specialization the way it is written: `type mismatch: expected Box<i32>, found Box<u8>`.
 
 A generic function has no `impl` and no runtime table.
 
@@ -30,18 +30,18 @@ A parameter the function does not use is `unused parameter`.
 
 The name has to appear in the signature or the body.
 
-`func id[T type](n i32) i32` is that error.
+`func id<T type>(n i32) i32` is that error.
 
-`func width[N i32](n i32) i32` is that error when the body does not read `N`.
+`func width<N i32>(n i32) i32` is that error when the body does not read `N`.
 
 `sizeof(T)` uses `T`.
 
 ```c
-func id[T type](value T) T {
+func id<T type>(value T) T {
     return value;
 }
 
-func repeat[N i32, T type](value T) [N]T {
+func repeat<N i32, T type>(value T) [N]T {
     assert(N > 0, "empty");
     var out [N]T;
     out[0] = value;
@@ -49,7 +49,7 @@ func repeat[N i32, T type](value T) [N]T {
 }
 
 func main() i32 {
-    return id(40) + id[i32](0);
+    return id(40) + id<i32>(0);
 }
 ```
 
@@ -81,14 +81,14 @@ retq                             # return
 
 `id(40)` does not pass `40`.
 
-`id[i32](0)` does not pass `0`.
+`id<i32>(0)` does not pass `0`.
 
 The program returns 40.
 
 A `var` is still passed.
 
 ```c
-func plain[T type](value T) i32 {
+func plain<T type>(value T) i32 {
     return value;
 }
 
@@ -143,17 +143,17 @@ A runtime `const` is that same error.
 
 `comptime const n = 2` is the comptime argument.
 
-`func only[T type](comptime value T)` requires a comptime argument.
+`func only<T type>(comptime value T)` requires a comptime argument.
 
 A `var` is `type mismatch`.
 
-`func apply[T type](op func (T, T) T, a T, b T) T` takes that function pointer. `T` is the argument type and the result type.
+`func apply<T type>(op func (T, T) T, a T, b T) T` takes that function pointer. `T` is the argument type and the result type.
 
-`apply[i32](add, a, b)` calls `main.apply.spec.i32` and passes `add`.
+`apply<i32>(add, a, b)` calls `main.apply.spec.i32` and passes `add`.
 
 `apply(add, a, b)` infers `i32` when `a` and `b` are `i32`.
 
-`apply[i32](add, 40, 2)` calls `main.apply.spec.i32.spec.40.2` and does not pass `40` or `2`.
+`apply<i32>(add, 40, 2)` calls `main.apply.spec.i32.spec.40.2` and does not pass `40` or `2`.
 
 A function of the wrong signature is `type mismatch`.
 
@@ -162,14 +162,14 @@ func add(a i32, b i32) i32 {
     return a + b;
 }
 
-func apply[T type](op func (T, T) T, a T, b T) T {
+func apply<T type>(op func (T, T) T, a T, b T) T {
     return op(a, b);
 }
 
 func main() i32 {
     var a = 40;
     var b = 2;
-    return apply[i32](add, a, b);
+    return apply<i32>(add, a, b);
 }
 ```
 
@@ -245,16 +245,16 @@ Reading `p[0]` is allowed.
 
 When `T` is `[]i32`, `(*p)[i]` is the element.
 
-A field `p *T` on `Hold[T]` is that pointer.
+A field `p *T` on `Hold<T>` is that pointer.
 
 `box.p[i]` is the element.
 
 ```c
-type Hold[T type] struct {
+type Hold<T type> struct {
     p *T;
 }
 
-func at[T type](p *T, i i32) i32 {
+func at<T type>(p *T, i i32) i32 {
     return p[i];
 }
 
@@ -262,8 +262,8 @@ func main() i32 {
     var data [4]i32;
     data[0] = 1;
     data[2] = 6;
-    var box Hold[[4]i32] = {.p = &data};
-    return at[[4]i32](&data, 0) + box.p[2];
+    var box Hold<[4]i32> = {.p = &data};
+    return at<[4]i32>(&data, 0) + box.p[2];
 }
 ```
 
@@ -279,7 +279,7 @@ movslq %ecx, %rcx                # move
 retq                             # return
 ```
 
-`at[[4]i32](&data, 0) + box.p[2]` returns 7.
+`at<[4]i32>(&data, 0) + box.p[2]` returns 7.
 
 ## A trait constraint in the same package
 
@@ -299,7 +299,7 @@ func Rect::area(self this) i32 {
     return self.w * self.h;
 }
 
-func measure[T Shape](value T) i32 {
+func measure<T Shape>(value T) i32 {
     return value.area();
 }
 
@@ -337,7 +337,7 @@ A parameter written `T` requires a value receiver.
 
 A pointer receiver on that parameter is `type mismatch`.
 
-`export func measure[T Shape]` publishes that function.
+`export func measure<T Shape>` publishes that function.
 
 Another package calls `pkg.measure(r)`.
 
@@ -381,7 +381,7 @@ func Rect::area(self this) i32 {
     return self.w * self.h;
 }
 
-func measure[T math.Shape](value T) i32 {
+func measure<T math.Shape>(value T) i32 {
     return value.area();
 }
 
@@ -423,24 +423,24 @@ A qualifier that is not an imported package is `undeclared identifier`.
 
 `import "math" as m` writes `T m.Shape`.
 
-`value *T`, `measure[Rect](r)`, and a missing method follow `T Shape`.
+`value *T`, `measure<Rect>(r)`, and a missing method follow `T Shape`.
 
-`type Hold[T math.Shape] struct` is that constraint on a struct.
+`type Hold<T math.Shape> struct` is that constraint on a struct.
 
-`func Point::measure[T math.Shape]` is that constraint on a method.
+`func Point::measure<T math.Shape>` is that constraint on a method.
 
-The call is `Point.measure[Rect](r)`.
+The call is `Point.measure<Rect>(r)`.
 
 `func use(s math.Shape)` and `func use(s *math.Shape)` are that parameter. The call is `s.area()`.
 
 `import { Shape } from "math"` brings that trait in as `Shape`.
 
-`func use[T type](items Seq[T])` takes `T` from the value. `use(bag)` is `Seq[i32]` when `Bag.at` returns `i32`. `use[i32](bag)` writes that argument. An array or a slice passed to `seq.Seq[T]` uses the element type. `func use[T type](s Shape, n T)` is `not supported yet`. `func use(items Seq[i32])` is that parameter.
+`func use<T type>(items Seq<T>)` takes `T` from the value. `use(bag)` is `Seq<i32>` when `Bag.at` returns `i32`. `use<i32>(bag)` writes that argument. An array or a slice passed to `seq.Seq<T>` uses the element type. `func use<T type>(s Shape, n T)` is `not supported yet`. `func use(items Seq<i32>)` is that parameter.
 
 `use(bag)` returns 42.
 
 ```c
-type Seq[T type] trait {
+type Seq<T type> trait {
     func at(i i32) T;
 };
 
@@ -452,7 +452,7 @@ func Bag::at(self this, i i32) i32 {
     return self.n + i;
 }
 
-func use[T type](items Seq[T]) i32 {
+func use<T type>(items Seq<T>) i32 {
     return items.at(2);
 }
 
@@ -500,19 +500,19 @@ retq                             # return
 
 `id(1)` infers `T` from the argument.
 
-The result may be omitted, and `func id[T type](value T) { return value; }` is that same function.
+The result may be omitted, and `func id<T type>(value T) { return value; }` is that same function.
 
 A body with no `return` is `void`, and so is a body that only writes `return;` or returns a `void` value.
 
 The omitted result may be a function pointer.
 
-`func hold[T type](value T) { return add; }` is `func (i32, i32) i32` when `add` is `func (i32, i32) i32`.
+`func hold<T type>(value T) { return add; }` is `func (i32, i32) i32` when `add` is `func (i32, i32) i32`.
 
-`repeat[4](7)` writes `N` and infers `T`.
+`repeat<4>(7)` writes `N` and infers `T`.
 
-`id[i32](1)` writes the type.
+`id<i32>(1)` writes the type.
 
-`id(c)` with `c *const i32` binds `T` to `*const i32`. The specialization keeps that `const`, so `*p = 1` in its body is `type mismatch`. `id[*const i32](c)` and a field `Box[*const i32]` are the same.
+`id(c)` with `c *const i32` binds `T` to `*const i32`. The specialization keeps that `const`, so `*p = 1` in its body is `type mismatch`. `id<*const i32>(c)` and a field `Box<*const i32>` are the same.
 
 A `*T` parameter does not bind a `*const i32` argument, and a `[]T` parameter does not bind `[]const i32`. Both are `type mismatch`, because the body could store through them. `*const T` and `[]const T` bind `T` to `i32` and accept both.
 
@@ -520,7 +520,7 @@ A type that cannot be inferred is reported as `type mismatch`.
 
 A type parameter bound to two different types in one call is reported as `type mismatch`.
 
-`Vec[i32]` and `Vec[u8]` for `Vec[T]` are that case.
+`Vec<i32>` and `Vec<u8>` for `Vec<T>` are that case.
 
 `sizeof(T)`, `typeof(T)`, and `assert(N > 0, "empty")` see the concrete type and the integer.
 
@@ -528,31 +528,31 @@ A type parameter bound to two different types in one call is reported as `type m
 
 `sizeof` produces `i64`. A size that fits in `i32` may be a compile-time integer type argument.
 
-`width[sizeof(Point)]()` is the same specialization as `width[8]()`.
+`width<sizeof(Point)>()` is the same specialization as `width<8>()`.
 
-`repeat[sizeof(i32)](7)` is the same specialization as `repeat[4](7)`.
+`repeat<sizeof(i32)>(7)` is the same specialization as `repeat<4>(7)`.
 
 `sizeof n` is that integer.
 
-`Buf[sizeof(i32)].span()` reads the one argument as that integer.
+`Buf<sizeof(i32)>.span()` reads the one argument as that integer.
 
 `sizeof(math.Point)` is the size of an exported struct.
 
-`id[sizeof(i32)](1)` is `type mismatch`.
+`id<sizeof(i32)>(1)` is `type mismatch`.
 
 `alignof` in a type argument is `expected a type`.
 
-`Buf[alignof(i32)].span()` is `type mismatch`.
+`Buf<alignof(i32)>.span()` is `expected a type` too.
 
-`sizeof(i32) + 1` is `expected ']'`.
+`width<sizeof(i32) + 1>()` is `expected an expression`. `+` is not part of a type list, so `<` is a comparison.
 
 `sizeof(T)` when `T` is an array is that array's size.
 
-`use[[4]i32]()` is the same specialization as `width[16]()`.
+`use<[4]i32>()` is the same specialization as `width<16>()`.
 
 When the file is `main.tlc`, `use` is `main.use.spec.arr.4.i32`.
 
-`plain[[4]u8]()` is `movl $4, %eax` and `retq`.
+`plain<[4]u8>()` is `movl $4, %eax` and `retq`.
 
 ### Sizes and spellings of array types
 
@@ -568,7 +568,7 @@ The size of `[4]*i32` is 32, the size of `[2][3]i32` is 24, and the size of `[2]
 
 `typeof(T)` when `T` is an array is that array.
 
-`kind[[4]i32]()` is the same type as `typeof([4]i32)`.
+`kind<[4]i32>()` is the same type as `typeof([4]i32)`.
 
 When the file is `main.tlc`, `kind` is `main.kind.spec.arr.4.i32`.
 
@@ -589,12 +589,12 @@ A parameter `[4]i32` is a pointer, so `typeof(value)` is `*i32`.
 ```c
 type Point struct { x i32; y i32; };
 
-func width[N i32]() i32 {
+func width<N i32>() i32 {
     return N;
 }
 
 func main() i32 {
-    return width[sizeof(Point)]();
+    return width<sizeof(Point)>();
 }
 ```
 
@@ -613,19 +613,19 @@ The program returns 8.
 
 When the file is `main.tlc`, the symbol is `main.width.spec.8`.
 
-`repeat[sizeof(i32)]` is `main.repeat.spec.4.i32`.
+`repeat<sizeof(i32)>` is `main.repeat.spec.4.i32`.
 
 ```c
-func width[N i32]() i32 {
+func width<N i32>() i32 {
     return N;
 }
 
-func use[T type]() i32 {
-    return width[sizeof(T)]();
+func use<T type>() i32 {
+    return width<sizeof(T)>();
 }
 
 func main() i32 {
-    return use[[4]i32]();
+    return use<[4]i32>();
 }
 ```
 
@@ -650,12 +650,12 @@ The program returns 16.
 When the file is `main.tlc`, `use` is `main.use.spec.arr.4.i32` and `width` is `main.width.spec.16`.
 
 ```c
-func kind[T type]() i32 {
+func kind<T type>() i32 {
     return i32(typeof(T) == typeof([4]i32));
 }
 
 func main() i32 {
-    return kind[[4]i32]();
+    return kind<[4]i32>();
 }
 ```
 
@@ -678,22 +678,22 @@ When the file is `main.tlc`, the symbol is `main.kind.spec.arr.4.i32`.
 
 A call of a `comptime func` may be a compile-time integer type argument.
 
-`width[add(3)]()` is the same specialization as `width[4]()`.
+`width<add(3)>()` is the same specialization as `width<4>()`.
 
-`Buf[add(3)].span()` reads the one argument as that integer.
+`Buf<add(3)>.span()` reads the one argument as that integer.
 
 A local `const` whose initializer folds to `i32` may be that argument.
 
-`width[n]()` when `const n = 2` is `width[2]()`.
+`width<n>()` when `const n = 2` is `width<2>()`.
 
-`func ordinary(comptime n i32) i32 { return width[n](); }` writes that integer. A negative integer is that value.
+`func ordinary(comptime n i32) i32 { return width<n>(); }` writes that integer. A negative integer is that value.
 
-A result that names the parameter is that type. `repeat[n](40)[0]` reads the element. `repeat[n](1).len` is `n`. A negative integer is `array length must be >= 0`.
+A result that names the parameter is that type. `repeat<n>(40)[0]` reads the element. `repeat<n>(1).len` is `n`. A negative integer is `array length must be >= 0`.
 
 `ordinary(2)` returns 42.
 
 ```c
-func repeat[N i32, T type](value T) [N]T {
+func repeat<N i32, T type>(value T) [N]T {
     var out [N]T;
     out[0] = value;
     comptime if (N > 1) { out[1] = value; }
@@ -701,7 +701,7 @@ func repeat[N i32, T type](value T) [N]T {
 }
 
 func ordinary(comptime n i32) i32 {
-    return repeat[n](40)[0] + n;
+    return repeat<n>(40)[0] + n;
 }
 
 func main() i32 {
@@ -715,7 +715,7 @@ movl $42, %eax                   # constant
 retq                             # return
 ```
 
-`var buf Buf[n]` writes that same integer. `buf.raw.len` is `n` when `raw` is `[N]u8`. `type Mine[N i32] Buf[N]` then `var buf Mine[n]` is that alias. A negative value is `array length must be >= 0`.
+`var buf Buf<n>` writes that same integer. `buf.raw.len` is `n` when `raw` is `[N]u8`. `type Mine<N i32> Buf<N>` then `var buf Mine<n>` is that alias. A negative value is `array length must be >= 0`.
 
 A call of `width` from a `comptime func` is `not supported yet`.
 
@@ -725,27 +725,27 @@ It also hides a const brought in with `import { n }`.
 
 A `var` is `type mismatch`.
 
-`width[4i64]()` is `width[4]()`. `repeat[4u32](40)[0]` is 40. A local `comptime const n = 4i64` then `width[n]()` is that same specialization. `4u64` is that integer when the value fits in `i32`. `width[3000000000]()` and `width[3000000000u32]()` are `type mismatch`. `width[4i8]()` is `type mismatch`.
+`width<4i64>()` is `width<4>()`. `repeat<4u32>(40)[0]` is 40. A local `comptime const n = 4i64` then `width<n>()` is that same specialization. `4u64` is that integer when the value fits in `i32`. `width<3000000000>()` and `width<3000000000u32>()` are `type mismatch`. `width<4i8>()` is `type mismatch`.
 
 A function in that argument must be a `comptime func`. An ordinary function is `not supported yet`.
 
-`add(3) + 1` is `expected ']'`.
+`width<add(3) + 1>()` is `expected an expression`. `+` is not part of a type list, so `<` is a comparison.
 
-A body that builds the next value, such as `return width[add(N)]()`, stops after 32 specializations with `not supported yet`.
+A body that builds the next value, such as `return width<add(N)>()`, stops after 32 specializations with `not supported yet`.
 
-`width[add(3)]()` in `main` is one specialization.
+`width<add(3)>()` in `main` is one specialization.
 
 ```c
 comptime func add(n i32) i32 {
     return n + 1;
 }
 
-func width[N i32]() i32 {
+func width<N i32>() i32 {
     return N;
 }
 
 func main() i32 {
-    return width[add(3)]();
+    return width<add(3)>();
 }
 ```
 
@@ -774,13 +774,13 @@ When the file is `main.tlc`, the symbol is `main.width.spec.4`.
 
 `var g = f` names that generic.
 
-`f(1)` and `f[i32](1)` specialize it the same way as `id`.
+`f(1)` and `f<i32>(1)` specialize it the same way as `id`.
 
 The name is one in this package.
 
 `var f = pkg.id` names that generic too.
 
-`f(1)` and `f[i32](1)` specialize it the same way as `pkg.id`.
+`f(1)` and `f<i32>(1)` specialize it the same way as `pkg.id`.
 
 The binding is not a function pointer and has no storage.
 
@@ -804,9 +804,9 @@ An instance method used as a value is `type mismatch`.
 
 That value may be an integer, a struct with several fields, or a tuple of several types.
 
-`func id[T type](value T) T` of `((40, 2), 1)` binds `T` to that tuple.
+`func id<T type>(value T) T` of `((40, 2), 1)` binds `T` to that tuple.
 
-`func id[T type](value *T)` of `&row`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+`func id<T type>(value *T)` of `&row`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 The call is `main.id.spec.tuple.2.i32.i32`.
 
@@ -818,11 +818,11 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 
 `(*value)[0][0]` is 40 and `(*value)[1]` is 1.
 
-`take[T type](p (*T, i32))` of `(&row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+`take<T type>(p (*T, i32))` of `(&row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 `(*p[0])[0]` is 40 and `p[1]` is 1.
 
-`type Box[T type] struct { n T; }` of `make(row)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+`type Box<T type> struct { n T; }` of `make(row)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 The call is `main.make.spec.tuple.2.i32.i32`.
 
@@ -833,10 +833,10 @@ The call is `main.make.spec.tuple.2.i32.i32`.
 `box.n[0][0]` is 40 and `box.n[1]` is 1.
 
 ```c
-type Box[T type] struct { n T; }
+type Box<T type> struct { n T; }
 
-func make[T type](value T) Box[T] {
-    var box Box[T];
+func make<T type>(value T) Box<T> {
+    var box Box<T>;
     box.n = value;
     return box;
 }
@@ -897,10 +897,10 @@ The call `make(one, two)` is `main.make.spec.tuple.2.i32.i32`.
 `make(40, 2)` is that array of `i32`.
 
 ```c
-type Box[T type] struct { row [2]T; }
+type Box<T type> struct { row [2]T; }
 
-func make[T type](a T, b T) Box[T] {
-    var box Box[T];
+func make<T type>(a T, b T) Box<T> {
+    var box Box<T>;
     box.row[0] = a;
     box.row[1] = b;
     return box;
@@ -986,7 +986,7 @@ retq                             # return
 
 The program returns 43.
 
-`func pair[T type](a T, b T) [2]T`, when `T` is `(i32, i32)`, returns an array of that tuple.
+`func pair<T type>(a T, b T) [2]T`, when `T` is `(i32, i32)`, returns an array of that tuple.
 
 The call `pair(one, two)` is `main.pair.spec.tuple.2.i32.i32`.
 
@@ -997,7 +997,7 @@ The call `pair(one, two)` is `main.pair.spec.tuple.2.i32.i32`.
 `pair(40, 2)` is that array of `i32`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
@@ -1092,7 +1092,7 @@ retq                             # return
 
 The program returns 43.
 
-`func take[T type](row [2]T)`, when `T` is `(i32, i32)`, takes an array of that tuple.
+`func take<T type>(row [2]T)`, when `T` is `(i32, i32)`, takes an array of that tuple.
 
 The call `take(row)` is `main.take.spec.tuple.2.i32.i32`.
 
@@ -1101,14 +1101,14 @@ The call `take(row)` is `main.take.spec.tuple.2.i32.i32`.
 `sum` of `[2]i32` adds those two elements.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func take[T type](row [2]T) i32 {
+func take<T type>(row [2]T) i32 {
     return row[0][0] + row[1][1];
 }
 
@@ -1230,7 +1230,7 @@ A `[2][2]i32` local reads `g[0][0]` and `g[1][1]`.
 That program returns 43.
 
 ```c
-func fill[T type](a T, b T, c T, d T) i32 {
+func fill<T type>(a T, b T, c T, d T) i32 {
     var g [2][2]T;
     g[0][0] = a;
     g[0][1] = b;
@@ -1318,7 +1318,7 @@ retq                             # return
 
 The program returns 47.
 
-`func id[T type](value *T)` of `&row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+`func id<T type>(value *T)` of `&row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
@@ -1329,14 +1329,14 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 `&g`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func id[T type](value *T) i32 {
+func id<T type>(value *T) i32 {
     return (*value)[0][0] + (*value)[1][1];
 }
 
@@ -1413,7 +1413,7 @@ retq                             # return
 
 The program returns 43.
 
-`func id[T type](value T)` of `row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+`func id<T type>(value T)` of `row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
@@ -1427,19 +1427,19 @@ The outer array decays. The inner array stays.
 
 `var g T = value` is that array.
 
-`func give[T type](value T) T` returns that array.
+`func give<T type>(value T) T` returns that array.
 
 `id(nums)`, when `nums` is `[2]i32`, is `spec.arr.2.i32`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func id[T type](value T) i32 {
+func id<T type>(value T) i32 {
     return value[0][0] + value[1][1];
 }
 
@@ -1516,7 +1516,7 @@ retq                             # return
 
 The program returns 43.
 
-`func take[T type](p (T, i32))` of `(row, 1)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+`func take<T type>(p (T, i32))` of `(row, 1)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The call is `main.take.spec.arr.2.tuple.2.i32.i32`.
 
@@ -1526,21 +1526,21 @@ The call is `main.take.spec.arr.2.tuple.2.i32.i32`.
 
 `p[0][0][0][0] + p[0][1][1][1] + p[1]` is 48.
 
-`func make[T type](value T) (T, i32)` returns that tuple.
+`func make<T type>(value T) (T, i32)` returns that tuple.
 
 `got[0][0][0] + got[0][1][1] + got[1]` is 44.
 
 `take((nums, 1))`, when `nums` is `[2]i32`, is `spec.arr.2.i32`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func take[T type](p (T, i32)) i32 {
+func take<T type>(p (T, i32)) i32 {
     return p[0][0][0] + p[0][1][1] + p[1];
 }
 
@@ -1637,7 +1637,7 @@ retq                             # return
 
 The program returns 44.
 
-`type Box[T type] struct { n T; }` of `make(row)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+`type Box<T type> struct { n T; }` of `make(row)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The struct is `Box.spec.arr.2.tuple.2.i32.i32`.
 
@@ -1650,19 +1650,19 @@ The call is `main.make.spec.arr.2.tuple.2.i32.i32`.
 `box.n = value`, when `value` is `[2][2]i32`, is `type mismatch: expected [2]i32, found *[2]i32`.
 
 ```c
-type Box[T type] struct {
+type Box<T type> struct {
     n T;
 }
 
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func make[T type](value T) Box[T] {
-    var box Box[T];
+func make<T type>(value T) Box<T> {
+    var box Box<T>;
     box.n = value;
     return box;
 }
@@ -1772,7 +1772,7 @@ retq                             # return
 
 The program returns 43.
 
-`func id[T type](value *T) *T` of `&row`, when `row` is `[2](i32, i32)`, returns that pointer.
+`func id<T type>(value *T) *T` of `&row`, when `row` is `[2](i32, i32)`, returns that pointer.
 
 The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
@@ -1783,14 +1783,14 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 `id(&g)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func id[T type](value *T) *T {
+func id<T type>(value *T) *T {
     return value;
 }
 
@@ -1870,7 +1870,7 @@ retq                             # return
 
 The program returns 43.
 
-`take[T type](p (*T, i32))` of `(&row, 1)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+`take<T type>(p (*T, i32))` of `(&row, 1)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The call is `main.take.spec.arr.2.tuple.2.i32.i32`.
 
@@ -1881,14 +1881,14 @@ The call is `main.take.spec.arr.2.tuple.2.i32.i32`.
 `wide((&g, 1))`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func take[T type](p (*T, i32)) i32 {
+func take<T type>(p (*T, i32)) i32 {
     return (*p[0])[0][0] + (*p[0])[1][1] + p[1];
 }
 
@@ -1972,7 +1972,7 @@ retq                             # return
 
 The program returns 44.
 
-`type Box[T type] struct { p *T; }` of `make(&row)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+`type Box<T type> struct { p *T; }` of `make(&row)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 The struct is `Box.spec.tuple.2.i32.i32`.
 
@@ -1984,17 +1984,17 @@ The call is `main.make.spec.tuple.2.i32.i32`.
 
 `make(&n)`, when `n` is `i32`, is `spec.i32`.
 
-`var box Box[T]` with no initializer is `type mismatch`. `p` is not optional.
+`var box Box<T>` with no initializer is `type mismatch`. `p` is not optional.
 
 `{.p = value}`, when `value` is `*[2](i32, i32)`, is `type mismatch: expected *(i32, i32), found *[2](i32, i32)`.
 
 ```c
-type Box[T type] struct {
+type Box<T type> struct {
     p *T;
 }
 
-func make[T type](value *T) Box[T] {
-    var box Box[T] = {.p = value};
+func make<T type>(value *T) Box<T> {
+    var box Box<T> = {.p = value};
     return box;
 }
 
@@ -2034,7 +2034,7 @@ retq                             # return
 
 The program returns 42.
 
-`type Box[T type] struct { p *T; }` of `make(&row)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+`type Box<T type> struct { p *T; }` of `make(&row)`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The struct is `Box.spec.arr.2.tuple.2.i32.i32`.
 
@@ -2044,19 +2044,19 @@ The call is `main.make.spec.arr.2.tuple.2.i32.i32`.
 
 `make(&g)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
-`var box Box[T]` with no initializer is `type mismatch`. `p` is not optional.
+`var box Box<T>` with no initializer is `type mismatch`. `p` is not optional.
 
 ```c
-type Box[T type] struct {
+type Box<T type> struct {
     p *T;
 }
 
-func make[T type](value *T) Box[T] {
-    var box Box[T] = {.p = value};
+func make<T type>(value *T) Box<T> {
+    var box Box<T> = {.p = value};
     return box;
 }
 
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
@@ -2141,7 +2141,7 @@ retq                             # return
 
 The program returns 43.
 
-`row [2]T` on `Box[T]`, when `T` is `[2](i32, i32)`, keeps that array inside the written length.
+`row [2]T` on `Box<T>`, when `T` is `[2](i32, i32)`, keeps that array inside the written length.
 
 The struct is `Box.spec.arr.2.tuple.2.i32.i32`.
 
@@ -2149,7 +2149,7 @@ The call is `main.hold.spec.arr.2.tuple.2.i32.i32`.
 
 `box.row[0][0][0]` is 40 and `box.row[1][1][1]` is 7.
 
-`func take[T type](row [2]T)`, `func rows[T type](a T, b T) [2]T`, and `var g [2]T` use the same arrays.
+`func take<T type>(row [2]T)`, `func rows<T type>(a T, b T) [2]T`, and `var g [2]T` use the same arrays.
 
 `take(box.row)` is `main.take.spec.arr.2.tuple.2.i32.i32`.
 
@@ -2158,17 +2158,17 @@ The call is `main.hold.spec.arr.2.tuple.2.i32.i32`.
 A written `[2](i32, i32)` is `expected a type`.
 
 ```c
-type Box[T type] struct { row [2]T; }
+type Box<T type> struct { row [2]T; }
 
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func hold[T type](a T, b T) Box[T] {
-    var box Box[T];
+func hold<T type>(a T, b T) Box<T> {
+    var box Box<T>;
     box.row[0] = a;
     box.row[1] = b;
     return box;
@@ -2360,7 +2360,7 @@ retq                             # return
 
 The program returns 47.
 
-`func id[T type](value **T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+`func id<T type>(value **T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 The call is `main.id.spec.tuple.2.i32.i32`.
 
@@ -2369,7 +2369,7 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 `deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
 ```c
-func id[T type](value **T) i32 {
+func id<T type>(value **T) i32 {
     return (**value)[0] + (**value)[1];
 }
 
@@ -2408,14 +2408,14 @@ retq                             # return
 
 The program returns 42.
 
-`func id[T type](value *T) *T` returns that pointer.
+`func id<T type>(value *T) *T` returns that pointer.
 
 `var p = id(&row)` then `(*p)[0]` is 40 and `(*p)[1]` is 2.
 
 The call is `main.id.spec.tuple.2.i32.i32`.
 
 ```c
-func id[T type](value *T) *T {
+func id<T type>(value *T) *T {
     return value;
 }
 
@@ -2458,7 +2458,7 @@ The program returns 42.
 The compiler reports `type mismatch: expected *Pair, found *(i32, i32)`.
 
 ```c
-func id[T type](value *T) i32 {
+func id<T type>(value *T) i32 {
     return (*value)[0] + (*value)[1];
 }
 
@@ -2493,7 +2493,7 @@ retq                             # return
 
 The program returns 42.
 
-`func id[T type](value **T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
+`func id<T type>(value **T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
@@ -2502,14 +2502,14 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 `wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func id[T type](value **T) i32 {
+func id<T type>(value **T) i32 {
     return (**value)[0][0] + (**value)[1][1];
 }
 
@@ -2590,7 +2590,7 @@ retq                             # return
 
 The program returns 43.
 
-`func id[T type](value *const T)` of `&row`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+`func id<T type>(value *const T)` of `&row`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 The call is `main.id.spec.tuple.2.i32.i32`.
 
@@ -2601,7 +2601,7 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 `(*value)[0] = 1` is `type mismatch`.
 
 ```c
-func id[T type](value *const T) i32 {
+func id<T type>(value *const T) i32 {
     return (*value)[0] + (*value)[1];
 }
 
@@ -2636,7 +2636,7 @@ retq                             # return
 
 The program returns 42.
 
-`func id[T type](value *const T)` of `&row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
+`func id<T type>(value *const T)` of `&row`, when `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
@@ -2647,14 +2647,14 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 `(*value)[0][0] = 1` is `type mismatch`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func id[T type](value *const T) i32 {
+func id<T type>(value *const T) i32 {
     return (*value)[0][0] + (*value)[1][1];
 }
 
@@ -2742,7 +2742,7 @@ The call is `main.read.spec.tuple.2.i32.i32`.
 `q = p`, when `p` is `*i32`, stores that pointer.
 
 ```c
-func read[T type](value *T) i32 {
+func read<T type>(value *T) i32 {
     var q ?*T = ?*T(value);
     if (q == null) {
         return 0;
@@ -2799,14 +2799,14 @@ The call is `main.read.spec.arr.2.tuple.2.i32.i32`.
 `q = value` is `type mismatch: expected ?*[2](i32, i32), found *[2](i32, i32)`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func read[T type](value *T) i32 {
+func read<T type>(value *T) i32 {
     var q ?*T = ?*T(value);
     if (q == null) {
         return 0;
@@ -2894,7 +2894,7 @@ retq                             # return
 
 The program returns 43.
 
-`func read[T type](value ?*T)` of `?*T(value)`, when `T` is `(i32, i32)`, is that optional pointer.
+`func read<T type>(value ?*T)` of `?*T(value)`, when `T` is `(i32, i32)`, is that optional pointer.
 
 The call is `main.read.spec.tuple.2.i32.i32`.
 
@@ -2905,14 +2905,14 @@ The call is `main.read.spec.tuple.2.i32.i32`.
 `pass_deep(&wide)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
 ```c
-func read[T type](value ?*T) i32 {
+func read<T type>(value ?*T) i32 {
     if (value == null) {
         return 0;
     }
     return (*value)[0] + (*value)[1];
 }
 
-func pass[T type](value *T) i32 {
+func pass<T type>(value *T) i32 {
     return read(?*T(value));
 }
 
@@ -2966,7 +2966,7 @@ retq                             # return
 
 The program returns 42.
 
-`func read[T type](value ?*T)` of `?*T(value)`, when `T` is `[2](i32, i32)`, keeps that array after the optional star.
+`func read<T type>(value ?*T)` of `?*T(value)`, when `T` is `[2](i32, i32)`, keeps that array after the optional star.
 
 The call is `main.read.spec.arr.2.tuple.2.i32.i32`.
 
@@ -2977,21 +2977,21 @@ The call is `main.read.spec.arr.2.tuple.2.i32.i32`.
 `read(q)`, when `q` is null, returns 0.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func read[T type](value ?*T) i32 {
+func read<T type>(value ?*T) i32 {
     if (value == null) {
         return 0;
     }
     return (*value)[0][0] + (*value)[1][1];
 }
 
-func pass[T type](value *T) i32 {
+func pass<T type>(value *T) i32 {
     return read(?*T(value));
 }
 
@@ -3087,7 +3087,7 @@ retq                             # return
 
 The program returns 43.
 
-`type Box[T type] struct { p ?*T; }` of `{.p = value}`, when `value` is `*T` and `T` is `(i32, i32)`, stores that pointer. No cast is required.
+`type Box<T type> struct { p ?*T; }` of `{.p = value}`, when `value` is `*T` and `T` is `(i32, i32)`, stores that pointer. No cast is required.
 
 The struct is `Box.spec.tuple.2.i32.i32`.
 
@@ -3098,12 +3098,12 @@ The call is `main.make.spec.tuple.2.i32.i32`.
 `*box.p` before `q` is narrowed is `type mismatch`.
 
 ```c
-type Box[T type] struct {
+type Box<T type> struct {
     p ?*T;
 }
 
-func make[T type](value *T) i32 {
-    var box Box[T] = {.p = value};
+func make<T type>(value *T) i32 {
+    var box Box<T> = {.p = value};
     var q = box.p;
     if (q == null) {
         return 0;
@@ -3151,7 +3151,7 @@ retq                             # return
 
 The program returns 42.
 
-`func id[T type](value *const *const T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+`func id<T type>(value *const *const T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 The call is `main.id.spec.tuple.2.i32.i32`.
 
@@ -3162,7 +3162,7 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 `deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
 ```c
-func id[T type](value *const *const T) i32 {
+func id<T type>(value *const *const T) i32 {
     return (**value)[0] + (**value)[1];
 }
 
@@ -3201,7 +3201,7 @@ retq                             # return
 
 The program returns 42.
 
-`func id[T type](value *const *const T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
+`func id<T type>(value *const *const T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
@@ -3212,14 +3212,14 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 `wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func id[T type](value *const *const T) i32 {
+func id<T type>(value *const *const T) i32 {
     return (**value)[0][0] + (**value)[1][1];
 }
 
@@ -3300,7 +3300,7 @@ retq                             # return
 
 The program returns 43.
 
-`func id[T type](value *const *T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+`func id<T type>(value *const *T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 The inner pointer is const. The tuple is not.
 
@@ -3313,7 +3313,7 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 `deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
 ```c
-func id[T type](value *const *T) i32 {
+func id<T type>(value *const *T) i32 {
     return (**value)[0] + (**value)[1];
 }
 
@@ -3352,7 +3352,7 @@ retq                             # return
 
 The program returns 42.
 
-`func id[T type](value *const *T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
+`func id<T type>(value *const *T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The inner pointer is const. The array is not.
 
@@ -3365,14 +3365,14 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 `wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func id[T type](value *const *T) i32 {
+func id<T type>(value *const *T) i32 {
     return (**value)[0][0] + (**value)[1][1];
 }
 
@@ -3453,7 +3453,7 @@ retq                             # return
 
 The program returns 43.
 
-`func id[T type](value *const *const T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+`func id<T type>(value *const *const T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 The inner pointer is const. The tuple is const.
 
@@ -3466,7 +3466,7 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 `deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
 ```c
-func id[T type](value *const *const T) i32 {
+func id<T type>(value *const *const T) i32 {
     return (**value)[0] + (**value)[1];
 }
 
@@ -3505,7 +3505,7 @@ retq                             # return
 
 The program returns 42.
 
-`func id[T type](value *const *const T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
+`func id<T type>(value *const *const T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The inner pointer is const. The array is const.
 
@@ -3518,14 +3518,14 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 `wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func id[T type](value *const *const T) i32 {
+func id<T type>(value *const *const T) i32 {
     return (**value)[0][0] + (**value)[1][1];
 }
 
@@ -3606,7 +3606,7 @@ retq                             # return
 
 The program returns 43.
 
-`func id[T type](value ***T)` of `&pp`, when `pp` is `&p` and `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+`func id<T type>(value ***T)` of `&pp`, when `pp` is `&p` and `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 Each star is one more pointer. `**T` and `***T` are that same depth.
 
@@ -3621,7 +3621,7 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 `*const *const *const T` is that same depth. `(***value)[0] = 1` is `type mismatch`.
 
 ```c
-func id[T type](value ***T) i32 {
+func id<T type>(value ***T) i32 {
     return (***value)[0] + (***value)[1];
 }
 
@@ -3664,7 +3664,7 @@ retq                             # return
 
 The program returns 42.
 
-`func id[T type](value ***T)` of `&pp`, when `pp` is `&p` and `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
+`func id<T type>(value ***T)` of `&pp`, when `pp` is `&p` and `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
@@ -3673,14 +3673,14 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 `wide(&gpp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func id[T type](value ***T) i32 {
+func id<T type>(value ***T) i32 {
     return (***value)[0][0] + (***value)[1][1];
 }
 
@@ -3765,7 +3765,7 @@ retq                             # return
 
 The program returns 43.
 
-`type Box[T type] struct { p **T; }` of `{.p = value}`, when `value` is `**T` and `T` is `(i32, i32)`, stores that pointer.
+`type Box<T type> struct { p **T; }` of `{.p = value}`, when `value` is `**T` and `T` is `(i32, i32)`, stores that pointer.
 
 The call is `main.make.spec.tuple.2.i32.i32`.
 
@@ -3773,15 +3773,15 @@ The call is `main.make.spec.tuple.2.i32.i32`.
 
 `p ***T` is that same depth. `(***box.p)[0]` reads that element. The call is `main.make_deep.spec.tuple.2.i32.i32`.
 
-`var box Box[T]` with no initializer is `type mismatch`.
+`var box Box<T>` with no initializer is `type mismatch`.
 
 ```c
-type Box[T type] struct {
+type Box<T type> struct {
     p **T;
 }
 
-func make[T type](value **T) Box[T] {
-    var box Box[T] = {.p = value};
+func make<T type>(value **T) Box<T> {
+    var box Box<T> = {.p = value};
     return box;
 }
 
@@ -3825,7 +3825,7 @@ retq                             # return
 
 The program returns 42.
 
-`type Box[T type] struct { p **T; }` of `{.p = value}`, when `value` is `**T` and `T` is `[2](i32, i32)`, stores that pointer.
+`type Box<T type> struct { p **T; }` of `{.p = value}`, when `value` is `**T` and `T` is `[2](i32, i32)`, stores that pointer.
 
 The call is `main.make.spec.arr.2.tuple.2.i32.i32`.
 
@@ -3836,19 +3836,19 @@ The call is `main.make.spec.arr.2.tuple.2.i32.i32`.
 `make(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 ```c
-type Box[T type] struct {
+type Box<T type> struct {
     p **T;
 }
 
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func make[T type](value **T) Box[T] {
-    var box Box[T] = {.p = value};
+func make<T type>(value **T) Box<T> {
+    var box Box<T> = {.p = value};
     return box;
 }
 
@@ -3945,7 +3945,7 @@ The call is `main.id.spec.tuple.2.i32.i32`.
 `deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
 ```c
-func id[T type](value **T) i32 {
+func id<T type>(value **T) i32 {
     var q **T = value;
     return (**q)[0] + (**q)[1];
 }
@@ -3998,14 +3998,14 @@ The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 `wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func id[T type](value **T) i32 {
+func id<T type>(value **T) i32 {
     var q **T = value;
     return (**q)[0][0] + (**q)[1][1];
 }
@@ -4089,18 +4089,18 @@ retq                             # return
 
 The program returns 43.
 
-`func id[T type](value **T) **T` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, returns that pointer.
+`func id<T type>(value **T) **T` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, returns that pointer.
 
 The call is `main.id.spec.tuple.2.i32.i32`.
 
 `(**q)[0]` is 40 and `(**q)[1]` is 2.
 
-`func tri[T type](value ***T) ***T` is that same depth. The call is `main.tri.spec.tuple.2.i32.i32`.
+`func tri<T type>(value ***T) ***T` is that same depth. The call is `main.tri.spec.tuple.2.i32.i32`.
 
 `deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
 ```c
-func id[T type](value **T) **T {
+func id<T type>(value **T) **T {
     return value;
 }
 
@@ -4142,27 +4142,27 @@ retq                             # return
 
 The program returns 42.
 
-`func id[T type](value **T) **T` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, returns that pointer.
+`func id<T type>(value **T) **T` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, returns that pointer.
 
 The call is `main.id.spec.arr.2.tuple.2.i32.i32`.
 
 `(**q)[0][0]` is 40 and `(**q)[1][1]` is 3.
 
-`func tri[T type](value ***T) ***T` is that same depth. The call is `main.tri.spec.arr.2.tuple.2.i32.i32`.
+`func tri<T type>(value ***T) ***T` is that same depth. The call is `main.tri.spec.arr.2.tuple.2.i32.i32`.
 
 `wide(&gp)`, when `g` is `[2][2](i32, i32)`, is `spec.arr.2.arr.2.tuple.2.i32.i32`.
 
 `*const *const *const T` is that same depth. `(***value)[0] = 1` is `type mismatch`.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func id[T type](value **T) **T {
+func id<T type>(value **T) **T {
     return value;
 }
 
@@ -4246,7 +4246,7 @@ retq                             # return
 
 The program returns 43.
 
-`func read[T type](value ?**T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+`func read<T type>(value ?**T)` of `&p`, when `p` is `&row` and `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 The outer pointer is optional.
 
@@ -4259,7 +4259,7 @@ After `value == null`, `(**value)[0]` is 40 and `(**value)[1]` is 2.
 `deep(&wp)`, when `wide` is `((40, 2), 1)`, is `spec.tuple.2.tuple.2.i32.i32.i32`.
 
 ```c
-func read[T type](value ?**T) i32 {
+func read<T type>(value ?**T) i32 {
     if (value == null) {
         return 0;
     }
@@ -4306,7 +4306,7 @@ retq                             # return
 
 The program returns 42.
 
-`func read[T type](value ?**T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
+`func read<T type>(value ?**T)` of `&p`, when `p` is `&row` and `row` is `[2](i32, i32)`, binds `T` to that array.
 
 The outer pointer is optional.
 
@@ -4321,7 +4321,7 @@ After `value == null`, `(**value)[0][0]` is 40 and `(**value)[1][1]` is 3.
 A local `var q ?**T = value` stores that pointer. The outer pointer is optional. `(**q)[0]` before `q == null` is `type mismatch`. `*const *const *const T` is that same depth. `(***value)[0] = 1` is `type mismatch`.
 
 ```c
-func read[T type](value ?**T) i32 {
+func read<T type>(value ?**T) i32 {
     var q ?**T = value;
     if (q == null) {
         return 0;
@@ -4374,14 +4374,14 @@ retq                             # return
 The program returns 42.
 
 ```c
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func read[T type](value ?**T) i32 {
+func read<T type>(value ?**T) i32 {
     if (value == null) {
         return 0;
     }
@@ -4470,14 +4470,14 @@ retq                             # return
 
 The program returns 43.
 
-`take[T type](p (T, i32))` of `(row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
+`take<T type>(p (T, i32))` of `(row, 1)`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
 The call is `main.take.spec.tuple.2.i32.i32`.
 
 `p[0][0]` is 40 and `p[1]` is 1.
 
 ```c
-func take[T type](p (T, i32)) i32 {
+func take<T type>(p (T, i32)) i32 {
     return p[0][0] + p[1];
 }
 
@@ -4527,7 +4527,7 @@ The program returns 41.
 `id(((40, 2), 1))` calls `main.id.spec.tuple.2.tuple.2.i32.i32.i32.spec.t_t_40_2_1` and does not pass the tuple. That copy returns 41.
 
 ```c
-func id[T type](value T) T {
+func id<T type>(value T) T {
     return value;
 }
 
@@ -4593,7 +4593,7 @@ The program returns 41.
 
 With `[P1 type, P2 type]`, `other (P1, P2)` is that tuple.
 
-`SomeFunc[i32, i32](0, (40, 2))` writes the types.
+`SomeFunc<i32, i32>(0, (40, 2))` writes the types.
 
 `SomeFunc(0, (40, 2))` infers them.
 
@@ -4624,13 +4624,13 @@ The element types are the types of the values before promotion.
 ```c
 type Point struct { x i32; y i32; };
 
-func id[T type](value T) T {
+func id<T type>(value T) T {
     return value;
 }
 
 func main() i32 {
     var n = id(40);
-    var written = id[i32](1);
+    var written = id<i32>(1);
     a, b := id((40, 2));
     x, y := id((40, 'a'));
     var point = id(Point{.x = 8, .y = 1});
@@ -4673,7 +4673,7 @@ callq id                         # call id
 retq                             # return
 ```
 
-`id[i32](40)` writes the type.
+`id<i32>(40)` writes the type.
 
 A value in that list, such as `id[4]`, is reported as `type mismatch`.
 
@@ -4690,12 +4690,12 @@ A value in that list, such as `id[4]`, is reported as `type mismatch`.
 `...` in a type-parameter list is not the `...` that `builtin.va()` reads.
 
 ```c
-func SomeFunc[P1 type, P2 type](value i32, other (P1, P2)) i32 {
+func SomeFunc<P1 type, P2 type>(value i32, other (P1, P2)) i32 {
     return value + other[0] + other[1];
 }
 
 func main() i32 {
-    return SomeFunc[i32, i32](0, (40, 2));
+    return SomeFunc<i32, i32>(0, (40, 2));
 }
 ```
 
@@ -4719,7 +4719,7 @@ callq SomeFunc                   # call SomeFunc
 retq                             # return
 ```
 
-`SomeFunc[i32, i32](0, (40, 2))` returns 42.
+`SomeFunc<i32, i32>(0, (40, 2))` returns 42.
 
 `SomeFunc(0, (40, 2))` is that same call.
 
@@ -4733,11 +4733,11 @@ One generic name may have several parameter lists.
 
 A call uses the types of the arguments, the same way as a function that is not generic.
 
-`func id[T type](value T) T` and `func id[T type](value T, extra i32) T` are both `id`.
+`func id<T type>(value T) T` and `func id<T type>(value T, extra i32) T` are both `id`.
 
 Type-parameter names are not part of that list.
 
-`id[T type](value T)` and `id[U type](value U)` are one list.
+`id<T type>(value T)` and `id<U type>(value U)` are one list.
 
 The same parameter list is `redefinition`.
 
@@ -4753,9 +4753,9 @@ A method on a generic struct follows the same rule.
 
 The receiver is not one of those parameters.
 
-`func Box[T]::get(self *this) T` and `func Box[T]::get(self *this, n i32) T` are two methods, chosen from the remaining arguments.
+`func Box<T>::get(self *this) T` and `func Box<T>::get(self *this, n i32) T` are two methods, chosen from the remaining arguments.
 
-`func Box[T]::get(self this)` beside `func Box[T]::get(self *this)` stays `redefinition`.
+`func Box<T>::get(self this)` beside `func Box<T>::get(self *this)` stays `redefinition`.
 
 ## Extern, a trait parameter, and a missing body
 
@@ -4768,7 +4768,7 @@ The receiver is not one of those parameters.
 A bare `extern` declares a generic function the compiler implements. It is not `extern(abi="c")`. The declaration has no body and emits nothing. A body on that declaration is `not supported yet`. A later function with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
 ```c
-extern func id[T type](value T) T;
+extern func id<T type>(value T) T;
 
 func main() i32 {
     return 0;
@@ -4777,9 +4777,9 @@ func main() i32 {
 
 That declaration emits nothing.
 
-`func id[T type](value T) T` with no `extern` is `not supported yet`.
+`func id<T type>(value T) T` with no `extern` is `not supported yet`.
 
-`func id[T type](value T) T` then `id(1)` is that error.
+`func id<T type>(value T) T` then `id(1)` is that error.
 
 A comptime parameter on that prototype is `not supported yet`.
 
@@ -4789,7 +4789,7 @@ A comptime parameter on that prototype is `not supported yet`.
 
 That declaration is `not supported yet`.
 
-`items Seq[T]` takes `T` from the value. A parameter whose type is a trait that does not use `T`, such as `s Shape` beside `[T type]`, is `not supported yet`.
+`items Seq<T>` takes `T` from the value. A parameter whose type is a trait that does not use `T`, such as `s Shape` beside `[T type]`, is `not supported yet`.
 
 `extern(name="symbol")` is `name requires abi="c"`.
 

@@ -118,7 +118,7 @@ A file does not import a package to write the loop.
 
 `for (var item : ptr_of(items))` binds `*E`.
 
-`ptr_of` outside that loop is not a pointer. `var p = ptr_of(items)` is `undeclared identifier`. `ptr_of[T]` is the trait.
+`ptr_of` outside that loop is not a pointer. `var p = ptr_of(items)` is `undeclared identifier`. `ptr_of<T>` is the trait.
 
 A const element binds `*const E`, and a store through it is `type mismatch`.
 
@@ -279,9 +279,9 @@ The body is ordinary code, so a nested `for` also runs later.
 
 `import "std/seq"` names the iteration trait.
 
-`seq.Seq[T]` and `*seq.Seq[T]` check `len` and `at`.
+`seq.Seq<T>` and `*seq.Seq<T>` check `len` and `at`.
 
-`[N]T` and `[]T` satisfy `seq.Seq[E]`, where `E` is the element an index reads.
+`[N]T` and `[]T` satisfy `seq.Seq<E>`, where `E` is the element an index reads.
 
 `len` is `.len`, and `items.len()` on an array or a slice is that field. `at` is the index.
 

@@ -68,7 +68,7 @@ Several expressions in one `return` are several results when every `return` agre
 
 Two bodies with the same parameter list are `redefinition`.
 
-A generic omits the result the same way: `func id[T type](value T) { return value; }`. A method body may omit the result too.
+A generic omits the result the same way: `func id<T type>(value T) { return value; }`. A method body may omit the result too.
 
 The omitted result may be a function pointer, and that pointer may take `[]const u8`. Its result may be a function pointer.
 

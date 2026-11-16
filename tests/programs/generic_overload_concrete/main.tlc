@@ -2,7 +2,7 @@ func show(n i32) i32 {
     return n;
 }
 
-func show[T type](value T) T {
+func show<T type>(value T) T {
     return value;
 }
 

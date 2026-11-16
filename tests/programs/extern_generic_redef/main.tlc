@@ -1,6 +1,6 @@
-extern func id[T type](value T) T;
+extern func id<T type>(value T) T;
 
-func id[T type](value T) T {
+func id<T type>(value T) T {
     return value;
 }
 

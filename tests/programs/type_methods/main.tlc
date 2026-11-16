@@ -12,7 +12,7 @@ type Color enum {
     Blue,
 };
 
-type Box[T type] struct {
+type Box<T type> struct {
     value T;
 };
 
@@ -34,7 +34,7 @@ func Color::code(self this) i32 {
     return 1;
 }
 
-func Box[T]::get(self *this) T {
+func Box<T>::get(self *this) T {
     return self.value;
 }
 
@@ -64,7 +64,7 @@ func main() i32 {
     if (typeof(Color).methods().len != 1 || typeof(Color).methods()[0].kind != typeof(Color.code)) {
         return 7;
     }
-    var box Box[i32];
+    var box Box<i32>;
     box.value = 40;
     if (typeof(box).methods().len != 1 || typeof(box).methods()[0].name.len != 3) {
         return 8;

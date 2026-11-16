@@ -1,1 +1,1 @@
-compile-error: main.tlc:12:17: error: type mismatch: expected Box[i32], found Box[u8]
+compile-error: main.tlc:12:17: error: type mismatch: expected Box<i32>, found Box<u8>

@@ -33,7 +33,7 @@ struct TypeShell {
     bool decay = false;
 };
 
-// One slot of `func id[T type, N int]`. `T type` is a type. `T Shape` is a trait.
+// One slot of `func id<T type, N int>`. `T type` is a type. `T Shape` is a trait.
 // `N int` is a compile-time integer. `...` in these brackets is rejected.
 struct TypeParam {
     SourceLoc loc{};
@@ -48,7 +48,7 @@ struct TypeParam {
 
 struct Expr;
 
-// One argument of `id[int](1)` or `Vec[int]`. A value argument is a folded integer, a constant name,
+// One argument of `id<int>(1)` or `Vec<int>`. A value argument is a folded integer, a constant name,
 // or `sizeof(...)`. The expression is folded while checking. Each copy owns its own expression, so
 // substituting one specialization does not change the template.
 struct TypeArg {
@@ -74,7 +74,7 @@ struct TypeArg {
     // Constructors outside the leaf, outermost first. Empty when the argument is only a name and pointers.
     std::vector<TypeShell> shells;
     std::vector<TypeArg> args;
-    // `Box[T]` when `T` is a tuple. The argument is that tuple, not a name.
+    // `Box<T>` when `T` is a tuple. The argument is that tuple, not a name.
     bool is_tuple = false;
     std::vector<TypeArg> tuple_parts;
     // `sizeof(...)` or `sizeof n`. Null on a literal, a name, or a type.
@@ -117,7 +117,7 @@ struct FnParam {
     // `func () ((i32, i32))` is one result, that tuple. The elements are `results`.
     // `func () ((i32, i32), i32)` is two results. This flag is set on the tuple one.
     bool is_tuple = false;
-    // `Box[i32]` on this parameter, or on the result when `is_fn_ptr` is set.
+    // `Box<i32>` on this parameter, or on the result when `is_fn_ptr` is set.
     std::vector<TypeArg> type_args;
 };
 
@@ -192,7 +192,7 @@ struct Expr {
         mutable const FunctionDecl *selected = nullptr;
         // `seq.Seq(items)` names that trait. The argument is the value, not a call.
         mutable bool trait_cast = false;
-        // `a.malloc[i32]()` through a trait. The concrete struct's method has this name.
+        // `a.malloc<i32>()` through a trait. The concrete struct's method has this name.
         mutable std::string trait_method;
         // Set when this comptime call was compiled and run. Codegen reads the value.
         mutable bool comptime_ran = false;
@@ -218,7 +218,7 @@ struct Expr {
         SourceLoc loc{};
         std::unique_ptr<Expr> base;
         std::string field;
-        // `Buf[4, i32].count`. A single argument stays an index, `Box[i32].extra`.
+        // `Buf<4, i32>.count` and `Box<i32>.extra`.
         std::vector<TypeArg> type_args;
         // Concrete owner after checking: `Entity` or `Box.spec.i32`.
         mutable std::string resolved_owner;
@@ -326,7 +326,7 @@ struct Expr {
         std::vector<FnParam> fn_params;
         bool fn_variadic = false;
         std::vector<FnParam> fn_results;
-        // `Getter[i32](value)`. Empty when the cast writes `Getter(value)` and the type is inferred.
+        // `Getter<i32>(value)`. Empty when the cast writes `Getter(value)` and the type is inferred.
         std::vector<TypeArg> type_args;
         // `?*T(value)` when `T` is a tuple. The elements are `tuple_parts`.
         // `?*T(value)` when `T` is `[2](i32, i32)` keeps the star and then each array in `shells`.
@@ -369,7 +369,7 @@ struct Expr {
         std::unique_ptr<Expr> value;
     };
     // `{.field = value}` names struct fields. `{value, value}` fills an array.
-    // `(value, value)` is a tuple. `Point{}`, `pkg.Point{}`, and `Vec[i32]{}` name the struct.
+    // `(value, value)` is a tuple. `Point{}`, `pkg.Point{}`, and `Vec<i32>{}` name the struct.
     struct Init {
         SourceLoc loc{};
         std::vector<FieldInit> fields;
@@ -418,7 +418,7 @@ struct Expr {
         int indirections = 0;
         uint32_t optional = 0;
         uint32_t const_pointee = 0;
-        // `Vec[i32]{}`, or the element of `[_]Box[i32]{...}`.
+        // `Vec<i32>{}`, or the element of `[_]Box<i32>{...}`.
         std::vector<TypeArg> type_args;
     };
     struct Unsupported {
@@ -436,7 +436,7 @@ struct Expr {
         int indirections = 0;
         uint32_t optional = 0;
         uint32_t const_pointee = 0;
-        // `new Box[i32]`. Cleared once the name is the specialization.
+        // `new Box<i32>`. Cleared once the name is the specialization.
         std::vector<TypeArg> type_args;
         // `new [count]T`. The result is `*T`, a pointer to the first element.
         std::unique_ptr<Expr> count;
@@ -638,7 +638,7 @@ struct TypedefDecl {
     // `type Pair (i32, i32)`. The name is a distinct alias of that tuple.
     bool is_tuple = false;
     std::vector<ResultSlot> tuple_parts;
-    // `type Something[K type, V type] (K, V)`. Empty on a concrete alias.
+    // `type Something<K type, V type> (K, V)`. Empty on a concrete alias.
     std::vector<TypeParam> type_params;
     // `type Name const i32`. The value is constant. This is not `*const T`.
     bool is_const = false;
@@ -716,7 +716,7 @@ struct VarDecl {
     bool runtime_init = false;
     // `var Entity::next`. Empty for an ordinary variable. The variable is not a field.
     std::string owner;
-    // Names in `var Box[T]::extra` or `var Buf[N, T]::count`. Empty on `var Entity::next`.
+    // Names in `var Box<T>::extra` or `var Buf<N, T>::count`. Empty on `var Entity::next`.
     std::vector<std::string> owner_params;
 };
 
@@ -949,7 +949,7 @@ struct FunctionDecl {
     std::string method_struct;
     // A function on the struct with no `this` parameter. Called as `Type.name(...)`.
     bool static_method = false;
-    // Names written in `func Vec[T]::get`. Empty for `func Point::sum`.
+    // Names written in `func Vec<T>::get`. Empty for `func Point::sum`.
     std::vector<std::string> method_params;
     std::vector<TypeParam> type_params;
     // Parallel to `results`. A non-null entry is `typeof(expr)` and is resolved while checking.
@@ -1127,7 +1127,7 @@ inline bool comptime_param_kept(const FunctionDecl &fn) {
     return fn.is_extern && comptime_param_template(fn);
 }
 
-// `eq[u8]`. A package, a pointer, a slice, or a value argument is not this name.
+// `eq<u8>`. A package, a pointer, a slice, or a value argument is not this name.
 inline bool plain_named_type_arg(const TypeArg &arg) {
     return arg.value_expr == nullptr && !arg.is_value && !arg.has_value && !arg.type_name.empty() &&
            arg.type_package.empty() && !arg.is_struct && !arg.is_enum && arg.indirections == 0 && arg.optional == 0 &&
@@ -1138,13 +1138,13 @@ inline bool plain_named_type_arg(const TypeArg &arg) {
 struct TraitDecl {
     SourceLoc loc{};
     std::string name;
-    // `export` publishes the template. Another package names `pkg.Seq[i32]`.
+    // `export` publishes the template. Another package names `pkg.Seq<i32>`.
     bool exported = false;
     // Unused. A trait is not an `extern(abi="c")` type.
     bool is_extern = false;
     // `extern(abi="compiler")`. The trait is part of the compiler contract.
     bool extern_compiler = false;
-    // `type Seq[T type] trait`. Empty on `type Shape trait`. One `name type` parameter.
+    // `type Seq<T type> trait`. Empty on `type Shape trait`. One `name type` parameter.
     std::vector<TypeParam> type_params;
     // `type Shape trait(Parent)`. Empty when the trait has no parent.
     std::string parent_name;

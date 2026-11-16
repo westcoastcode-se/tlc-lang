@@ -1162,14 +1162,14 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             if (!var->owner.empty()) {
                 std::string detail = (var->is_comptime ? "comptime const " : (var->is_const_decl ? "const " : "var ")) + var->owner;
                 if (!var->owner_params.empty()) {
-                    detail += '[';
+                    detail += '<';
                     for (std::size_t i = 0; i < var->owner_params.size(); ++i) {
                         if (i != 0) {
                             detail += ", ";
                         }
                         detail += var->owner_params[i];
                     }
-                    detail += ']';
+                    detail += '>';
                 }
                 detail += "::";
                 detail += var->name;
@@ -1288,7 +1288,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             if (item->is_tuple) {
                 std::string detail = "type " + item->name;
                 if (!item->type_params.empty()) {
-                    detail += '[';
+                    detail += '<';
                     for (std::size_t i = 0; i < item->type_params.size(); ++i) {
                         if (i != 0) {
                             detail += ", ";
@@ -1298,7 +1298,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
                             detail += " type";
                         }
                     }
-                    detail += ']';
+                    detail += '>';
                 }
                 detail += ' ';
                 detail += spell_results(item->tuple_parts);
@@ -1346,7 +1346,7 @@ void index_unit(const PackageNode &node, const std::string &text, const std::str
             sym.role = Role::Trait;
             sym.detail = "type " + item->name + " trait";
             if (item->type_params.size() == 1 && item->type_params[0].is_type) {
-                sym.detail = "type " + item->name + "[" + item->type_params[0].name + " type] trait";
+                sym.detail = "type " + item->name + "<" + item->type_params[0].name + " type> trait";
             }
             put_loc(sym, text, item->loc, item->name);
             add_sym(out, std::move(sym));

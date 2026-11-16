@@ -26,7 +26,7 @@ func headers(table [2][]i32) [][]i32 {
     return table[:];
 }
 
-func sized[N i32](row [N]i32) i32 {
+func sized<N i32>(row [N]i32) i32 {
     var part = row[0:2];
     return part.len + row.len;
 }
@@ -67,7 +67,7 @@ func main() i32 {
     if (flat.len != 2 || flat[0][1] != 8 || flat[1][0] != 9) {
         return 6;
     }
-    if (sized[4](data) != 6) {
+    if (sized<4>(data) != 6) {
         return 7;
     }
     var local = data[1:3];

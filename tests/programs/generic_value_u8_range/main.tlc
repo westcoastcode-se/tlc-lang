@@ -1,8 +1,8 @@
 // 300 does not fit `N u8`.
-func small[N u8]() u8 {
+func small<N u8>() u8 {
     return N;
 }
 
 func main() i32 {
-    return i32(small[300]());
+    return i32(small<300>());
 }

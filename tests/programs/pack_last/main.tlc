@@ -1,12 +1,12 @@
-func head[T type](value T) T {
+func head<T type>(value T) T {
     return value;
 }
 
-func rest_of[T type](value i32, rest T) T {
+func rest_of<T type>(value i32, rest T) T {
     return rest;
 }
 
-func width[N i32](rest i32) i32 {
+func width<N i32>(rest i32) i32 {
     return N;
 }
 
@@ -25,13 +25,13 @@ func main() i32 {
     if (x != 4 || y != 'b'b || sizeof(y) != 1) {
         return 4;
     }
-    if (width[4](1) != 4) {
+    if (width<4>(1) != 4) {
         return 5;
     }
-    if (head[i32](40) != 40) {
+    if (head<i32>(40) != 40) {
         return 6;
     }
-    if (head[i32](8) != 8) {
+    if (head<i32>(8) != 8) {
         return 7;
     }
     return 42;

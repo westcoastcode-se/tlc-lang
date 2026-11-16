@@ -1,4 +1,4 @@
-extern(abi="tlc") type Seq[T type] trait {
+extern(abi="tlc") type Seq<T type> trait {
     func at(i i32) T;
 };
 
@@ -10,7 +10,7 @@ func Bag::at(self this, i i32) i32 {
     return self.n + i;
 }
 
-func use(items Seq[i32]) i32 {
+func use(items Seq<i32>) i32 {
     return items.at(2);
 }
 

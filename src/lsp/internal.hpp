@@ -609,6 +609,7 @@ const Sym *enclosing_function(const Doc &doc, uint32_t offset);
 std::string field_direct_type(const Doc &doc, const std::string &owner, const std::string &field);
 uint32_t matching_open(const std::string &text, uint32_t close);
 uint32_t matching_bracket(const std::string &text, uint32_t close);
+uint32_t matching_angle(const std::string &text, uint32_t close);
 std::string type_named_before(const Doc &doc, uint32_t brace);
 
 std::string type_of_brace(const Doc &doc, uint32_t brace);

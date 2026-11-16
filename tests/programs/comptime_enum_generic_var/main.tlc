@@ -3,11 +3,11 @@ type Order enum {
     acquire,
 };
 
-func id[T type](value T, comptime order Order) T {
+func id<T type>(value T, comptime order Order) T {
     return value;
 }
 
 func main() i32 {
     var order = Order.acquire;
-    return id[i32](1, order);
+    return id<i32>(1, order);
 }

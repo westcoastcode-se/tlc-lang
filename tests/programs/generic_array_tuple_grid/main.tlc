@@ -1,6 +1,6 @@
-type Box[T type] struct { grid [2][2]T; }
+type Box<T type> struct { grid [2][2]T; }
 
-func fill[T type](a T, b T, c T, d T) i32 {
+func fill<T type>(a T, b T, c T, d T) i32 {
     var g [2][2]T;
     g[0][0] = a;
     g[0][1] = b;
@@ -9,7 +9,7 @@ func fill[T type](a T, b T, c T, d T) i32 {
     return g[0][0][0] + g[1][1][1];
 }
 
-func flat[T type](a T, b T, c T, d T) i32 {
+func flat<T type>(a T, b T, c T, d T) i32 {
     var g [2][2]T;
     g[0][0] = a;
     g[0][1] = b;
@@ -18,14 +18,14 @@ func flat[T type](a T, b T, c T, d T) i32 {
     return g[0][0] + g[1][1];
 }
 
-func cube[T type](value T) i32 {
+func cube<T type>(value T) i32 {
     var g [2][2][2]T;
     g[0][1][0] = value;
     return g[0][1][0][0] + g[0][1][0][1];
 }
 
-func make[T type](a T, b T, c T, d T) i32 {
-    var box Box[T];
+func make<T type>(a T, b T, c T, d T) i32 {
+    var box Box<T>;
     box.grid[0][0] = a;
     box.grid[0][1] = b;
     box.grid[1][0] = c;
@@ -33,7 +33,7 @@ func make[T type](a T, b T, c T, d T) i32 {
     return box.grid[0][0][0] + box.grid[1][1][1];
 }
 
-func give[T type](a T, b T, c T, d T) [2][2]T {
+func give<T type>(a T, b T, c T, d T) [2][2]T {
     var g [2][2]T;
     g[0][0] = a;
     g[0][1] = b;
@@ -42,7 +42,7 @@ func give[T type](a T, b T, c T, d T) [2][2]T {
     return g;
 }
 
-func take[T type](g [2][2]T) i32 {
+func take<T type>(g [2][2]T) i32 {
     return g[0][0][0] + g[1][1][1];
 }
 

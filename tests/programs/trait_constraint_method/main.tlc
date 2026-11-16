@@ -13,7 +13,7 @@ type Point struct {
     n i32;
 };
 
-func Point::measure[T math.Shape](value T) i32 {
+func Point::measure<T math.Shape>(value T) i32 {
     return value.area();
 }
 
@@ -21,5 +21,5 @@ func main() i32 {
     var r Rect;
     r.w = 6;
     r.h = 7;
-    return Point.measure[Rect](r);
+    return Point.measure<Rect>(r);
 }

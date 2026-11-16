@@ -1755,7 +1755,7 @@ class CodeGen {
     llvm::Constant *const_initializer(const Expr &expr, const Binding &dest);
     llvm::Constant *sized_int(const Binding &dest, int32_t value) const;
     llvm::Constant *intern_type_name(const std::string &text);
-    // The spelling `name()` returns: a specialization as written, `Box[i32]`.
+    // The spelling `name()` returns: a specialization as written, `Box<i32>`.
     std::string shown_type_text(const std::string &text) const;
     llvm::StructType *type_desc_type();
     llvm::Constant *intern_type_desc(const std::string &text);

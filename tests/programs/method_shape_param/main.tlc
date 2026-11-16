@@ -6,7 +6,7 @@ type Bag struct {
     n i32;
 };
 
-func Bag::read[T type](self *this, s Shape, n T) i32 {
+func Bag::read<T type>(self *this, s Shape, n T) i32 {
     _ = self.n;
     return n;
 }

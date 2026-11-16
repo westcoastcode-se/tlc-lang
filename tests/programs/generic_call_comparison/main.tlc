@@ -1,0 +1,12 @@
+// `a < b, c > (d)` in an argument list is a generic call of `a`. Two comparisons need parentheses.
+func pick(a bool, b bool) i32 {
+    return 0;
+}
+
+func main() i32 {
+    var a = 1;
+    var b = 2;
+    var c = 3;
+    var d = 4;
+    return pick(a < b, c > (d));
+}

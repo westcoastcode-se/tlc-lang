@@ -296,7 +296,7 @@ TypeArg type_arg_from_spec(const SpecArg &arg) {
         for (const SpecArg &part : arg.parts) {
             out.tuple_parts.push_back(type_arg_from_spec(part));
         }
-        // `Box[T]` when `T` is a shaped tuple. The field keeps every shell.
+        // `Box<T>` when `T` is a shaped tuple. The field keeps every shell.
         if (tuple_array_pack(arg)) {
             out.shells = pack_shells(arg);
             project_shells(out);
@@ -1260,7 +1260,7 @@ void note_stmt(Used &used, Shadow &shadow, const Stmt &stmt) {
     std::visit([&](const auto &node) { note_stmt_node(used, shadow, node); }, stmt.data);
 }
 
-// Methods and associated variables of `owner` in this file. `Vec[T]` on the method is not a use.
+// Methods and associated variables of `owner` in this file. `Vec<T>` on the method is not a use.
 void note_members(Used &used, const TranslationUnit &unit, const std::string &owner) {
     if (owner.empty()) {
         return;
@@ -2054,7 +2054,7 @@ void Checker::instantiate_assoc(uint32_t owner_file, const StructDecl &templ, co
         if (src == nullptr || src->name.empty() || assoc_defined(owner_file, spec_name, src->name)) {
             continue;
         }
-        // `extern(abi="c") const Box[T]::limit` is one C name. It is not specialized.
+        // `extern(abi="c") const Box<T>::limit` is one C name. It is not specialized.
         if (src->extern_c) {
             continue;
         }
@@ -2363,7 +2363,7 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
         error(arg.loc, "type mismatch");
         return false;
     }
-    // `Box[T]` when `T` is a tuple. The argument is that tuple.
+    // `Box<T>` when `T` is a tuple. The argument is that tuple.
     if (arg.is_tuple) {
         if (arg.tuple_parts.empty()) {
             error(arg.loc, "not supported yet");
@@ -2381,7 +2381,7 @@ bool Checker::bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg 
             parts.push_back(std::move(one));
         }
         out = pack_bound(std::move(parts));
-        // `Box[T]` when `T` is `[2](i32, i32)`. The pack keeps the array around that tuple.
+        // `Box<T>` when `T` is `[2](i32, i32)`. The pack keeps the array around that tuple.
         if (out.is_pack && arg.is_array && (arg.array_len > 0 || !arg.shells.empty())) {
             out.is_array = true;
             out.array_len = arg.array_len;
@@ -2718,7 +2718,7 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
             return;
         }
         if (bound->is_pack) {
-            // `Box[T]` when `T` is a tuple. A star or an array around that argument stays rejected.
+            // `Box<T>` when `T` is a tuple. A star or an array around that argument stays rejected.
             // `T` bound to `[2](i32, i32)` keeps those shells on the argument.
             if (arg.indirections != 0 || arg.optional != 0 || arg.const_pointee != 0 || arg.is_array || !arg.args.empty() ||
                 !arg.shells.empty() || arg.is_tuple || bound->parts.empty()) {
@@ -3262,7 +3262,7 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 if (node.base) {
                     substitute_expr(params, bounds, *node.base);
                 }
-                // `Buf[N, T].width` keeps the arguments on the selector. Substitute them as types.
+                // `Buf<N, T>.width` keeps the arguments on the selector. Substitute them as types.
                 if (!node.type_args.empty()) {
                     std::string type_name;
                     std::string type_package;
@@ -3285,14 +3285,6 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 }
                 if (node.index) {
                     substitute_expr(params, bounds, *node.index);
-                    // `Box[T].from` is an index. A plain type parameter becomes that type's name.
-                    if (auto *named = std::get_if<Expr::Name>(&node.index->data)) {
-                        if (const SpecArg *bound = find_arg(params, bounds, named->text);
-                            bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr && !bound->is_pack && !bound->is_array &&
-                            bound->indirections == 0 && bound->type_package.empty() && !bound->type_name.empty()) {
-                            named->text = bound->type_name;
-                        }
-                    }
                 }
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {
                 if (node.expr) {

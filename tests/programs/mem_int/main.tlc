@@ -1,6 +1,6 @@
 import "std/mem";
 
 func main() i32 {
-    assert(mem.memeql[u8](1, 2), "int"b);
+    assert(mem.memeql<u8>(1, 2), "int"b);
     return 0;
 }

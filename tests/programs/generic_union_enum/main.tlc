@@ -1,4 +1,4 @@
-type Name[T type] enum {
+type Name<T type> enum {
     Red,
     Blue = 40,
 };

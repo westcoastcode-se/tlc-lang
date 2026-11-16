@@ -1,27 +1,27 @@
-func num[T type](value ***T) i32 {
+func num<T type>(value ***T) i32 {
     return ***value;
 }
 
-func quad[T type](value ****T) i32 {
+func quad<T type>(value ****T) i32 {
     return (****value)[0] + (****value)[1];
 }
 
-func id[T type](value ***T) i32 {
+func id<T type>(value ***T) i32 {
     return (***value)[0] + (***value)[1];
 }
 
-func deep[T type](value ***T) i32 {
+func deep<T type>(value ***T) i32 {
     return (***value)[0][0] + (***value)[1];
 }
 
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func fill[T type](a T, b T, c T, d T) [2][2]T {
+func fill<T type>(a T, b T, c T, d T) [2][2]T {
     var g [2][2]T;
     g[0][0] = a;
     g[0][1] = b;
@@ -30,11 +30,11 @@ func fill[T type](a T, b T, c T, d T) [2][2]T {
     return g;
 }
 
-func row[T type](value ***T) i32 {
+func row<T type>(value ***T) i32 {
     return (***value)[0][0] + (***value)[1][1];
 }
 
-func wide[T type](value ***T) i32 {
+func wide<T type>(value ***T) i32 {
     return (***value)[0][0][0] + (***value)[1][1][1];
 }
 

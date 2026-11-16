@@ -1,10 +1,10 @@
 link: -lc
 exit: 0
 stdout:
-Box[i32]
-?*Box[*const u8]
-[2]Box[u8]
-Box[Box[i32]]
-Pair[i32, Box[f32]]
-Grid[4]
+Box<i32>
+?*Box<*const u8>
+[2]Box<u8>
+Box<Box<i32>>
+Pair<i32, Box<f32>>
+Grid<4>
 Spec

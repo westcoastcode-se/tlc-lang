@@ -87,7 +87,7 @@ When the struct is in another package, its method is exported, or the call is `a
 
 The call stays `value.read(...)`.
 
-`extern func Vec[T]::get` is that rule for a generic struct.
+`extern func Vec<T>::get` is that rule for a generic struct.
 
 The call stays `value.get(...)`.
 
@@ -151,9 +151,9 @@ The program returns 42.
 
 `math.Entity.next` is the exported variable on `Entity`.
 
-`export var Box[T]::extra` publishes a variable on a generic struct.
+`export var Box<T>::extra` publishes a variable on a generic struct.
 
-Another package reads and assigns `pkg.Box[i32].extra` when `Box` and the variable are exported.
+Another package reads and assigns `pkg.Box<i32>.extra` when `Box` and the variable are exported.
 
 A constant or variable without `export` is reported as `name is not exported`.
 
@@ -255,9 +255,9 @@ The program returns 42.
 
 `const Entity::next` is a constant on the type, written beside the struct.
 
-`export const` publishes it, including `export const Box[T]::limit` on a generic struct.
+`export const` publishes it, including `export const Box<T>::limit` on a generic struct.
 
-Another package reads `pkg.Entity.next`, `pkg.Box[i32].limit`, and `pkg.Buf[4, i32].count`.
+Another package reads `pkg.Entity.next`, `pkg.Box<i32>.limit`, and `pkg.Buf<4, i32>.count`.
 
 Assigning that constant is reported as `not an lvalue`.
 
@@ -265,7 +265,7 @@ A constant without `export` is reported as `name is not exported`.
 
 An unexported generic struct is reported as `Box is not exported`.
 
-Another package names an exported generic struct as `pkg.Vec[i32]`.
+Another package names an exported generic struct as `pkg.Vec<i32>`.
 
 `const next = 1` inside the braces is `not supported yet`. The constant is `const Entity::next` beside the struct. `export const` inside the braces is `not supported yet`.
 
@@ -283,11 +283,11 @@ export func width() i32 {
     return sizeof(Entity);
 }
 
-export type Box[T type] struct {
+export type Box<T type> struct {
     value T;
 };
 
-export const Box[T]::limit = 6;
+export const Box<T>::limit = 6;
 
 export const spare = 2;
 ```
@@ -302,16 +302,16 @@ retq                             # return
 import "math";
 import { spare } from "math";
 
-type Buf[N i32, T type] struct {
+type Buf<N i32, T type> struct {
     value T;
 };
 
-const Buf[N, T]::count = N;
+const Buf<N, T>::count = N;
 
 func main() i32 {
     var e math.Entity;
     e.id = 10;
-    return math.Entity.next + e.id + math.Box[i32].limit + spare + math.width() + Buf[4, i32].count +
+    return math.Entity.next + e.id + math.Box<i32>.limit + spare + math.width() + Buf<4, i32>.count +
         (math.Entity.bias == 1.0f);
 }
 ```
@@ -322,8 +322,8 @@ The program returns 42.
 
 `math.width()` is `sizeof(Entity)`, which is 4.
 
-`math.Box[i32].limit` is the exported constant on that specialization.
+`math.Box<i32>.limit` is the exported constant on that specialization.
 
-`Buf[4, i32].count` is 4.
+`Buf<4, i32>.count` is 4.
 
 [Index](../README.md) · [Previous: Libraries](library.md) · [Next: extern](extern.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

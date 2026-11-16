@@ -294,8 +294,8 @@ std::string Checker::specialize_tuple_alias(const TypedefDecl &templ, uint32_t o
         }
         bounds.push_back(std::move(bound));
     }
-    // `type Name[T type] T`. A tuple alias stays that name. Unpacking it would make
-    // `Name[Duo]` and `Name[Pair]` the same type when both tuples are `(i32, i32)`.
+    // `type Name<T type> T`. A tuple alias stays that name. Unpacking it would make
+    // `Name<Duo>` and `Name<Pair>` the same type when both tuples are `(i32, i32)`.
     const bool identity = !templ.is_tuple && templ.type_args.empty() && templ.type_package.empty() &&
                           !templ.type_name.empty() && templ.indirections == 0 && !templ.is_array && templ.shells.empty() &&
                           !templ.is_fn_ptr && param_index(templ.type_params, templ.type_name) >= 0;
@@ -382,7 +382,7 @@ std::string Checker::specialize_tuple_alias(const TypedefDecl &templ, uint32_t o
             subst_slot(subst_slot, part);
         }
     } else {
-        // `type Name[T type] T` when `T` is a tuple is that tuple alias. Substitution rejects the pack.
+        // `type Name<T type> T` when `T` is a tuple is that tuple alias. Substitution rejects the pack.
         const bool identity = spec.type_args.empty() && spec.type_package.empty() && !spec.type_name.empty() &&
                               spec.indirections == 0 && !spec.is_array && spec.shells.empty() && !spec.is_fn_ptr;
         const int slot = identity ? param_index(templ.type_params, spec.type_name) : -1;
@@ -409,7 +409,7 @@ std::string Checker::specialize_tuple_alias(const TypedefDecl &templ, uint32_t o
                 spec.tuple_parts.push_back(std::move(written));
             }
         } else {
-            // `type MyAlias[T type] Vec[T]` and `type Name[T type] T` become a concrete alias.
+            // `type MyAlias<T type> Vec<T>` and `type Name<T type> T` become a concrete alias.
             substitute_type(templ.type_params, bounds, spec.type_name, spec.type_package, spec.is_struct, spec.is_enum,
                             spec.indirections, spec.optional, spec.is_array, spec.array_len, spec.array_len_name,
                             spec.type_args, loc, &spec.shells, &spec.elem_const, &spec.const_pointee);
@@ -437,7 +437,7 @@ std::string Checker::specialize_tuple_alias(const TypedefDecl &templ, uint32_t o
 
 std::string Checker::specialize_type_app(const std::string &package, const std::string &name, const std::vector<TypeArg> &args,
                                          SourceLoc loc) {
-    // `pkg.Vec[i32]` is written in the importing file. The spec is stored on the defining package,
+    // `pkg.Vec<i32>` is written in the importing file. The spec is stored on the defining package,
     // and that file looks the resulting name up among its own tags.
     const uint32_t caller = file_id_;
     uint32_t owner = file_id_;
@@ -463,7 +463,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             break;
         }
         if (templ == nullptr) {
-            // `pkg.Seq[i32]`. Export publishes the template. The spec stays on that package.
+            // `pkg.Seq<i32>`. Export publishes the template. The spec stays on that package.
             const TraitDecl *trait = nullptr;
             uint32_t trait_owner = owner;
             for (const uint32_t id : files_in_package(symbol->package_file)) {
@@ -587,7 +587,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         }
     };
     if (spec_ready_.contains(key) || find_tag(owner, spec_name) >= 0) {
-        // A value may have specialized the struct before anyone read `Box[i32].extra`.
+        // A value may have specialized the struct before anyone read `Box<i32>.extra`.
         const uint32_t saved_file = file_id_;
         file_id_ = owner;
         expose_bounds(owner, bounds);
@@ -905,10 +905,10 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             method.params.front().type_name = spec_name;
             method.params.front().is_struct = true;
         }
-        // Substitute the struct's parameters only. `[U type]` stays open until the call.
+        // Substitute the struct's parameters only. `<U type>` stays open until the call.
         substitute_function(method, templ->type_params, bounds);
         if (!method.type_params.empty()) {
-            // `T` is filled in. `U` is chosen at the call `value.get[i32](...)`.
+            // `T` is filled in. `U` is chosen at the call `value.get<i32>(...)`.
             bool shadow = false;
             for (const TypeParam &param : method.type_params) {
                 for (const std::string &used : method.method_params) {
@@ -1593,7 +1593,7 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
         const int index = param.type_package.empty() ? param_index(templ.type_params, param.type_name) : -1;
         const bool plain = index >= 0 && param.type_args.empty();
         if (!plain) {
-            // `items Seq[T]` and `items *Seq[T]`. `T` comes from the methods, or from the element of an array.
+            // `items Seq<T>` and `items *Seq<T>`. `T` comes from the methods, or from the element of an array.
             const TraitDecl *trait = nullptr;
             uint32_t trait_owner = file_id_;
             if (!param.type_args.empty()) {
@@ -1898,7 +1898,7 @@ std::optional<std::vector<SpecArg>> Checker::infer_generic_bounds(const Function
 
 namespace {
 
-// `Seq[T]` names a type parameter of this function. `Shape` does not.
+// `Seq<T>` names a type parameter of this function. `Shape` does not.
 bool type_arg_names_param(const FunctionDecl &fn, const TypeArg &arg) {
     if (arg.is_tuple) {
         for (const TypeArg &part : arg.tuple_parts) {
@@ -1948,7 +1948,7 @@ bool Checker::generic_trait_parameter(const FunctionDecl &fn) const {
         if (!trait) {
             continue;
         }
-        // `items Seq[T]` becomes `Seq[i32]` once `T` is known. `s Shape` does not.
+        // `items Seq<T>` becomes `Seq<i32>` once `T` is known. `s Shape` does not.
         bool names_param = false;
         for (const TypeArg &arg : param.type_args) {
             if (type_arg_names_param(fn, arg)) {
@@ -2944,8 +2944,8 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         spec_checking_.erase(key);
         return type_invalid();
     }
-    // `s Shape` beside `[T type]` is not a specialization of `T`.
-    // `items Seq[T]` is `Seq[i32]` after substitution, and that parameter is specialized per value.
+    // `s Shape` beside `<T type>` is not a specialization of `T`.
+    // `items Seq<T>` is `Seq<i32>` after substitution, and that parameter is specialized per value.
     if (generic_trait_parameter(*templ)) {
         for (const Type &param : signature.params) {
             if (mentions_trait(param)) {
@@ -3752,7 +3752,7 @@ bool type_arg_count_ok(const FunctionDecl &fn, const Expr::Call &call) {
     return call.type_args.size() == fn.type_params.size();
 }
 
-// `alloc[T]()` and `alloc[T](count)` share a type-parameter count. The value arguments pick the list.
+// `alloc<T>()` and `alloc<T>(count)` share a type-parameter count. The value arguments pick the list.
 bool default_call_matches(const FunctionDecl &fn, const Expr::Call &call) {
     return type_arg_count_ok(fn, call) && written_params(fn) == call.args.size();
 }
@@ -3796,7 +3796,7 @@ void Checker::register_trait_default(const FunctionDecl &fn) {
         if (existing == nullptr || !same_default_shape(*existing, fn)) {
             continue;
         }
-        // `builtin.tlc` replaces the synthesized `Allocator.malloc[T]`. The file's body is the one that runs.
+        // `builtin.tlc` replaces the synthesized `Allocator.malloc<T>`. The file's body is the one that runs.
         bool synthetic = false;
         if (is_std_builtin_file(file_id_)) {
             for (const FunctionDecl &owned : owned_defaults_) {
@@ -3905,7 +3905,7 @@ void Checker::register_method_template(const FunctionDecl &fn) {
     // A tlc `extern` is one symbol per specialization. `...` and a trait parameter are
     // still not one concrete method. A method with no body is that specialization.
     // A comptime parameter on it needs a body.
-    // `items Seq[T]` names `T`. `s Shape` beside `[T type]` does not.
+    // `items Seq<T>` names `T`. `s Shape` beside `<T type>` does not.
     if (fn.variadic || extern_generic_trait_param(file_id_, fn) || comptime_prototype(fn) ||
         generic_trait_parameter(fn)) {
         error(fn.loc, "not supported yet");
@@ -4286,7 +4286,7 @@ Checker::MethodTemplateChoice Checker::pick_method_template(uint32_t home, const
         if (item == nullptr) {
             continue;
         }
-        // An omitted list is inferred. `bag.read[i32](bag)` still requires that count.
+        // An omitted list is inferred. `bag.read<i32>(bag)` still requires that count.
         const bool args_ok = call.type_args.empty() ? written_params(*item) == call.args.size()
                                                     : type_arg_count_ok(*item, call);
         if (!args_ok) {
@@ -4419,7 +4419,7 @@ std::optional<Type> Checker::try_infer_method_template(Expr &expr, bool used) {
     }
     (void)through_pointer;
     const StructInfo &info = structs_[static_cast<std::size_t>(object.struct_id)];
-    // `v.get(2)` on `Vec[i32]` still writes `[i32]`. A concrete `Bag::read` infers `T`.
+    // `v.get(2)` on `Vec<i32>` still writes `<i32>`. A concrete `Bag::read` infers `T`.
     if (!info.template_name.empty()) {
         return std::nullopt;
     }
@@ -4485,7 +4485,7 @@ std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {
         }
         return apply_method_template(expr, *choice.templ, home, owner, value_base, used);
     };
-    // `Point.id[i32](40)` and `Integer.id[i32](40)`. The name is a type, so it is not probed as a value.
+    // `Point.id<i32>(40)` and `Integer.id<i32>(40)`. The name is a type, so it is not probed as a value.
     if (const auto *named = std::get_if<Expr::Name>(&selector->base->data)) {
         const Symbol *symbol = lookup(named->text);
         const bool shadowed = symbol != nullptr && !symbol->is_type;
@@ -4494,7 +4494,7 @@ std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {
                                  defined_in(named->text), named->text, false);
         }
     }
-    // `math.Point.id[i32](40)`. Probing `math.Point` as a value is `type mismatch`.
+    // `math.Point.id<i32>(40)`. Probing `math.Point` as a value is `type mismatch`.
     if (const auto *inner = std::get_if<Expr::Selector>(&selector->base->data);
         inner != nullptr && inner->base != nullptr && inner->type_args.empty()) {
         if (const auto *package_name = std::get_if<Expr::Name>(&inner->base->data)) {
@@ -4535,7 +4535,7 @@ std::optional<Type> Checker::try_method_template(Expr &expr, bool used) {
             }
         }
     }
-    // `Vec[i32].get[U](value)`, `Buf[4, i32].get[U](value)`, and `pkg.Vec[i32].get[U](value)`.
+    // `Vec<i32>.get<U>(value)`, `Buf<4, i32>.get<U>(value)`, and `pkg.Vec<i32>.get<U>(value)`.
     {
         uint32_t home = 0;
         std::string owner;

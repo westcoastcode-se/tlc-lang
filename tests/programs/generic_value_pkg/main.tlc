@@ -9,5 +9,5 @@ func main() i32 {
         var local = f;
         return local(1);
     }
-    return f(40) + f[i32](0) + g(0) + h(1) + k[i32](0) + inner();
+    return f(40) + f<i32>(0) + g(0) + h(1) + k<i32>(0) + inner();
 }

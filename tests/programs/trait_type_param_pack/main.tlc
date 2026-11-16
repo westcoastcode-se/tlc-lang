@@ -1,4 +1,4 @@
-type Seq[...U] trait {
+type Seq<...U> trait {
     func at(i i32) i32;
 };
 

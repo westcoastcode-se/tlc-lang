@@ -532,7 +532,7 @@ import "builtin";
 
 extern(abi="c") func printf(fmt *const u8, ...) i32;
 
-macro func show[T type](values T) void {
+macro func show<T type>(values T) void {
     for (var i = 0; i < values.len; i = i + 1) {
         if (typeof(values[i]) == typeof(i32)) {
             emit printf("%d\n", values[i]);

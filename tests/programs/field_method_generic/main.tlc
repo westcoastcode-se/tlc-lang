@@ -1,8 +1,8 @@
-type Box[T type] struct {
+type Box<T type> struct {
     len T;
 }
 
-func Box[T]::len(self this) T {
+func Box<T>::len(self this) T {
     return self.len;
 }
 
@@ -10,7 +10,7 @@ type Point struct {
     len i32;
 }
 
-func Point::len[T type](self this, value T) T {
+func Point::len<T type>(self this, value T) T {
     return value;
 }
 

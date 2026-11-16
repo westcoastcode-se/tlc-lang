@@ -931,7 +931,7 @@ std::string spell_function(const FunctionDecl &fn) {
     }
     out += fn.name;
     if (!fn.type_params.empty()) {
-        out.push_back('[');
+        out.push_back('<');
         for (std::size_t n = 0; n < fn.type_params.size(); ++n) {
             if (n != 0) {
                 out += ", ";
@@ -954,7 +954,7 @@ std::string spell_function(const FunctionDecl &fn) {
                 out += param.constraint;
             }
         }
-        out.push_back(']');
+        out.push_back('>');
     }
     out.push_back('(');
     bool any = false;

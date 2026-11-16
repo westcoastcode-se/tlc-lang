@@ -1,4 +1,4 @@
-func id[T type](value T) T { return value; }
+func id<T type>(value T) T { return value; }
 
 func main() i32 {
     var t = (40, 2);

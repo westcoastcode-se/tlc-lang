@@ -576,7 +576,7 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
         error_here("expected an identifier");
     }
     std::vector<TypeParam> type_params;
-    if (looks_like_type_params()) {
+    if (check(TokenKind::Lt)) {
         type_params = parse_type_params();
     }
     if (check(TokenKind::KwStruct) || check(TokenKind::KwEnum) || check(TokenKind::KwTrait) ||
@@ -623,7 +623,7 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     item.is_tuple = type.is_tuple;
     item.tuple_parts = std::move(type.tuple_parts);
     item.is_const = type.is_const;
-    // `type Something[K type, V type] (K, V)`, `type MyAlias[T type] Vec[T]`, and `type Name[T type] T`.
+    // `type Something<K type, V type> (K, V)`, `type MyAlias<T type> Vec<T>`, and `type Name<T type> T`.
     // The checker rejects an unused parameter and a shape that is not a tuple, a type application,
     // or that parameter. `...` is already `expected an identifier`, so that list is not reported again.
     if (!type_params.empty()) {

@@ -34,7 +34,7 @@ func Point::get(self *this, flag bool) {
     return self.get(true);
 }
 
-func hold[T type](value T, flag bool) {
+func hold<T type>(value T, flag bool) {
     if (flag) {
         return value;
     }

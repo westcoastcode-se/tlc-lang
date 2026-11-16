@@ -30,7 +30,7 @@ func Point::choose(self this) {
     return len_text;
 }
 
-func hold[T type](value T) {
+func hold<T type>(value T) {
     return len_text;
 }
 

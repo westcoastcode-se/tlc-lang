@@ -19,11 +19,11 @@ func Square::area(self *this) i32 {
     return self.n;
 }
 
-func measure[T Shape](value T) i32 {
+func measure<T Shape>(value T) i32 {
     return value.area();
 }
 
-func measure_at[T Shape](value *T) i32 {
+func measure_at<T Shape>(value *T) i32 {
     return value.area();
 }
 

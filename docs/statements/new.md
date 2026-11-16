@@ -137,7 +137,7 @@ The program returns 4.
 
 `new [_]Point{{.x = 1}, {.y = 2}}` yields `*[2]Point`.
 
-`new Box[i32]` allocates one specialization.
+`new Box<i32>` allocates one specialization.
 
 ```c
 func main() i32 {

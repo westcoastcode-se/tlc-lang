@@ -15,15 +15,15 @@ type Point struct {
     x i32;
 };
 
-extern func Point::id[T type](self *this, value T) T {
+extern func Point::id<T type>(self *this, value T) T {
     return value;
 }
 
-extern(abi="tlc") func Point::add[T type](self *this, n T) i32 {
+extern(abi="tlc") func Point::add<T type>(self *this, n T) i32 {
     return self.x + n;
 }
 
-extern func Point::measure[T Shape](self *this, value T) i32 {
+extern func Point::measure<T Shape>(self *this, value T) i32 {
     return value.area();
 }
 
@@ -33,5 +33,5 @@ func main() i32 {
     var r Rect;
     r.w = 1;
     r.h = 2;
-    return p.id[i32](18) + p.add[i32](20) + p.measure[Rect](r);
+    return p.id<i32>(18) + p.add<i32>(20) + p.measure<Rect>(r);
 }

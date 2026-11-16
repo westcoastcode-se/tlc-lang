@@ -228,14 +228,14 @@ void dump_var(const VarDecl &var, std::string &out, int indent) {
     if (!var.owner.empty()) {
         out += var.owner;
         if (!var.owner_params.empty()) {
-            out += '[';
+            out += '<';
             for (std::size_t i = 0; i < var.owner_params.size(); ++i) {
                 if (i != 0) {
                     out += ", ";
                 }
                 out += var.owner_params[i];
             }
-            out += ']';
+            out += '>';
         }
         out += "::";
     }
@@ -478,14 +478,14 @@ void dump_function(const FunctionDecl &fn, std::string &out, int indent) {
         if (!fn.method_struct.empty()) {
             out += fn.method_struct;
             if (!fn.method_params.empty()) {
-                out += '[';
+                out += '<';
                 for (std::size_t i = 0; i < fn.method_params.size(); ++i) {
                     if (i != 0) {
                         out += ", ";
                     }
                     out += fn.method_params[i];
                 }
-                out += ']';
+                out += '>';
             }
             out += "::";
         }
@@ -559,7 +559,7 @@ void append_type_args(std::string &text, const std::vector<TypeArg> &args) {
     if (args.empty()) {
         return;
     }
-    text += '[';
+    text += '<';
     for (std::size_t i = 0; i < args.size(); ++i) {
         if (i != 0) {
             text += ", ";
@@ -576,7 +576,7 @@ void append_type_args(std::string &text, const std::vector<TypeArg> &args) {
         text += arg.type_name;
         append_type_args(text, arg.args);
     }
-    text += ']';
+    text += '>';
 }
 
 } // namespace
@@ -622,7 +622,9 @@ std::string dump_expr(const Expr &expr) {
                 text += ')';
                 return text;
             } else if constexpr (std::is_same_v<T, Expr::Selector>) {
-                return "(. " + (node.base ? dump_expr(*node.base) : "(unsupported)") + " " + node.field + ")";
+                std::string text = "(. " + (node.base ? dump_expr(*node.base) : "(unsupported)");
+                append_type_args(text, node.type_args);
+                return text + " " + node.field + ")";
             } else if constexpr (std::is_same_v<T, Expr::String>) {
                 return "(string " + quote_string(node.text) + ")";
             } else if constexpr (std::is_same_v<T, Expr::Index>) {

@@ -244,7 +244,7 @@ A slice is not a C type. A parameter, a result, or a field of `extern(abi="c")` 
 
 `[][][]T` is a slice whose element is `[][]T`. `[N][M]T` is an array of `[M]T`. `[][N]T` is a slice of `[N]T`.
 
-`type Grid [][]i32` then `[]Grid` is `[][][]i32`. `Vec[[][]i32]` is that specialization. A field `T` on `Hold[T]` keeps those shells, so `Hold[[][]i32]` stores `[][]i32`.
+`type Grid [][]i32` then `[]Grid` is `[][][]i32`. `Vec<[][]i32>` is that specialization. A field `T` on `Hold<T>` keeps those shells, so `Hold<[][]i32>` stores `[][]i32`.
 
 ## File-scope slices
 

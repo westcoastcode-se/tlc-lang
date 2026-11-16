@@ -788,7 +788,7 @@ int run_lsp_tests() {
         "    x i32;\n"
         "};\n"
         "\n"
-        "type Box[T type] struct {\n"
+        "type Box<T type> struct {\n"
         "    value T;\n"
         "};\n"
         "\n"
@@ -869,7 +869,7 @@ int run_lsp_tests() {
         "    var seen = inner;\n"
         "    var gone = hidden;\n"
         "    var made *Point = new Point{.x = 1};\n"
-        "    var boxed *Box[i32] = new Box[i32]{.value = 1};\n"
+        "    var boxed *Box<i32> = new Box<i32>{.value = 1};\n"
         "    var row = new [_]Point{{.x = 1}};\n"
         "    var verts = [_]f32{-0.6f, -0.5f, 0.95f};\n"
         "    var count = verts.len;\n"
@@ -1199,7 +1199,7 @@ int run_lsp_tests() {
     EXPECT_HAS(check, new_items, "\"x\"");
     EXPECT(check, new_items.find("\"sum\"") == std::string::npos);
 
-    const LineCol box_field = at_needle(source, "new Box[i32]{.", true);
+    const LineCol box_field = at_needle(source, "new Box<i32>{.", true);
     EXPECT(check, box_field.line >= 0);
     send_json(to_child[1],
               std::string(R"({"jsonrpc":"2.0","id":25,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +

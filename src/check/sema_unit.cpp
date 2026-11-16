@@ -446,7 +446,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 }
                 require_method_params(*fn);
                 if (generic_struct_name(file_id_, fn->method_struct)) {
-                    // `func Vec[T]::get[U type]` is a method template on each specialization.
+                    // `func Vec<T>::get<U type>` is a method template on each specialization.
                     // `...` and a trait parameter stay rejected. Bare `extern` has no TLC body.
                     // A comptime parameter on it needs a body.
                     if (!fn->type_params.empty()) {
@@ -461,7 +461,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                             error(fn->loc, "not supported yet");
                         }
                     }
-                    // `export` publishes `value.name(...)` and `pkg.Vec[i32].name(...)`.
+                    // `export` publishes `value.name(...)` and `pkg.Vec<i32>.name(...)`.
                     // Bare `extern` is a method the compiler implements.
                     // `extern(abi="c")` is not a method of a generic struct.
                     if (fn->extern_c) {
@@ -1688,7 +1688,7 @@ bool Checker::constant_operand(const Expr &expr) {
                 if (node.base == nullptr) {
                     return false;
                 }
-                // `Box[i32].from` after the selector has been checked. The owner is the specialization.
+                // `Box<i32>.from` after the selector has been checked. The owner is the specialization.
                 if (!node.resolved_owner.empty()) {
                     const MethodInfo *method = find_named_method(node.resolved_owner, node.field);
                     if (method != nullptr && method->is_static) {

@@ -1123,7 +1123,7 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         }
                     }
                     // `geom.use(r)` specializes an exported function whose parameter is a trait.
-                    // A template such as `measure[T Shape]` is not in this table.
+                    // A template such as `measure<T Shape>` is not in this table.
                     if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data)) {
                         if (selector->base != nullptr) {
                             if (const auto *base = std::get_if<Expr::Name>(&selector->base->data)) {

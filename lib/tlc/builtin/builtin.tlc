@@ -20,13 +20,13 @@ extern(abi="compiler") export type Allocator trait {
 
 // One object. Null from malloc is `out of memory`, the same failure as `new`.
 // The function is `unsafe`, so the body does not repeat the prefix.
-extern(abi="compiler") export unsafe func Allocator::malloc[T type](self *this) ?*T {
+extern(abi="compiler") export unsafe func Allocator::malloc<T type>(self *this) ?*T {
     var value = self.malloc(sizeof(T), alignof(T));
     return ?*T(value);
 }
 
 // One object. The result is not optional. A failed reservation aborts.
-extern(abi="compiler") export func Allocator::alloc[T type](self *this) *T {
+extern(abi="compiler") export func Allocator::alloc<T type>(self *this) *T {
     unsafe {
         var raw = self.malloc(sizeof(T), alignof(T));
         if (raw != null) {
@@ -37,7 +37,7 @@ extern(abi="compiler") export func Allocator::alloc[T type](self *this) *T {
 }
 
 // `count` elements. The result is that slice. A count below 1 is `type mismatch`.
-extern(abi="compiler") export func Allocator::alloc[T type](self *this, count i64) []T {
+extern(abi="compiler") export func Allocator::alloc<T type>(self *this, count i64) []T {
     if (count < 1) {
         panic("type mismatch"b);
     }
@@ -51,7 +51,7 @@ extern(abi="compiler") export func Allocator::alloc[T type](self *this, count i6
 }
 
 // One object, replacing `ptr`. A null pointer reserves a new block.
-extern(abi="compiler") export func Allocator::realloc[T type](self *this, ptr *T) *T {
+extern(abi="compiler") export func Allocator::realloc<T type>(self *this, ptr *T) *T {
     unsafe {
         var raw = self.realloc(*u8(ptr), sizeof(T), alignof(T));
         if (raw != null) {
@@ -63,7 +63,7 @@ extern(abi="compiler") export func Allocator::realloc[T type](self *this, ptr *T
 
 // `count` elements. A block that already holds at least `count` is returned as it is.
 // A count below 1 is `type mismatch`.
-extern(abi="compiler") export func Allocator::realloc[T type](self *this, block []T, count i64) []T {
+extern(abi="compiler") export func Allocator::realloc<T type>(self *this, block []T, count i64) []T {
     if (count < 1) {
         panic("type mismatch"b);
     }
@@ -159,7 +159,7 @@ extern(abi="compiler") export comptime func CompiledType::alias(self *const this
 
 // `{0}` and `{1}` read elements of a compile-time tuple. `{{` and `}}` are braces.
 // A string element is copied as text. An integer element is decimal. The call is that text.
-extern(abi="compiler") export func fmt[T type](comptime text []const u8, comptime value T) []const u8;
+extern(abi="compiler") export func fmt<T type>(comptime text []const u8, comptime value T) []const u8;
 
 // One call that has not returned. file and name address the trace frame's bytes.
 // Those bytes are not owned. line and column are that call.
@@ -212,16 +212,16 @@ extern(abi="compiler") export unsafe func Malloc::realloc(self *this, ptr *u8, s
 // Another T is not supported yet.
 // On a float, add and sub are floating operations. and, or, xor, and cmpxchg use the bits.
 // A var order is type mismatch. An unknown order is type mismatch.
-extern(abi="compiler") export func atomic_load[T type](p *T, comptime order i32) T;
+extern(abi="compiler") export func atomic_load<T type>(p *T, comptime order i32) T;
 
-extern(abi="compiler") export func atomic_store[T type](p *T, value T, comptime order i32) void;
+extern(abi="compiler") export func atomic_store<T type>(p *T, value T, comptime order i32) void;
 
 // op is 0 xchg, 1 add, 2 sub, 3 and, 4 or, 5 xor. The result is the previous value.
-extern(abi="compiler") export func atomic_rmw[T type](p *T, comptime op i32, value T, comptime order i32) T;
+extern(abi="compiler") export func atomic_rmw<T type>(p *T, comptime op i32, value T, comptime order i32) T;
 
 // Strong compare-exchange. The results are the previous value and whether the store happened.
 // success is the order when the values match. failure is the order when they do not.
-extern(abi="compiler") export func atomic_cmpxchg[T type](p *T, expected T, desired T, comptime success i32, comptime failure i32) (T, bool);
+extern(abi="compiler") export func atomic_cmpxchg<T type>(p *T, expected T, desired T, comptime success i32, comptime failure i32) (T, bool);
 
 // A relaxed fence is no instruction. Another order is a fence.
 // `var f = fence` names it. `f(order)` is that fence. `defer fence(order)` runs when the block is left.

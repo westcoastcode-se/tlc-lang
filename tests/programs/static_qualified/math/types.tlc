@@ -32,20 +32,20 @@ export func Color::code() i32 {
     return 1;
 }
 
-export type Vec[T type] struct {
+export type Vec<T type> struct {
     export value T;
 };
 
-export func Vec[T]::from(value T) Vec[T] {
-    var v Vec[T];
+export func Vec<T>::from(value T) Vec<T> {
+    var v Vec<T>;
     v.value = value;
     return v;
 }
 
-export type Buf[N i32, T type] struct {
+export type Buf<N i32, T type> struct {
     export value T;
 };
 
-export func Buf[N, T]::width() i32 {
+export func Buf<N, T>::width() i32 {
     return N;
 }

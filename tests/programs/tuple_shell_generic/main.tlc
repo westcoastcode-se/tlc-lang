@@ -6,7 +6,7 @@ type Point struct {
 
 type Duo (i32, f64);
 
-func id[Q type](v Q) Q {
+func id<Q type>(v Q) Q {
     return v;
 }
 

@@ -1,4 +1,4 @@
-type Buf[N i32] struct { raw [N]u8; }
+type Buf<N i32> struct { raw [N]u8; }
 
 var slot [8]u8;
 var used i32;
@@ -19,7 +19,7 @@ unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 {
 
 comptime func from(n i32) i32 {
     var arena Arena;
-    var buf = new(&arena) Buf[n];
+    var buf = new(&arena) Buf<n>;
     var len = buf.raw.len;
     delete(&arena) buf;
     return len;

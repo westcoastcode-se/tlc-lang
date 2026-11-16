@@ -1,4 +1,4 @@
-func id[T type](value T) T {
+func id<T type>(value T) T {
     return value;
 }
 
@@ -7,5 +7,5 @@ var f = id;
 func main() i32 {
     const g = f;
     h := f;
-    return f(40) + f[i32](1) + g(0) + h(1);
+    return f(40) + f<i32>(1) + g(0) + h(1);
 }

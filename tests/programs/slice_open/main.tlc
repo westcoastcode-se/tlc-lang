@@ -20,15 +20,15 @@ func take_row(v Row) i32 {
     return v[0] + v.len;
 }
 
-func tail[T type](v []T) []T {
+func tail<T type>(v []T) []T {
     return v[1:];
 }
 
-func lead[T type](v []T, n i32) []T {
+func lead<T type>(v []T, n i32) []T {
     return v[:n];
 }
 
-func whole[T type](v []T) []T {
+func whole<T type>(v []T) []T {
     return v[:];
 }
 
@@ -92,9 +92,9 @@ func main() i32 {
     if (end.len != 2 || end[0].x != 9 || end[1].x != 1) {
         return 12;
     }
-    var generic = tail[i32](all);
-    var pre = lead[i32](all, 2);
-    var kept = whole[i32](all);
+    var generic = tail<i32>(all);
+    var pre = lead<i32>(all, 2);
+    var kept = whole<i32>(all);
     if (generic.len != 3 || generic[0] != 20 || pre.len != 2 || pre[0] != 8 || kept.len != 4 || kept[0] != 8) {
         return 13;
     }

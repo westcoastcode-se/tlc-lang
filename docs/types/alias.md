@@ -90,7 +90,7 @@ A parameter may be written `(i32, f32)`. An element may be a struct, a slice of 
 
 `var p *Duo` is a pointer to that alias. `var value (i32, i32) = (40, 2)` is that tuple, and `value[0]` reads an element.
 
-A field may be written `value (i32, i32)`, and `box.value = (40, 2)` stores it. `type Box[T type] struct { pair (T, i32); }` stores that tuple. `box.pair = (40, 2)` stores it, and `box.pair[0]` reads an element.
+A field may be written `value (i32, i32)`, and `box.value = (40, 2)` stores it. `type Box<T type> struct { pair (T, i32); }` stores that tuple. `box.pair = (40, 2)` stores it, and `box.pair[0]` reads an element.
 
 `sizeof(Duo)` is the size of the alias. `[2]Duo` is an array of it: `row[0] = Duo((40, 2))` stores one element, and `row[0][0]` reads one field.
 
@@ -104,56 +104,56 @@ A field may also use the alias name: `value Duo`.
 
 ## Type parameters
 
-`type Something[K type, V type] (K, V)` is an alias of that tuple. `Something[i32, i32]` is a different type from `(i32, i32)` and from `Something[i32, f32]`.
+`type Something<K type, V type> (K, V)` is an alias of that tuple. `Something<i32, i32>` is a different type from `(i32, i32)` and from `Something<i32, f32>`.
 
-`Something[i32, i32]((40, 2))` names it. `var value Something[i32, i32] = (40, 2)` is `type mismatch`. `type Something[K, V] (K, V)` is `expected a type` on the comma.
+`Something<i32, i32>((40, 2))` names it. `var value Something<i32, i32> = (40, 2)` is `type mismatch`. `type Something<K, V> (K, V)` is `expected a type` on the comma.
 
 A bracket list on `type` is type parameters when `struct`, `trait`, `union`, a tuple, a type application, or that parameter follows. An enum does not take type parameters.
 
-`type Name[T type] enum` is not a form and is reported as `not supported yet`. `type Num[T type] union` is that union. `Num[i32]` names it.
+`type Name<T type> enum` is not a form and is reported as `not supported yet`. `type Num<T type> union` is that union. `Num<i32>` names it.
 
-`type Name[T type] i32` and `type Name[T type] *T` are `expected ']'`. `type Name[T type] (i32)` is `unused parameter` because `T` is not used.
+`type Name<T type> i32` and `type Name<T type> (i32)` are `unused parameter` because `T` is not used. `type Name<T type> *T` is `not supported yet`.
 
-`type Pair[T type] (i32, i32)` and `type MyAlias[T type] Vec[i32]` are that error. A method on the alias counts, and so does an associated variable. Repeating the parameter list does not.
+`type Pair<T type> (i32, i32)` and `type MyAlias<T type> Vec<i32>` are that error. A method on the alias counts, and so does an associated variable. Repeating the parameter list does not.
 
 ### An alias of the parameter
 
-`type Name[T type] T` is an alias of that type. `Name[i32]` is a different type from `i32` and from `Name[u8]`.
+`type Name<T type> T` is an alias of that type. `Name<i32>` is a different type from `i32` and from `Name<u8>`.
 
-A cast confirms the type: `Name[i32](42)` and `i32(n)`. `var n Name[i32] = 42` and `var wide i32 = n` are `type mismatch`.
+A cast confirms the type: `Name<i32>(42)` and `i32(n)`. `var n Name<i32> = 42` and `var wide i32 = n` are `type mismatch`.
 
 `Name` without arguments is `type mismatch`. The wrong number of arguments is `argument count`.
 
-`Name[Point]` is a different type from `Point`. `Name[Point](p)` names it, and `a.x` reads a field.
+`Name<Point>` is a different type from `Point`. `Name<Point>(p)` names it, and `a.x` reads a field.
 
-`Name[Vec[i32]]` is a different type from `Vec[i32]`. `Name[*i32]` is that pointer. `Name[[4]i32]` is that array, and `Name[[]i32]` is that slice.
+`Name<Vec<i32>>` is a different type from `Vec<i32>`. `Name<*i32>` is that pointer. `Name<[4]i32>` is that array, and `Name<[]i32>` is that slice.
 
-`Name[Duo]` is a different type from `Duo` and from `Name[Pair]`. `(T)` is a tuple of one element, so `type Name[T type] (T)` is an alias of that tuple and uses `T`. `Name[i32]((42))` names it, and `n[0]` reads the element.
+`Name<Duo>` is a different type from `Duo` and from `Name<Pair>`. `(T)` is a tuple of one element, so `type Name<T type> (T)` is an alias of that tuple and uses `T`. `Name<i32>((42))` names it, and `n[0]` reads the element.
 
 ### An alias of a specialization
 
-`type MyAlias[T type] Vec[T]` is an alias of that specialization. `MyAlias[i32]` is a different type from `Vec[i32]` and from `MyAlias[u8]`. Assigning one to the other is `type mismatch`.
+`type MyAlias<T type> Vec<T>` is an alias of that specialization. `MyAlias<i32>` is a different type from `Vec<i32>` and from `MyAlias<u8>`. Assigning one to the other is `type mismatch`.
 
 `MyAlias` without arguments is `type mismatch`. The wrong number of arguments is `argument count`.
 
-`type MyAlias[K type, V type] Pair[K, V]` names both parameters. `type MyAlias[T type] math.Vec[T]` names an exported type in that package.
+`type MyAlias<K type, V type> Pair<K, V>` names both parameters. `type MyAlias<T type> math.Vec<T>` names an exported type in that package.
 
-`export type MyAlias[T type] Vec[T]` publishes it. Another package names `pkg.MyAlias[i32]`. Without `export` the name is `MyAlias is not exported`.
+`export type MyAlias<T type> Vec<T>` publishes it. Another package names `pkg.MyAlias<i32>`. Without `export` the name is `MyAlias is not exported`.
 
 A trait is `not supported yet`. A use of the alias as its own target is `not supported yet`.
 
-`type MyAlias[N i32] Buf[N]` is an alias of that specialization. `MyAlias[4]` is a different type from `Buf[4]` and from `MyAlias[8]`. Assigning one to the other is `type mismatch`.
+`type MyAlias<N i32> Buf<N>` is an alias of that specialization. `MyAlias<4>` is a different type from `Buf<4>` and from `MyAlias<8>`. Assigning one to the other is `type mismatch`.
 
 ```c
-type Buf[N i32] struct {
+type Buf<N i32> struct {
     n i32;
     raw [N]u8;
 };
 
-type MyAlias[N i32] Buf[N];
+type MyAlias<N i32> Buf<N>;
 
 func main() i32 {
-    var a MyAlias[4];
+    var a MyAlias<4>;
     a.n = 38;
     return a.n + a.raw.len;
 }
@@ -167,17 +167,17 @@ addl $4, %eax                    # add raw.len
 retq                             # return
 ```
 
-The program returns 42. `raw` is `[4]u8`. `a.n` is the field of `Buf[4]`.
+The program returns 42. `raw` is `[4]u8`. `a.n` is the field of `Buf<4>`.
 
-Inside a `comptime func`, `var buf MyAlias[n]` writes that integer. `MyAlias[n]{}` and `new(&arena) MyAlias[n]` are that alias. `buf.raw.len` is `n`. A negative value is `array length must be >= 0`. A `var` is `type mismatch`. `new MyAlias[n]` uses the heap and is `not supported yet`. Assigning `MyAlias[n]` to `Buf[n]` is `type mismatch`.
+Inside a `comptime func`, `var buf MyAlias<n>` writes that integer. `MyAlias<n>{}` and `new(&arena) MyAlias<n>` are that alias. `buf.raw.len` is `n`. A negative value is `array length must be >= 0`. A `var` is `type mismatch`. `new MyAlias<n>` uses the heap and is `not supported yet`. Assigning `MyAlias<n>` to `Buf<n>` is `type mismatch`.
 
 ```c
-type Buf[N i32] struct { raw [N]u8; }
+type Buf<N i32> struct { raw [N]u8; }
 
-type MyAlias[N i32] Buf[N];
+type MyAlias<N i32> Buf<N>;
 
 comptime func from(n i32) i32 {
-    var buf MyAlias[n];
+    var buf MyAlias<n>;
     return buf.raw.len;
 }
 
@@ -195,14 +195,14 @@ retq                             # return
 The program returns 4.
 
 ```c
-type Vec[T type] struct {
+type Vec<T type> struct {
     n T;
 };
 
-type MyAlias[T type] Vec[T];
+type MyAlias<T type> Vec<T>;
 
 func main() i32 {
-    var a MyAlias[i32];
+    var a MyAlias<i32>;
     a.n = 42;
     return a.n;
 }
@@ -215,13 +215,13 @@ movl -8(%rsp), %eax              # move
 retq                             # return
 ```
 
-The program returns 42. `MyAlias[i32]` is 4 bytes. `a.n` is the field of `Vec[i32]`. `func take[P1 type, P2 type](other (P1, P2))` is that tuple.
+The program returns 42. `MyAlias<i32>` is 4 bytes. `a.n` is the field of `Vec<i32>`. `func take<P1 type, P2 type>(other (P1, P2))` is that tuple.
 
 ```c
-type Name[T type] T;
+type Name<T type> T;
 
 func main() i32 {
-    var n Name[i32] = Name[i32](42);
+    var n Name<i32> = Name<i32>(42);
     return i32(n);
 }
 ```
@@ -233,7 +233,7 @@ movl -4(%rsp), %eax              # move
 retq                             # return
 ```
 
-The program returns 42. `Name[i32]` is 4 bytes. `export type Name[T type] T` publishes it. Another package names `pkg.Name[i32]`. Without `export` the name is `Name is not exported`.
+The program returns 42. `Name<i32>` is 4 bytes. `export type Name<T type> T` publishes it. Another package names `pkg.Name<i32>`. Without `export` the name is `Name is not exported`.
 
 ## A definition is not an alias
 

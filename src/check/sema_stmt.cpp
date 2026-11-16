@@ -4490,7 +4490,7 @@ void Checker::check_function(const FunctionDecl &fn) {
     if (mentions_trait(return_type_)) {
         return_type_ = type_invalid();
     }
-    // Codegen reads `return_type`. Preparing the result slot rewrites `Vec[i32]` to the specialization.
+    // Codegen reads `return_type`. Preparing the result slot rewrites `Vec<i32>` to the specialization.
     if (fn.results.size() == 1 && !fn.results.front().is_fn_ptr && !fn.results.front().is_tuple) {
         FunctionDecl &written = const_cast<FunctionDecl &>(fn);
         const ResultSlot &first = written.results.front();

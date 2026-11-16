@@ -1,4 +1,4 @@
-func id[T type](value T, extra i32) T {
+func id<T type>(value T, extra i32) T {
     return value + extra;
 }
 

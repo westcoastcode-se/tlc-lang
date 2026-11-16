@@ -26,7 +26,7 @@ An array parameter or result names its length, as in `a [4]i32` and `[N]T`. The 
 
 The compiler reports `type mismatch` for `return {inner}` when the result is `[2]i32`, and for a different count.
 
-Indexing the call reads an element, so `repeat[4](2)[0]` is the first element.
+Indexing the call reads an element, so `repeat<4>(2)[0]` is the first element.
 
 ## Copies of an array
 

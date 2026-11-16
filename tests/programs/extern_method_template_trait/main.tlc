@@ -6,7 +6,7 @@ type Point struct {
     x i32;
 };
 
-extern func Point::use[T type](self *this, s Shape, n T) T {
+extern func Point::use<T type>(self *this, s Shape, n T) T {
     return n;
 }
 

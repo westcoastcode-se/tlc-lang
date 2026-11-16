@@ -11,8 +11,8 @@ func main() i32 {
     var once = ptr(0, 2);
     var zero = math.Point.zero();
     var passed = take(math.Point.make);
-    var box = math.Vec[i32].from(4);
-    var wide = math.Buf[1, i32].width();
+    var box = math.Vec<i32>.from(4);
+    var wide = math.Buf<1, i32>.width();
     var tag = math.Color.code();
     var one = math.Point.pick(3);
     var two = math.Point.pick(10, 2);

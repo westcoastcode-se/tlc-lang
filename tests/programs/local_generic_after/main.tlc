@@ -1,9 +1,9 @@
 func main() i32 {
     {
-        type Box[T type] struct {
+        type Box<T type> struct {
             value T;
         };
     }
-    var b Box[i32];
+    var b Box<i32>;
     return 0;
 }

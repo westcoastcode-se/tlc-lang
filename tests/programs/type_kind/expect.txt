@@ -4,8 +4,8 @@ stdout:
 func(i32, i32) i32
 func(*const u8, ...) i32
 *func(i32, i32) i32
-Box[i32]
+Box<i32>
 func(Point) i32
 func(*Point) i32
 func(i32) Point
-func[T type](T) T
+func<T type>(T) T

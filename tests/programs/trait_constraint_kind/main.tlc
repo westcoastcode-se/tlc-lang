@@ -4,7 +4,7 @@ type Rect struct {
     n i32;
 };
 
-func measure[T math.Point](value T) i32 {
+func measure<T math.Point>(value T) i32 {
     return value.n;
 }
 

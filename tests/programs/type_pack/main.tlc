@@ -1,4 +1,4 @@
-func id[T type](value T) T { return value; }
+func id<T type>(value T) T { return value; }
 
 type Point struct { x i32; y i32; };
 
@@ -10,7 +10,7 @@ func main() i32 {
     x, y := id((40, 'a'b));
     var row [3]i32 = {10, 20, 12};
     var one = id((5));
-    var p = id[i32](1);
+    var p = id<i32>(1);
     c, d := id((3, 'b'b));
     var point = id(Point{.x = 9, .y = 1});
     if (n != 40) { return 1; }

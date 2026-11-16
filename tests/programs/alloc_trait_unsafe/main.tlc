@@ -14,7 +14,7 @@ unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 {
 }
 
 func take(a *Allocator) i32 {
-    var raw = a.malloc[i32]();
+    var raw = a.malloc<i32>();
     if (raw == null) {
         return 0;
     }

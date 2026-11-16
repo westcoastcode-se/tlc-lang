@@ -1,23 +1,23 @@
-// An ordinary function whose comptime parameter is a generic value, `width[n]()`, folds at each call,
+// An ordinary function whose comptime parameter is a generic value, `width<n>()`, folds at each call,
 // whatever its integer result. The parameter keeps its written type and its whole range.
-func width[N i64]() i64 {
+func width<N i64>() i64 {
     return N;
 }
 
-func small[N u8]() u8 {
+func small<N u8>() u8 {
     return N;
 }
 
 func wide(comptime n i64) i64 {
-    return width[n]();
+    return width<n>();
 }
 
 func narrow(comptime n i32) i64 {
-    return width[n]();
+    return width<n>();
 }
 
 func byte(comptime n u8) u8 {
-    return small[n]();
+    return small<n>();
 }
 
 func main() i32 {

@@ -1,8 +1,8 @@
-type Buf[N i32] struct { raw [N]u8; }
-type Mine[N i32] Buf[N];
+type Buf<N i32> struct { raw [N]u8; }
+type Mine<N i32> Buf<N>;
 
 comptime func from(n i32) i32 {
-    var buf = new Mine[n];
+    var buf = new Mine<n>;
     return buf.raw.len;
 }
 

@@ -10,7 +10,7 @@ This page describes the `Allocator` trait and the `new` and `delete` expressions
 
 That marker means the trait is part of the compiler contract. A signature that drifts from the compiler's view is `type mismatch`.
 
-The name is in scope in every file. A program that does not import `builtin` still has `malloc`, `free`, `realloc`, and the default `malloc[T]`.
+The name is in scope in every file. A program that does not import `builtin` still has `malloc`, `free`, `realloc`, and the default `malloc<T>`.
 
 `alloc` and `realloc` are default methods in that file, so a call of them needs `import "builtin"`.
 
@@ -72,10 +72,10 @@ The struct methods repeat `unsafe`.
 
 `free` does not.
 
-A struct that defines those three also gains the default `Allocator.malloc[T]`:
+A struct that defines those three also gains the default `Allocator.malloc<T>`:
 
 ```c
-unsafe func Allocator::malloc[T type](self *this) ?*T {
+unsafe func Allocator::malloc<T type>(self *this) ?*T {
     var value = self.malloc(sizeof(T), alignof(T));
     return ?*T(value);
 }
@@ -85,11 +85,11 @@ unsafe func Allocator::malloc[T type](self *this) ?*T {
 
 Pasting this default beside the compiler's `Allocator` is `redefinition` and emits nothing.
 
-A struct that does not define `malloc[T]` calls this body.
+A struct that does not define `malloc<T>` calls this body.
 
-The call is `unsafe arena.malloc[i32]()`, or `arena.malloc[i32]()` inside `unsafe { }`.
+The call is `unsafe arena.malloc<i32>()`, or `arena.malloc<i32>()` inside `unsafe { }`.
 
-The same call through a trait parameter is `unsafe a.malloc[i32]()` when `a` is `*Allocator`.
+The same call through a trait parameter is `unsafe a.malloc<i32>()` when `a` is `*Allocator`.
 
 `new(alloc) T` and `delete(alloc) p` take that same `*Allocator`. The call that passes `alloc` names the struct. `Malloc` still calls `malloc` and `free` directly.
 
@@ -97,19 +97,19 @@ Inside a `comptime func`, `Malloc` is `not supported yet`. The allocator written
 
 The result is `?*T`, and the caller handles `null`.
 
-A struct method `unsafe func Arena::malloc[T type](self *this) ?*T` wins over that default.
+A struct method `unsafe func Arena::malloc<T type>(self *this) ?*T` wins over that default.
 
 ## `alloc` and `realloc`
 
 `import "builtin"` also provides four defaults that do not return null.
 
-`alloc[T]()` reserves one `T` and returns `*T`.
+`alloc<T>()` reserves one `T` and returns `*T`.
 
-`alloc[T](count)` reserves `count` elements and returns `[]T`. The length is `count`.
+`alloc<T>(count)` reserves `count` elements and returns `[]T`. The length is `count`.
 
-`realloc[T](ptr)` replaces one object and returns `*T`.
+`realloc<T>(ptr)` replaces one object and returns `*T`.
 
-`realloc[T](block, count)` grows a slice that is shorter than `count` and returns `[]T` of that length.
+`realloc<T>(block, count)` grows a slice that is shorter than `count` and returns `[]T` of that length.
 
 When `block.len` is at least `count`, that slice is returned. `realloc` is not called, and the length stays `block.len`.
 
@@ -119,7 +119,7 @@ A null result from `malloc` or `realloc` calls `panic("out of memory")`, the sam
 
 `alloc` and `realloc` are ordinary methods. The reservation and the cast of that pointer sit in `unsafe { }`.
 
-`malloc[T]` is an `unsafe func`, so its body does not repeat the prefix.
+`malloc<T>` is an `unsafe func`, so its body does not repeat the prefix.
 
 ```c
 import "builtin";
@@ -145,7 +145,7 @@ unsafe func Slot::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 {
 
 func main() i32 {
     var slot Slot;
-    var p = slot.alloc[i32]();
+    var p = slot.alloc<i32>();
     *p = 42;
     return *p;
 }
@@ -156,7 +156,7 @@ main:
 subq $40, %rsp                   # subtract
 # trace frame for the call, then the matching pop
 leaq 24(%rsp), %rdi              # address
-callq Slot.alloc.spec.i32.       # call Slot.alloc[i32]
+callq Slot.alloc.spec.i32.       # call Slot.alloc<i32>
 movq %rax, 32(%rsp)              # move
 movq 32(%rsp), %rax              # move
 movl $42, (%rax)                 # constant
@@ -168,7 +168,7 @@ retq                             # return
 
 When the file is `main.tlc`, the symbol is `main.Slot.alloc.spec.i32.`.
 
-The final dot separates this list from `alloc[T](count)`.
+The final dot separates this list from `alloc<T>(count)`.
 
 ## The `Malloc` value
 
@@ -296,7 +296,7 @@ An element value that sets that field is accepted.
 
 ## A generic type
 
-`new Box[i32]` and `new Box[i32]{.value = 1}` allocate one specialization.
+`new Box<i32>` and `new Box<i32>{.value = 1}` allocate one specialization.
 
 The fields are the fields of that specialization.
 

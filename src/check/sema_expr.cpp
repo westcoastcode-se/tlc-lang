@@ -659,7 +659,7 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
     }
     // `Other{}` keeps Other. The caller reports a destination that wanted Point.
     Type dest = want;
-    // `Vec[i32]{}` is that specialization. The field rules stay those of `Point{}`.
+    // `Vec<i32>{}` is that specialization. The field rules stay those of `Point{}`.
     bool applied = false;
     if (!init.type_name.empty() && !init.type_args.empty()) {
         bool is_struct = false;
@@ -1709,68 +1709,6 @@ Type Checker::check_expr(const Expr &expr, bool used) {
     return type;
 }
 
-bool Checker::type_arg_from_expr(const Expr &expr, TypeArg &out) const {
-    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
-        out.loc = named->loc;
-        out.type_name = named->text;
-        return true;
-    }
-    if (const auto *number = std::get_if<Expr::Int>(&expr.data)) {
-        out.loc = number->loc;
-        out.is_value = true;
-        const bool wide = number->suffix.is_unsigned || number->suffix.bits == 8 || number->suffix.bits == 16 ||
-                          number->suffix.bits == 64 || number->value > 2147483647ULL;
-        if (wide) {
-            return false;
-        }
-        out.has_value = true;
-        out.value = static_cast<int>(number->value);
-        return true;
-    }
-    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
-        const auto *base = selector->base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector->base->data);
-        if (base == nullptr || selector->field.empty()) {
-            return false;
-        }
-        out.loc = selector->loc;
-        out.type_package = base->text;
-        out.type_name = selector->field;
-        return true;
-    }
-    if (const auto *sized = std::get_if<Expr::Sizeof>(&expr.data)) {
-        // `Buf[sizeof(i32)].span` is an index. `alignof` is not a type argument.
-        if (sized->align) {
-            return false;
-        }
-        out.loc = sized->loc;
-        out.is_value = true;
-        out.value_expr = std::shared_ptr<Expr>(clone_expr(expr));
-        return true;
-    }
-    if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
-        // `Buf[add(3)].span` is an index. The call is a value when it folds.
-        out.loc = call->loc;
-        out.is_value = true;
-        out.value_expr = std::shared_ptr<Expr>(clone_expr(expr));
-        return true;
-    }
-    if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
-        const auto *base = index->base == nullptr ? nullptr : std::get_if<Expr::Name>(&index->base->data);
-        if (base == nullptr || index->index == nullptr) {
-            return false;
-        }
-        TypeArg nested;
-        if (!type_arg_from_expr(*index->index, nested)) {
-            return false;
-        }
-        out.loc = index->loc;
-        out.type_name = base->text;
-        out.args.push_back(std::move(nested));
-        return true;
-    }
-    return false;
-}
-
 uint32_t Checker::assoc_home_file(const Expr::Selector &node) {
     const Expr *cursor = node.base.get();
     if (cursor != nullptr) {
@@ -1822,7 +1760,7 @@ std::string Checker::same_package_spec(const Expr::Selector &node, bool &failed)
         const Symbol *symbol = lookup(name);
         return symbol != nullptr && !symbol->is_type;
     };
-    // `Buf[4, i32].width`. A comma keeps the arguments on the selector.
+    // `Buf<4, i32>.width`. A comma keeps the arguments on the selector.
     if (!node.type_args.empty()) {
         const auto *named = std::get_if<Expr::Name>(&node.base->data);
         if (named == nullptr || shadowed(named->text) || !generic_struct_name(file_id_, named->text)) {
@@ -1834,27 +1772,7 @@ std::string Checker::same_package_spec(const Expr::Selector &node, bool &failed)
         failed = spec.empty();
         return spec;
     }
-    // `Box[i32].from`. One argument stays an index, the same spelling as `Box[i32].extra`.
-    const auto *index = std::get_if<Expr::Index>(&node.base->data);
-    if (index == nullptr) {
-        return {};
-    }
-    const auto *named = index->base == nullptr ? nullptr : std::get_if<Expr::Name>(&index->base->data);
-    if (named == nullptr || index->index == nullptr || shadowed(named->text) ||
-        !generic_struct_name(file_id_, named->text)) {
-        return {};
-    }
-    TypeArg arg;
-    if (!type_arg_from_expr(*index->index, arg)) {
-        error(node.loc, "type mismatch");
-        failed = true;
-        return {};
-    }
-    std::vector<TypeArg> args;
-    args.push_back(std::move(arg));
-    const std::string spec = specialize_type_app("", named->text, args, node.loc);
-    failed = spec.empty();
-    return spec;
+    return {};
 }
 
 bool Checker::generic_spec_base(const Expr::Selector &node, uint32_t &home, std::string &owner) {
@@ -1863,16 +1781,12 @@ bool Checker::generic_spec_base(const Expr::Selector &node, uint32_t &home, std:
     if (node.base == nullptr) {
         return false;
     }
-    // `pkg.Vec[i32].get` and `pkg.Buf[4, i32].get`. A comma keeps the arguments on this selector.
-    // Same-file `Buf[4, i32].get` is not a package, so it falls through.
+    // `pkg.Vec<i32>.get` and `pkg.Buf<4, i32>.get`. A comma keeps the arguments on this selector.
+    // Same-file `Buf<4, i32>.get` is not a package, so it falls through.
     std::vector<TypeArg> args = node.type_args;
     const Expr *type_expr = nullptr;
-    const Expr::Index *index = nullptr;
     if (!args.empty()) {
         type_expr = node.base.get();
-    } else if (const auto *found = std::get_if<Expr::Index>(&node.base->data)) {
-        index = found;
-        type_expr = found->base.get();
     }
     const auto *inner = type_expr == nullptr ? nullptr : std::get_if<Expr::Selector>(&type_expr->data);
     if (inner != nullptr && inner->base != nullptr && inner->type_args.empty()) {
@@ -1896,14 +1810,6 @@ bool Checker::generic_spec_base(const Expr::Selector &node, uint32_t &home, std:
                 }
                 if (templ == nullptr) {
                     return false;
-                }
-                if (index != nullptr) {
-                    TypeArg arg;
-                    if (index->index == nullptr || !type_arg_from_expr(*index->index, arg)) {
-                        error(node.loc, "type mismatch");
-                        return true;
-                    }
-                    args.push_back(std::move(arg));
                 }
                 if (!templ->exported) {
                     error(inner->loc, inner->field + " is not exported");
@@ -1989,16 +1895,12 @@ bool Checker::package_static_call(Expr &expr, const Expr::Selector &selector, bo
 
     uint32_t home = 0;
     std::string owner;
-    // `pkg.Vec[i32].name` and `pkg.Buf[4, i32].name`. A value such as `pkg.row[0].x` is not a template.
+    // `pkg.Vec<i32>.name` and `pkg.Buf<4, i32>.name`. A value such as `pkg.row[0].x` is not a template.
     {
         std::vector<TypeArg> args = selector.type_args;
         const Expr *type_expr = nullptr;
-        const Expr::Index *index = nullptr;
         if (!args.empty()) {
             type_expr = selector.base.get();
-        } else if (const auto *found = std::get_if<Expr::Index>(&selector.base->data)) {
-            index = found;
-            type_expr = found->base.get();
         }
         const auto *inner = type_expr == nullptr ? nullptr : std::get_if<Expr::Selector>(&type_expr->data);
         if (inner != nullptr && inner->base != nullptr && inner->type_args.empty()) {
@@ -2021,16 +1923,6 @@ bool Checker::package_static_call(Expr &expr, const Expr::Selector &selector, bo
                         break;
                     }
                     if (templ != nullptr) {
-                        if (index != nullptr) {
-                            TypeArg arg;
-                            if (index->index == nullptr || !type_arg_from_expr(*index->index, arg)) {
-                                error(node.loc, "type mismatch");
-                                check_args();
-                                out = type_invalid();
-                                return true;
-                            }
-                            args.push_back(std::move(arg));
-                        }
                         if (!templ->exported) {
                             error(inner->loc, inner->field + " is not exported");
                             check_args();
@@ -2264,7 +2156,7 @@ const Checker::MethodInfo *Checker::choose_method(const Expr::Call &node, const 
             hidden_count(extra);
         }
     }
-    // One form takes this many arguments, so there is nothing to choose. `arena.alloc[i32](1)` passes an
+    // One form takes this many arguments, so there is nothing to choose. `arena.alloc<i32>(1)` passes an
     // `i32` to `count i64`, as an ordinary call does, and the argument check reports a real mismatch.
     if (matches == 0 && visible_counts == 1) {
         for (const MethodInfo *form : forms) {
@@ -2554,7 +2446,7 @@ bool Checker::assoc_from_selector(const Expr::Selector &node, Type &out) {
             node.resolved_owner = spec;
             return true;
         }
-        // `Box[i32].from` is the static function. An instance method on the type is `type mismatch`.
+        // `Box<i32>.from` is the static function. An instance method on the type is `type mismatch`.
         const MethodInfo *method = find_named_method(spec, node.field);
         if (method == nullptr || method->type.kind != TypeKind::Function) {
             error(node.loc, "undeclared identifier");
@@ -2579,16 +2471,12 @@ bool Checker::assoc_from_selector(const Expr::Selector &node, Type &out) {
         node.resolved_owner = spec;
         return true;
     };
-    // `pkg.Box[i32].limit` and `pkg.Buf[4, i32].count`. A value such as `pkg.row[0].x` is not a template.
+    // `pkg.Box<i32>.limit` and `pkg.Buf<4, i32>.count`. A value such as `pkg.row[0].x` is not a template.
     {
         std::vector<TypeArg> args = node.type_args;
         const Expr *type_expr = nullptr;
-        const Expr::Index *index = nullptr;
         if (!args.empty()) {
             type_expr = node.base.get();
-        } else if (const auto *found = std::get_if<Expr::Index>(&node.base->data)) {
-            index = found;
-            type_expr = found->base.get();
         }
         const auto *inner = type_expr == nullptr ? nullptr : std::get_if<Expr::Selector>(&type_expr->data);
         if (inner != nullptr && inner->base != nullptr && inner->type_args.empty()) {
@@ -2611,15 +2499,6 @@ bool Checker::assoc_from_selector(const Expr::Selector &node, Type &out) {
                         break;
                     }
                     if (templ != nullptr) {
-                        if (index != nullptr) {
-                            TypeArg arg;
-                            if (index->index == nullptr || !type_arg_from_expr(*index->index, arg)) {
-                                error(node.loc, "type mismatch");
-                                out = type_invalid();
-                                return true;
-                            }
-                            args.push_back(std::move(arg));
-                        }
                         if (!templ->exported) {
                             error(inner->loc, inner->field + " is not exported");
                             out = type_invalid();

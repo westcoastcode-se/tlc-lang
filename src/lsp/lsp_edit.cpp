@@ -90,13 +90,13 @@ uint32_t ident_end(const std::string &text, uint32_t begin) {
     return end;
 }
 
-// Identifier that ends at `end`, skipping one `[...]` and one dot.
+// Identifier that ends at `end`, skipping one `<...>` and one dot.
 bool name_before(const std::string &text, uint32_t end, std::string &name, uint32_t &begin, bool &member, std::string &base) {
     member = false;
     base.clear();
     uint32_t at = skip_back(text, end);
-    if (at > 0 && text[at - 1] == ']') {
-        const uint32_t open = matching_bracket(text, at - 1);
+    if (at > 0 && text[at - 1] == '>') {
+        const uint32_t open = matching_angle(text, at - 1);
         if (open == static_cast<uint32_t>(-1)) {
             return false;
         }
@@ -456,7 +456,7 @@ Json signature_help(const Doc &doc, uint32_t offset) {
             int depth = 0;
             for (std::size_t n = open + 1; n < sym->detail.size(); ++n) {
                 const char c = sym->detail[n];
-                if (c == '(' || c == '[') {
+                if (c == '(' || c == '[' || c == '<') {
                     ++depth;
                     current.push_back(c);
                 } else if (c == ')' && depth == 0) {
@@ -466,7 +466,7 @@ Json signature_help(const Doc &doc, uint32_t offset) {
                     }
                     result = sym->detail.substr(n + 1);
                     break;
-                } else if (c == ')' || c == ']') {
+                } else if (c == ')' || c == ']' || c == '>') {
                     if (depth > 0) {
                         --depth;
                     }

@@ -203,7 +203,7 @@ class Parser {
     // The constant and the variable are written beside the type. `export` and `extern` on those
     // stay rejected. `publish` marks every member exported,
     // which is what an exported inline struct does to the members inside it.
-    // `owner_params` are the struct's type parameters, in order, for `type Box[T type]`.
+    // `owner_params` are the struct's type parameters, in order, for `type Box<T type>`.
     StructMembers parse_struct_members(const std::string &owner, bool publish = false, bool extern_c = false,
                                        bool is_extern = false, const std::vector<std::string> &owner_params = {});
     struct UnionBody {
@@ -228,23 +228,20 @@ class Parser {
                          std::string link_name = {});
     // `allow_slice` accepts `[]T`. A C declarator such as `name[]` stays unsupported.
     ArrayMark parse_array_suffix(bool allow_slice = false);
-    bool bracket_then_paren() const;
-    // `(id[i32])(42)` is the generic call. `(ops[i])()` and `(ops[0])()` stay an index.
+    // `(id<i32>)(42)` is the generic call. `(ops[i])()` calls an element.
     bool paren_generic_call() const;
     std::unique_ptr<Expr> parse_paren_generic_call();
-    bool known_type_name(const std::string &name) const;
-    bool scan_type_arg(std::size_t &ahead, bool &value_shaped) const;
-    bool scan_type_core(std::size_t &ahead, bool &value_shaped) const;
-    bool scan_type_arg_list(std::size_t &ahead, bool &value_shaped) const;
-    // `Vec[i32]{}`. True when `[...]` is followed by `{`.
-    bool bracket_then_brace() const;
-    // `func Vec[T]::get`. True when `[...]` is followed by `::`.
-    bool bracket_then_colon_colon() const;
-    // `Buf[4, i32].count`. True when a comma inside `[...]` is followed by `.`.
-    bool bracket_comma_then_dot() const;
-    bool looks_like_type_params() const;
+    // A generic list at `peek(start)`, a `<` whose tokens are types or value arguments up to a `>` that ends
+    // a token. `after` is the token after that `>`.
+    bool angle_list_at(std::size_t start, std::size_t &after) const;
+    // A generic list at the cursor, and `next` after it.
+    bool angle_then(TokenKind next) const;
+    // `>`, or a `>>`, `>=`, or `>>=` whose first `>` ends a list.
+    bool at_angle_close() const;
+    // Takes one `>`. A longer token keeps the rest.
+    bool close_angle();
     std::vector<TypeParam> parse_type_params();
-    // `Vec[T, N]` on a method. The names refer to the struct's parameters.
+    // `Vec<T, N>` on a method. The names refer to the struct's parameters.
     std::vector<std::string> parse_method_params();
     std::vector<TypeArg> parse_type_args();
     TypeArg parse_one_type_arg();
@@ -300,14 +297,14 @@ class Parser {
     std::unique_ptr<Stmt> parse_const_local(bool is_comptime);
     bool var_is_bind() const;
     bool var_is_inferred() const;
-    // `const Type::name` or `const Type[T]::name`, starting at `at`.
+    // `const Type::name` or `const Type<T>::name`, starting at `at`.
     // Inside a function that constant is rejected. It is file scope.
     bool const_on_type(std::size_t at = 0) const;
     // `const i32 x` and `const Point p` when `Point` is already a type.
     // `const n = expr`, `const n Type = expr`, `const i32 = 1`, and `const Type::name` stay bindings.
     bool const_type_var() const;
     std::unique_ptr<Stmt> parse_var_or_bind();
-    // `var Type::name` and `var Type[T]::name`. The first identifier is the owner.
+    // `var Type::name` and `var Type<T>::name`. The first identifier is the owner.
     void take_var_owner(VarDecl &var);
     // Keep a file-scope constant or variable that was written inside a struct or a function.
     void lift_assoc(VarDecl var);

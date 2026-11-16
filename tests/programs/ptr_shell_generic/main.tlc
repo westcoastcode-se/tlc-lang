@@ -1,13 +1,13 @@
 // `T` and `N` are inferred through every pointer, slice, and array in the parameter's type.
-func len_of[N i32, T type](v *[N]T) i32 {
+func len_of<N i32, T type>(v *[N]T) i32 {
     return N;
 }
 
-func last[T type](v [2]*T) T {
+func last<T type>(v [2]*T) T {
     return *v[1];
 }
 
-func id[Q type](v Q) Q {
+func id<Q type>(v Q) Q {
     return v;
 }
 

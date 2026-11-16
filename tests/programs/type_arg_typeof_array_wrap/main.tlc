@@ -1,13 +1,13 @@
-func plain[T type]() bool {
+func plain<T type>() bool {
     return typeof([4]T) == typeof([4]i32);
 }
 
-func wide[T type]() bool {
+func wide<T type>() bool {
     return typeof([4]T) == typeof([4][2]i32);
 }
 
 func main() i32 {
-    if (!plain[i32]()) { return 1; }
-    if (!wide[[2]i32]()) { return 2; }
+    if (!plain<i32>()) { return 1; }
+    if (!wide<[2]i32>()) { return 2; }
     return 42;
 }

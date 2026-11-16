@@ -38,7 +38,7 @@ func first_zero(x Big, y Big) i32 {
     return i32(y.bytes[7]);
 }
 
-func id[T type](v T) T {
+func id<T type>(v T) T {
     return v;
 }
 

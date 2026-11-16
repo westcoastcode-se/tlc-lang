@@ -4,7 +4,7 @@ comptime const n = *p;
 comptime const pp = &p;
 comptime const again = **pp;
 
-func width[N i32]() i32 {
+func width<N i32>() i32 {
     return N;
 }
 
@@ -13,7 +13,7 @@ func main() i32 {
     comptime const lp = &local;
     comptime const len = *lp;
     comptime if (*p == 20) {
-        return n + again + width[len]();
+        return n + again + width<len>();
     }
     return 0;
 }

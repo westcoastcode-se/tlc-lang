@@ -62,7 +62,7 @@ A method and a free function with the same parameters are not equal.
 
 `typeof(add).methods().len` is 0, and that return is the same two instructions.
 
-`typeof(id)` for `func id[T type](value T) T` spells `func[T type](T) T` and `generic` is true.
+`typeof(id)` for `func id<T type>(value T) T` spells `func<T type>(T) T` and `generic` is true.
 
 `return f` when `f` names a generic is `not supported yet`, and `var f = Point.get` is `type mismatch`.
 

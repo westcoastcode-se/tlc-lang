@@ -64,7 +64,7 @@ func mark() i32 {
     return 20;
 }
 
-func fresh[T type]() *T {
+func fresh<T type>() *T {
     return new T{.x = 8, .y = 8};
 }
 
@@ -82,7 +82,7 @@ func main() i32 {
     if (s.x != 4) {
         return 3;
     }
-    var g *Point = fresh[Point]();
+    var g *Point = fresh<Point>();
     if (g.x != 8 || g.y != 8) {
         return 4;
     }

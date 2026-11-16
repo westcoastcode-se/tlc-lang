@@ -1,4 +1,4 @@
-type Num[T type] union {
+type Num<T type> union {
     n T = 4;
     m T = 5;
 };

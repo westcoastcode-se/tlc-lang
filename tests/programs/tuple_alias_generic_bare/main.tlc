@@ -1,4 +1,4 @@
-type Something[K, V] (K, V);
+type Something<K, V> (K, V);
 
 func main() i32 {
     return 0;

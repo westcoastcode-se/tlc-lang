@@ -27,13 +27,13 @@ unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 {
 func main() i32 {
     var arena Arena;
     arena.used = 0;
-    var one = arena.alloc[i32]();
+    var one = arena.alloc<i32>();
     *one = 20;
-    var again = arena.realloc[i32](one);
+    var again = arena.realloc<i32>(one);
     *again = 40;
-    var buf = arena.alloc[i32](1);
+    var buf = arena.alloc<i32>(1);
     buf[0] = 2;
-    var grown = arena.realloc[i32](buf, 1);
+    var grown = arena.realloc<i32>(buf, 1);
     grown[0] = 2;
     return *again + grown[0];
 }

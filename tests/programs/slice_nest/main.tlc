@@ -4,7 +4,7 @@ type Hold struct {
     items [][]i32;
 };
 
-type Box[T type] struct {
+type Box<T type> struct {
     items [][]i32;
     value T;
 };
@@ -92,7 +92,7 @@ func main() i32 {
     if (n != 8) {
         return 11;
     }
-    var box_g Box[i32];
+    var box_g Box<i32>;
     box_g.value = 1;
     box_g.items = view;
     if (box_g.items[0][1] != 20 || box_g.value != 1) {

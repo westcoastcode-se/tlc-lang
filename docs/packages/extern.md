@@ -38,7 +38,7 @@ That includes a trait default, a generic function, a method template, and a meth
 
 `extern(abi="c")` is also rejected on a function whose parameter is a trait.
 
-`extern(abi="c") type Name[T] struct`, `extern(abi="c") type Name trait`, and `extern(abi="c") type Name[T type] trait` are rejected too.
+`extern(abi="c") type Name<T> struct`, `extern(abi="c") type Name trait`, and `extern(abi="c") type Name<T type> trait` are rejected too.
 
 That error is `extern(abi="c") on a trait or a generic`.
 
@@ -54,11 +54,11 @@ A comptime parameter on that declaration is `not supported yet`.
 
 `...` on a function that is not `extern(abi="c")` is `not supported yet`.
 
-`export type Seq[T type] trait` publishes that trait.
+`export type Seq<T type> trait` publishes that trait.
 
 It has no size and no symbol.
 
-Another package names `pkg.Seq[i32]`.
+Another package names `pkg.Seq<i32>`.
 
 The package `std/seq` declares that trait. The compiler treats `Seq` in that directory as the iteration trait.
 

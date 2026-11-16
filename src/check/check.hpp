@@ -157,7 +157,7 @@ struct Symbol {
 
 struct Scope {
     std::unordered_map<std::string, Symbol> symbols;
-    // `type Box[T type] struct` in this block. The decl lives in `owned_structs_`.
+    // `type Box<T type> struct` in this block. The decl lives in `owned_structs_`.
     // The map dies with the scope, so a later `Box` is not this template.
     std::unordered_map<std::string, StructDecl *> generic_structs;
     int function_id = 0;
@@ -289,7 +289,7 @@ class Checker {
         SourceLoc parent_loc{};
         // `func Trait::name`. A struct that satisfies the trait gains these. The struct's own
         // method with the same parameters after the receiver wins. The decl stays in the unit,
-        // or in `owned_defaults_` for the built-in `Allocator.malloc[T]`.
+        // or in `owned_defaults_` for the built-in `Allocator.malloc<T>`.
         std::vector<const FunctionDecl *> defaults;
         // Field declarations, typed after structs are complete.
         std::vector<FieldDecl> pending;
@@ -303,7 +303,7 @@ class Checker {
 
     std::vector<Scope> scopes_;
     int function_seq_ = 0;
-    // Disambiguates `type Box[T] struct` inside a function from a file-scope `Box`.
+    // Disambiguates `type Box<T> struct` inside a function from a file-scope `Box`.
     int local_generic_seq_ = 0;
     std::vector<StructInfo> structs_;
     // `fields()` yields `[]const Field`: `name []const u8` and `kind Type`.
@@ -632,7 +632,7 @@ class Checker {
     bool indexed_type(const Type &base, Type &out, bool &pointee_void) const;
     // `allow_incomplete` is a tuple alias registered before struct bodies exist.
     Type type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_incomplete = false);
-    // The type's name. `display` is a message's spelling: a specialization is `Box[i32]`. Without it the name is
+    // The type's name. `display` is a message's spelling: a specialization is `Box<i32>`. Without it the name is
     // the internal one, `Box.spec.i32`, which code writes back as a type name.
     std::string type_desc(const Type &type, bool display = false) const;
     std::string display_type(const Type &type) const { return type_desc(type, true); }
@@ -721,7 +721,7 @@ class Checker {
     Type waiting_generic_result(const FunctionDecl &templ);
     bool generic_candidate_matches(const FunctionDecl &templ, const Expr::Call &call, const std::vector<Type> &arg_types,
                                    uint32_t owner);
-    // `extern func use[T type](s Shape, n T)` still takes a trait. `T Shape` does not.
+    // `extern func use<T type>(s Shape, n T)` still takes a trait. `T Shape` does not.
     bool extern_generic_trait_param(uint32_t file, const FunctionDecl &fn) const;
     // An `extern` prototype names the specialization. A comptime parameter has no external symbol.
     bool extern_generic_prototype(const FunctionDecl &fn) const;
@@ -729,8 +729,8 @@ class Checker {
     bool compiler_owned_extern(const FunctionDecl &fn) const;
     // A comptime parameter on a prototype needs a body. The copy that holds the constant is local.
     bool comptime_prototype(const FunctionDecl &fn) const;
-    // A parameter of a generic function whose type is a trait or `Seq[T]`.
-    // `value T` on `[T type]` is not one. That parameter stays `not supported yet`.
+    // A parameter of a generic function whose type is a trait or `Seq<T>`.
+    // `value T` on `<T type>` is not one. That parameter stays `not supported yet`.
     bool generic_trait_parameter(const FunctionDecl &fn) const;
     FnList function_list(const FunctionDecl &fn, Type signature) const;
     // Picks the parameter list a call uses. Null when none matches or more than one matches.
@@ -821,7 +821,7 @@ class Checker {
     // True when `got` is `want`, or `got`'s parent chain reaches `want`.
     bool trait_is(int got, int want) const;
     void register_typedefs(const TranslationUnit &unit, uint32_t file_id);
-    // `type Something[K type, V type] (K, V)` and `type MyAlias[T type] Vec[T]`.
+    // `type Something<K type, V type> (K, V)` and `type MyAlias<T type> Vec<T>`.
     // The decl is a template, not a concrete alias.
     void register_tuple_alias_template(const TypedefDecl &item);
     bool name_taken(const std::string &name) const;
@@ -1304,18 +1304,18 @@ class Checker {
     std::deque<TypedefDecl> owned_typedefs_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, std::vector<FunctionDecl *>>> fn_templates_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, StructDecl *>> struct_templates_;
-    // `type Something[K type, V type] (K, V)`. A use `Something[i32, i32]` builds one alias.
+    // `type Something<K type, V type> (K, V)`. A use `Something<i32, i32>` builds one alias.
     std::unordered_map<uint32_t, std::unordered_map<std::string, const TypedefDecl *>> typedef_templates_;
-    // `type Seq[T type] trait`. The decl stays in the unit. A use `Seq[i32]` builds one trait.
+    // `type Seq<T type> trait`. The decl stays in the unit. A use `Seq<i32>` builds one trait.
     std::unordered_map<uint32_t, std::unordered_map<std::string, const TraitDecl *>> trait_templates_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, ConstBinding>> const_values_;
     std::deque<OwnedFn> deferred_methods_;
-    // `func Vec[T]::get[U type]` after `Vec` is specialized. `U` is still open.
+    // `func Vec<T>::get<U type>` after `Vec` is specialized. `U` is still open.
     // Pointers into this deque stay valid. Codegen does not emit these copies.
     std::deque<OwnedFn> held_method_templates_;
-    // The built-in `Allocator.malloc[T type]`. Pointers into this deque stay valid.
+    // The built-in `Allocator.malloc<T type>`. Pointers into this deque stay valid.
     std::deque<FunctionDecl> owned_defaults_;
-    // file, owner, name. `func Arena::malloc[T type]`. The decl stays in the unit.
+    // file, owner, name. `func Arena::malloc<T type>`. The decl stays in the unit.
     std::unordered_map<uint32_t,
                        std::unordered_map<std::string, std::unordered_map<std::string, std::vector<const FunctionDecl *>>>>
         method_templates_;
@@ -1324,7 +1324,7 @@ class Checker {
     std::unordered_set<std::string> granting_;
     // Instantiated copy -> the default or method template it was copied from.
     std::unordered_map<const FunctionDecl *, const FunctionDecl *> default_origin_;
-    // `a.malloc[i32]()` on a trait. Installed on each struct that satisfies the trait.
+    // `a.malloc<i32>()` on a trait. Installed on each struct that satisfies the trait.
     struct TraitGenericUse {
         int trait_id = -1;
         const FunctionDecl *templ = nullptr;
@@ -1348,7 +1348,7 @@ class Checker {
     void collect_templates(TranslationUnit &unit, uint32_t file_id);
     // A generic parameter the declaration does not name is `unused parameter`.
     // A struct, union, trait, or alias also counts a method or an associated variable.
-    // Repeating `Vec[T]` on a method does not use `T`. An unused alias is cleared.
+    // Repeating `Vec<T>` on a method does not use `T`. An unused alias is cleared.
     void reject_unused_generics(TranslationUnit &unit);
     bool mark_unused_parameters(const std::vector<TypeParam> &params, const std::unordered_set<std::string> &used);
     void reject_function_generics(const FunctionDecl &fn);
@@ -1544,7 +1544,7 @@ class Checker {
     // when the decl is a clone that `comptime_decl_file` cannot see.
     bool apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, bool several, std::size_t skip = 0,
                                  std::optional<uint32_t> owner_file = std::nullopt);
-    // `func id[T type](value T)`. A comptime argument drops `value`. A `var` still passes it.
+    // `func id<T type>(value T)`. A comptime argument drops `value`. A `var` still passes it.
     bool expand_generic_comptime_value(Expr::Call &call, const FunctionDecl &templ, const std::vector<SpecArg> &bounds,
                                        const std::string &spec_name, uint32_t owner);
     // The substituted parameter can be dropped the way `comptime n i32` is.
@@ -1579,7 +1579,7 @@ class Checker {
     std::optional<Type> apply_method_template(Expr &expr, const FunctionDecl &templ, uint32_t home,
                                               const std::string &owner, bool value_base, bool used);
     std::optional<Type> try_method_template(Expr &expr, bool used);
-    // `bag.read(bag)` infers `T` on `func Bag::read[T type](self *this, items Seq[T])`.
+    // `bag.read(bag)` infers `T` on `func Bag::read<T type>(self *this, items Seq<T>)`.
     // Nullopt when the name is not a method template, so a concrete method stays on the ordinary path.
     std::optional<Type> try_infer_method_template(Expr &expr, bool used);
     void drain_deferred();
@@ -1589,10 +1589,10 @@ class Checker {
     std::string mangle_spec(const std::string &base, const std::vector<SpecArg> &args) const;
     std::string specialize_type_app(const std::string &package, const std::string &name, const std::vector<TypeArg> &args,
                                     SourceLoc loc);
-    // `Seq[i32]`. The result is the specialized trait's name. Empty when the arguments do not bind.
+    // `Seq<i32>`. The result is the specialized trait's name. Empty when the arguments do not bind.
     std::string specialize_trait(const TraitDecl &templ, uint32_t owner, const std::vector<TypeArg> &args,
                                  SourceLoc loc);
-    // `Something[i32, i32]`. The result is the specialized alias's name. Empty when the arguments do not bind.
+    // `Something<i32, i32>`. The result is the specialized alias's name. Empty when the arguments do not bind.
     std::string specialize_tuple_alias(const TypedefDecl &templ, uint32_t owner, const std::vector<TypeArg> &args,
                                        SourceLoc loc);
     bool bind_type_arg(const TypeParam &param, const TypeArg &arg, SpecArg &out, SourceLoc loc);
@@ -1623,9 +1623,9 @@ class Checker {
     void check_isolated(uint32_t file, const FunctionDecl &fn);
     void queue_spec(uint32_t file, FunctionDecl fn);
     bool generic_struct_name(uint32_t file, const std::string &name) const;
-    // `func Vec[T]::get` must name the struct's parameters. A list on a plain struct is rejected.
+    // `func Vec<T>::get` must name the struct's parameters. A list on a plain struct is rejected.
     void require_method_params(const FunctionDecl &fn);
-    // `var Vec[T]::count` uses the same names. A list on a plain struct is rejected.
+    // `var Vec<T>::count` uses the same names. A list on a plain struct is rejected.
     void require_owner_params(const VarDecl &var);
     void declare_assoc(const VarDecl &var);
     // Check `var` as a constant and store it on `var.owner` in `file`.
@@ -1637,14 +1637,13 @@ class Checker {
     // One variable for this specialization. Safe to call again when the struct already exists.
     void instantiate_assoc(uint32_t owner_file, const StructDecl &templ, const std::string &spec_name,
                            const std::vector<SpecArg> &bounds);
-    bool type_arg_from_expr(const Expr &expr, TypeArg &out) const;
-    // `Box[i32].from` and `Buf[4, i32].width` in this package. Empty when `node` is not that form.
+    // `Box<i32>.from` and `Buf<4, i32>.width` in this package. Empty when `node` is not that form.
     // `failed` means the form was recognized and the arguments did not specialize.
     std::string same_package_spec(const Expr::Selector &node, bool &failed);
-    // `Vec[i32].get`, `Buf[4, i32].get`, `pkg.Vec[i32].get`, and `pkg.Buf[4, i32].get`.
+    // `Vec<i32>.get`, `Buf<4, i32>.get`, `pkg.Vec<i32>.get`, and `pkg.Buf<4, i32>.get`.
     // True when that form was recognized. An empty `owner` means the error is already reported.
     bool generic_spec_base(const Expr::Selector &node, uint32_t &home, std::string &owner);
-    // `pkg.Type.name(...)` and `pkg.Vec[i32].name(...)`. True when that call was handled.
+    // `pkg.Type.name(...)` and `pkg.Vec<i32>.name(...)`. True when that call was handled.
     bool package_static_call(Expr &expr, const Expr::Selector &selector, bool deferring, bool used, Type &out);
     // A static function used as a value on a type from another package.
     // True when the name is a method. False leaves the caller's diagnostic in place.

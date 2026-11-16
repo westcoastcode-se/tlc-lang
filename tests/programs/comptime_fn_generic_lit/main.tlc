@@ -1,9 +1,9 @@
-func bump[N i32](value i32) i32 {
+func bump<N i32>(value i32) i32 {
     return value + N;
 }
 
 comptime func from_lit() i32 {
-    return bump[4](1);
+    return bump<4>(1);
 }
 
 func main() i32 {

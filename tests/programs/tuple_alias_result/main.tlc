@@ -1,6 +1,6 @@
 // A tuple alias as a result is one value of that alias, not one result per element.
 type Duo (i32, f64);
-type Pair[K type, V type] (K, V);
+type Pair<K type, V type> (K, V);
 
 func make(n i32) Duo {
     if (n > 0) {
@@ -10,8 +10,8 @@ func make(n i32) Duo {
     return Duo((0, 0.0));
 }
 
-func pair() Pair[i32, i32] {
-    return Pair[i32, i32]((1, 1));
+func pair() Pair<i32, i32> {
+    return Pair<i32, i32>((1, 1));
 }
 
 func both() (Duo, i32) {

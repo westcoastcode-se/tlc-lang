@@ -8,17 +8,17 @@ A method on a generic struct names that struct's parameters.
 
 A parameter after the method name that the method does not use is `unused parameter`.
 
-`func Vec[T]::get(self *this, i i32) T` is the method on `type Vec[T type] struct`.
+`func Vec<T>::get(self *this, i i32) T` is the method on `type Vec<T type> struct`.
 
 A field and a method of the same name are `redefinition`.
 
-The result may be omitted: `func Vec[T]::get(self this) { return self.n; }` is `T`.
+The result may be omitted: `func Vec<T>::get(self this) { return self.n; }` is `T`.
 
 A body with no `return` is `void`, and so is a body that only writes `return;` or returns a `void` value.
 
 That omitted result may be a function pointer.
 
-`type Buf[N i32, T type] struct` uses `func Buf[N, T]::get`.
+`type Buf<N i32, T type> struct` uses `func Buf<N, T>::get`.
 
 The names match the struct, in the same order.
 
@@ -28,72 +28,72 @@ A different name is reported as `type mismatch`.
 
 The wrong count is reported as `argument count`.
 
-`func Vec[T type]::get` is reported as `type mismatch`.
+`func Vec<T type>::get` is reported as `type mismatch`.
 
 A struct that is not generic keeps `func Point::sum`.
 
-`func Point[T]::sum` is reported as `type mismatch`.
+`func Point<T>::sum` is reported as `type mismatch`.
 
 ## Method templates
 
-`func Point::id[T type](self *this) T` is a method template: the brackets follow the method name.
+`func Point::id<T type>(self *this) T` is a method template: the brackets follow the method name.
 
 `func Point::take(self *this, other (i32, i32))` is a tuple parameter.
 
 `[P1, P2]` is `expected a type` on the comma.
 
-With `[P1 type, P2 type]`, `func Point::take[P1 type, P2 type](self *this, other (P1, P2))` and `func Vec[T]::take[P1 type, P2 type](self *this, other (P1, P2))` are that tuple.
+With `[P1 type, P2 type]`, `func Point::take<P1 type, P2 type>(self *this, other (P1, P2))` and `func Vec<T>::take<P1 type, P2 type>(self *this, other (P1, P2))` are that tuple.
 
-The call is `p.take[i32, i32]((40, 2))` or `v.take[i32, i32]((40, 2))`.
+The call is `p.take<i32, i32>((40, 2))` or `v.take<i32, i32>((40, 2))`.
 
 A call without those brackets is `undeclared identifier`.
 
-`func Vec[T]::pair(self *this, other (T, i32))` is that tuple of the struct's parameter.
+`func Vec<T>::pair(self *this, other (T, i32))` is that tuple of the struct's parameter.
 
-`func Vec[T]::get[U type](self *this, value U) U` is that template on a generic struct.
+`func Vec<T>::get<U type>(self *this, value U) U` is that template on a generic struct.
 
 `T` is the struct's parameter.
 
-`U` is chosen at the call `value.get[i32](value)`.
+`U` is chosen at the call `value.get<i32>(value)`.
 
 A call without those brackets is `undeclared identifier`.
 
-A type parameter that repeats a struct parameter, `func Vec[T]::get[T type]`, is `redefinition`.
+A type parameter that repeats a struct parameter, `func Vec<T>::get<T type>`, is `redefinition`.
 
 ## Static method templates
 
 A static method template has no receiver.
 
-`func Point::id[T type](value T) T` is called as `Point.id[i32](value)`.
+`func Point::id<T type>(value T) T` is called as `Point.id<i32>(value)`.
 
-`export` on that function publishes `pkg.Point.id[i32](...)`.
+`export` on that function publishes `pkg.Point.id<i32>(...)`.
 
-`export func Point::id[T type](self *this, value T) T` publishes `value.id[i32](...)`.
+`export func Point::id<T type>(self *this, value T) T` publishes `value.id<i32>(...)`.
 
 Without `export`, that call is `id is not exported`.
 
-`func Integer::id[T type]` is that template on an alias.
+`func Integer::id<T type>` is that template on an alias.
 
 A static template called on a value is `type mismatch`.
 
 An instance template called on the type is `type mismatch`.
 
-On a generic struct, `func Vec[T]::get[U type](value U) U` is called as `Vec[i32].get[i32](value)`.
+On a generic struct, `func Vec<T>::get<U type>(value U) U` is called as `Vec<i32>.get<i32>(value)`.
 
-`export` publishes `pkg.Vec[i32].get[i32](...)`.
+`export` publishes `pkg.Vec<i32>.get<i32>(...)`.
 
-`export` on `func Vec[T]::get[U type](self *this, value U) U` publishes `value.get[i32](...)`.
+`export` on `func Vec<T>::get<U type>(self *this, value U) U` publishes `value.get<i32>(...)`.
 
 Without `export`, that call is `get is not exported`.
 
 An unexported struct is `Vec is not exported`.
 
-A method template has a body. `func Point::id[T type](self *this, value T) T;` is `not supported yet`.
+A method template has a body. `func Point::id<T type>(self *this, value T) T;` is `not supported yet`.
 
 A bare `extern` declares a generic method the compiler implements. It is not `extern(abi="c")`. The declaration has no body and emits nothing. A body on that declaration is `not supported yet`. A later method with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
 ```c
-extern func Point::id[T type](self *this, value T) T;
+extern func Point::id<T type>(self *this, value T) T;
 
 func main() i32 {
     return 0;
@@ -112,14 +112,14 @@ A comptime parameter on that declaration is `not supported yet`.
 
 `...` on a method template is `not supported yet`.
 
-`func Bag::read[T type](self *this, items Seq[T])` takes `T` from the value. `bag.read(bag)` is `Seq[i32]` when `Bag.at` returns `i32`.
+`func Bag::read<T type>(self *this, items Seq<T>)` takes `T` from the value. `bag.read(bag)` is `Seq<i32>` when `Bag.at` returns `i32`.
 
 The call is `main.Bag.read.spec.i32.spec.Bag`.
 
 A parameter whose type is a trait that does not use `T`, such as `s Shape` beside `[T type]`, is `not supported yet`.
 
 ```c
-type Seq[T type] trait {
+type Seq<T type> trait {
     func at(i i32) T;
 };
 
@@ -131,7 +131,7 @@ func Bag::at(self this, i i32) i32 {
     return self.n + i;
 }
 
-func Bag::read[T type](self *this, items Seq[T]) i32 {
+func Bag::read<T type>(self *this, items Seq<T>) i32 {
     return items.at(2);
 }
 
@@ -183,13 +183,13 @@ The program returns 42.
 
 ## Export and extern on the method
 
-`export func Vec[T]::get` publishes that method.
+`export func Vec<T>::get` publishes that method.
 
 Another package calls `value.get(...)`.
 
-A bare `extern` on `func Vec[T]::get` declares a method the compiler implements. The declaration emits nothing. A later method with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
+A bare `extern` on `func Vec<T>::get` declares a method the compiler implements. The declaration emits nothing. A later method with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
-A body on an ordinary `func Vec[T]::get` defines that method.
+A body on an ordinary `func Vec<T>::get` defines that method.
 
 `extern(abi="c")` and `extern(abi="c", name="symbol")` on that method are `extern(abi="c") on a trait or a generic`.
 
@@ -199,29 +199,29 @@ A C symbol is one concrete library name.
 
 A method without `export` is reported as `get is not exported`.
 
-`Vec[i32].get()` is reported as `type mismatch`.
+`Vec<i32>.get()` is reported as `type mismatch`.
 
 ```c
-type Vec[T type] struct {
+type Vec<T type> struct {
     n T;
 };
 
-func Vec[T]::get(self this) T {
+func Vec<T>::get(self this) T {
     return self.n;
 }
 
-type Buf[N i32, T type] struct {
+type Buf<N i32, T type> struct {
     value T;
 };
 
-func Buf[N, T]::len(self this) i32 {
+func Buf<N, T>::len(self this) i32 {
     return N;
 }
 
 func main() i32 {
-    var v Vec[i32];
+    var v Vec<i32>;
     v.n = 38;
-    var b Buf[4, i32];
+    var b Buf<4, i32>;
     return v.get() + b.len();
 }
 ```
@@ -245,12 +245,12 @@ type Point struct {
     x i32;
 };
 
-func Point::id[T type](value T) T {
+func Point::id<T type>(value T) T {
     return value;
 }
 
 func main() i32 {
-    return Point.id[i32](42);
+    return Point.id<i32>(42);
 }
 ```
 
@@ -278,16 +278,16 @@ A static method template on a generic struct is called on the specialization.
 `U` is chosen at the call.
 
 ```c
-type Vec[T type] struct {
+type Vec<T type> struct {
     n T;
 };
 
-func Vec[T]::get[U type](value U) U {
+func Vec<T>::get<U type>(value U) U {
     return value;
 }
 
 func main() i32 {
-    return Vec[i32].get[i32](42);
+    return Vec<i32>.get<i32>(42);
 }
 ```
 
@@ -308,6 +308,6 @@ The program returns 42.
 
 When the file is `main.tlc`, the symbol is `main.Vec.spec.i32.get.spec.i32`.
 
-`Buf[40, i32].width[i32](2)` is `main.Buf.spec.40.i32.width.spec.i32`.
+`Buf<40, i32>.width<i32>(2)` is `main.Buf.spec.40.i32.width.spec.i32`.
 
 [Index](../README.md) · [Previous: Methods](method.md) · [Next: Static functions](static.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

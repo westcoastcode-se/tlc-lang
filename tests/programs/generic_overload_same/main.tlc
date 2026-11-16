@@ -1,8 +1,8 @@
-func id[T type](value T) T {
+func id<T type>(value T) T {
     return value;
 }
 
-func id[U type](value U) U {
+func id<U type>(value U) U {
     return value;
 }
 

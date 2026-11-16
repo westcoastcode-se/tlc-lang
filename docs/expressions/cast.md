@@ -10,9 +10,9 @@ A cast is the type followed by the value in parentheses: `i32(n)`, `i64(n)`, `*u
 
 `Drawable(value)` names that trait for an overloaded parameter.
 
-A generic trait takes its type from the value, so `Getter(h)` is `Getter[i32]` when the value satisfies `Getter[i32]`.
+A generic trait takes its type from the value, so `Getter(h)` is `Getter<i32>` when the value satisfies `Getter<i32>`.
 
-`Getter[i32](h)` writes the type.
+`Getter<i32>(h)` writes the type.
 
 The value is unchanged.
 

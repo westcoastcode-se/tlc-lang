@@ -1,7 +1,7 @@
-func size[T type]() i32 {
+func size<T type>() i32 {
     return sizeof(T);
 }
 
 func main() i32 {
-    return size[i32]();
+    return size<i32>();
 }

@@ -1,4 +1,4 @@
-func id[T type](value T) i32 {
+func id<T type>(value T) i32 {
     comptime if (value == 2) {
         return 40;
     }

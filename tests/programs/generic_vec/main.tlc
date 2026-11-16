@@ -1,13 +1,13 @@
-type Vec[T type] struct {
+type Vec<T type> struct {
     data []T;
 };
 
-func Vec[T]::get(self *this, i i32) T {
+func Vec<T>::get(self *this, i i32) T {
     return self.data[i];
 }
 
 func main() i32 {
     var value = [_]i32{42};
-    var v Vec[i32] = {.data = value[:]};
+    var v Vec<i32> = {.data = value[:]};
     return v.get(0);
 }

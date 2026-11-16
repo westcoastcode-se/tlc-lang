@@ -12,7 +12,7 @@ type Holder struct {
     label *u8;
 };
 
-type Box[T type] struct {
+type Box<T type> struct {
     value T;
 };
 
@@ -56,7 +56,7 @@ func main() i32 {
     if (held[0].kind.fields().len != 2 || held[0].kind.fields()[1].kind != typeof(f32)) {
         return 6;
     }
-    var box Box[i32];
+    var box Box<i32>;
     if (typeof(box).fields().len != 1 || typeof(box).fields()[0].kind != typeof(i32)) {
         return 7;
     }

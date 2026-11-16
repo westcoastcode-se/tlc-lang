@@ -132,13 +132,13 @@ A range of an integer array stays that header.
 
 Constant slices are compared with [`mem.memeql`](../std/mem.md) and ordered with `mem.memcmp`.
 
-`mem.memeql[u8]("hi", "hi")` is true while compiling, and `mem.memeql[u8]("hello"[0:2], "he")` is true.
+`mem.memeql<u8>("hi", "hi")` is true while compiling, and `mem.memeql<u8>("hello"[0:2], "he")` is true.
 
 `""` equals `""`, and different lengths are false.
 
-A null in the middle counts, and the terminating null does not, so `mem.memeql[u8]("a\000b", "ab")` is false.
+A null in the middle counts, and the terminating null does not, so `mem.memeql<u8>("a\000b", "ab")` is false.
 
-`mem.memcmp[u8]("ab", "ac")` is `-1`.
+`mem.memcmp<u8>("ab", "ac")` is `-1`.
 
 A `var` or a local `const` runs the function.
 

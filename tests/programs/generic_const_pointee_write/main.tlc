@@ -1,5 +1,5 @@
 // The specialization of `write` for `*const i32` does not store through it.
-func write[T type](p T) void {
+func write<T type>(p T) void {
     *p = 1;
 }
 

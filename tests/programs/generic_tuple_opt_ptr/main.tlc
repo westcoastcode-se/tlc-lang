@@ -1,4 +1,4 @@
-func num[T type](value *T, present bool) i32 {
+func num<T type>(value *T, present bool) i32 {
     var q ?*T = null;
     if (present) {
         q = ?*T(value);
@@ -9,7 +9,7 @@ func num[T type](value *T, present bool) i32 {
     return *q;
 }
 
-func read[T type](value *T, present bool) i32 {
+func read<T type>(value *T, present bool) i32 {
     var q ?*T = null;
     if (present) {
         q = ?*T(value);
@@ -20,7 +20,7 @@ func read[T type](value *T, present bool) i32 {
     return (*q)[0] + (*q)[1];
 }
 
-func deep[T type](value *T) i32 {
+func deep<T type>(value *T) i32 {
     var q ?*T = ?*T(value);
     if (q == null) {
         return 0;

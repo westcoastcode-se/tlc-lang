@@ -1,16 +1,16 @@
-func num[T type](value **T) i32 {
+func num<T type>(value **T) i32 {
     return **value;
 }
 
-func at[T type](value **T) i32 {
+func at<T type>(value **T) i32 {
     return (**value)[0];
 }
 
-func id[T type](value **T) i32 {
+func id<T type>(value **T) i32 {
     return (**value)[0] + (**value)[1];
 }
 
-func deep[T type](value **T) i32 {
+func deep<T type>(value **T) i32 {
     return (**value)[0][0] + (**value)[1];
 }
 

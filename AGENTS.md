@@ -26,7 +26,7 @@ Ask before inventing syntax, a diagnostic, or a runtime rule that the reference 
 
 ## Where the compiler work goes
 
-Search and edit `src`, `docs`, `tests`, `lib`, and `examples`. Leave `vendor` alone. It is LLVM and other third-party trees.
+Search and edit `src`, `docs`, `tests`, `lib`, and `examples`. The Zed tree-sitter grammar in `../tlc-plugins-zed-grammars` may also be edited when the syntax changes. Leave `vendor` alone. It is LLVM and other third-party trees.
 
 The first comment in a `.cpp` file says what that file owns. Put the change in that file. Paths below are under `src/`.
 

@@ -10,16 +10,16 @@ func id(n i32) i32 {
     return n;
 }
 
-func apply[T type](op func (T, T) T, a T, b T) T {
+func apply<T type>(op func (T, T) T, a T, b T) T {
     return op(a, b);
 }
 
-func only[T type](op func (T) T) T {
+func only<T type>(op func (T) T) T {
     return op(42);
 }
 
 func main() i32 {
-    if (apply[i32](add, 40, 2) != 42 || apply(sub, 40, 2) != 38 || only(id) != 42) {
+    if (apply<i32>(add, 40, 2) != 42 || apply(sub, 40, 2) != 38 || only(id) != 42) {
         return 1;
     }
     return apply(add, 40, 2);

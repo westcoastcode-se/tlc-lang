@@ -488,27 +488,8 @@ bool Parser::const_on_type(std::size_t at) const {
     if (peek(at + 2).kind == TokenKind::ColonColon) {
         return true;
     }
-    if (peek(at + 2).kind != TokenKind::LBracket) {
-        return false;
-    }
-    int depth = 0;
-    for (std::size_t ahead = at + 2; peek(ahead).kind != TokenKind::End; ++ahead) {
-        const TokenKind kind = peek(ahead).kind;
-        if (kind == TokenKind::LBracket) {
-            ++depth;
-        } else if (kind == TokenKind::RBracket) {
-            --depth;
-            if (depth == 0) {
-                return peek(ahead + 1).kind == TokenKind::ColonColon;
-            }
-        } else if (depth == 0) {
-            return false;
-        }
-        if (ahead > 4096) {
-            return false;
-        }
-    }
-    return false;
+    std::size_t after = 0;
+    return angle_list_at(at + 2, after) && peek(after).kind == TokenKind::ColonColon;
 }
 
 bool Parser::const_type_var() const {
@@ -538,25 +519,8 @@ bool Parser::const_type_var() const {
         return false;
     }
     std::size_t ahead = 2;
-    if (peek(ahead).kind == TokenKind::LBracket) {
-        int depth = 0;
-        for (; peek(ahead).kind != TokenKind::End; ++ahead) {
-            const TokenKind kind = peek(ahead).kind;
-            if (kind == TokenKind::LBracket) {
-                ++depth;
-            } else if (kind == TokenKind::RBracket) {
-                --depth;
-                if (depth == 0) {
-                    ++ahead;
-                    break;
-                }
-            } else if (depth == 0) {
-                return false;
-            }
-            if (ahead > 4096) {
-                return false;
-            }
-        }
+    if (peek(ahead).kind == TokenKind::Lt && !angle_list_at(ahead, ahead)) {
+        return false;
     }
     // The next identifier is the variable. `const i32 = 1` stays a binding named `i32`.
     if (peek(ahead).kind != TokenKind::Identifier || peek(ahead + 1).kind == TokenKind::ColonColon) {
@@ -566,8 +530,8 @@ bool Parser::const_type_var() const {
 }
 
 void Parser::take_var_owner(VarDecl &var) {
-    // `var Entity::next` and `var Box[T]::extra`. The variable is not a field.
-    if (bracket_then_colon_colon()) {
+    // `var Entity::next` and `var Box<T>::extra`. The variable is not a field.
+    if (angle_then(TokenKind::ColonColon)) {
         var.owner = std::move(var.name);
         var.owner_params = parse_method_params();
         expect(TokenKind::ColonColon, "expected '::'");

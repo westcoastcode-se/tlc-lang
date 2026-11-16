@@ -1,20 +1,20 @@
-type Box[T type] struct {
+type Box<T type> struct {
     p *T;
 }
 
-func make[T type](value *T) Box[T] {
-    var box Box[T] = {.p = value};
+func make<T type>(value *T) Box<T> {
+    var box Box<T> = {.p = value};
     return box;
 }
 
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func fill[T type](a T, b T, c T, d T) [2][2]T {
+func fill<T type>(a T, b T, c T, d T) [2][2]T {
     var g [2][2]T;
     g[0][0] = a;
     g[0][1] = b;

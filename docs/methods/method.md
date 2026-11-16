@@ -251,11 +251,11 @@ Another package calls `value.sum(...)`.
 
 A method without `export` is reported as `sum is not exported`.
 
-`export func Vec[T]::get` publishes that instance method.
+`export func Vec<T>::get` publishes that instance method.
 
 Another package calls `value.get(...)`.
 
-`export` on a static function publishes `pkg.Type.name(...)`, including `pkg.Vec[i32].name(...)`.
+`export` on a static function publishes `pkg.Type.name(...)`, including `pkg.Vec<i32>.name(...)`.
 
 `Point::sum(p, 1)` is not a call.
 
@@ -293,7 +293,7 @@ Two `extern(abi="c")` parameter lists on one method are `redefinition`.
 
 ### A generic struct
 
-A bare `extern` on `func Vec[T]::get` declares a method the compiler implements. The declaration emits nothing. A later method with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
+A bare `extern` on `func Vec<T>::get` declares a method the compiler implements. The declaration emits nothing. A later method with the same parameter list is `redefinition`. A call the compiler does not implement is `not supported yet`.
 
 `extern(abi="c")` and `extern(abi="c", name="symbol")` on that method are `extern(abi="c") on a trait or a generic`.
 

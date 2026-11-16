@@ -8,7 +8,7 @@ This page describes the `Seq` trait and how arrays and slices satisfy it.
 
 `import "std/seq"` loads `lib/tlc/std/seq`.
 
-The package declares `seq.Seq[T]` and `ptr_of[T]`.
+The package declares `seq.Seq<T>` and `ptr_of<T>`.
 
 The compiler treats the trait `Seq` in that directory as the iteration trait.
 
@@ -18,7 +18,7 @@ A file names the trait by importing the package.
 
 A copy of the source outside that directory is an ordinary trait.
 
-`ptr_of[T]` has `len` and `ref`.
+`ptr_of<T>` has `len` and `ref`.
 
 `for (var item : ptr_of(items))` selects it without an import.
 
@@ -34,7 +34,7 @@ A missing `ref` on that value is `type mismatch`.
 
 A struct writes those names, and both take the value.
 
-`seq.Seq[T]` and `*seq.Seq[T]` check `len` and `at`.
+`seq.Seq<T>` and `*seq.Seq<T>` check `len` and `at`.
 
 They do not have `ref`.
 
@@ -59,7 +59,7 @@ func Bag::at(self this, i i64) i32 {
     return self.n + i;
 }
 
-func use(items seq.Seq[i32]) i32 {
+func use(items seq.Seq<i32>) i32 {
     return items.len() + items.at(0);
 }
 
@@ -99,7 +99,7 @@ A missing `len` or `at` is reported as `undeclared identifier`.
 
 A pointer receiver on `len` or `at` is reported as `type mismatch` when the parameter is a value.
 
-`*seq.Seq[i32]` checks those same two methods.
+`*seq.Seq<i32>` checks those same two methods.
 
 `Bag::ref` is not part of that check.
 
@@ -107,7 +107,7 @@ A pointer receiver on `len` or `at` is reported as `type mismatch` when the para
 
 ## Arrays and slices
 
-`[N]T` and `[]T` satisfy `seq.Seq[E]`, where `E` is the element an index reads.
+`[N]T` and `[]T` satisfy `seq.Seq<E>`, where `E` is the element an index reads.
 
 That includes a parameter written `[N]T`, a string `[]const u8`, `[N][M]T`, and `[N][]T`.
 
@@ -121,7 +121,7 @@ The element of `[N][M]T` is `[M]T`.
 
 `[4]i32` and `[8]i32` are different copies.
 
-Every `[]i32` is one copy, and a string passed as `seq.Seq[u8]` shares the copy of `[]u8`.
+Every `[]i32` is one copy, and a string passed as `seq.Seq<u8>` shares the copy of `[]u8`.
 
 A slice alias such as `type Row []i32` satisfies the trait only when it defines `len` and `at`.
 
@@ -131,7 +131,7 @@ A pointer receiver, or a result that is not `E`, is reported as `type mismatch`.
 
 A pointer to an array or a slice, `*[N]T` or `*[]T`, is reported as `type mismatch`, and so is a number.
 
-Passing an array where `*seq.Seq[E]` is written does not take its address.
+Passing an array where `*seq.Seq<E>` is written does not take its address.
 
 A struct satisfies the trait only by its own methods.
 
@@ -142,7 +142,7 @@ An array passed to a copy of the trait outside `lib/tlc/std/seq` is reported as 
 ```c
 import "std/seq";
 
-func use(items seq.Seq[i32]) i32 {
+func use(items seq.Seq<i32>) i32 {
     return items.len() + items.at(0);
 }
 
@@ -176,6 +176,6 @@ This program returns 42.
 
 The trait has no size and no symbol.
 
-`var s seq.Seq[i32]`, a result, an array, a slice, and a field of the trait are reported as `trait has no size`.
+`var s seq.Seq<i32>`, a result, an array, a slice, and a field of the trait are reported as `trait has no size`.
 
 [Index](../README.md) · [Previous: mem](mem.md) · [Next: thread](thread.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

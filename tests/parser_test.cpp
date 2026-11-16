@@ -519,14 +519,14 @@ int run_parser_tests() {
             "  id i32;\n"
             "};\n"
             "const Entity::spare = 3;\n"
-            "type Box[T type] struct {\n"
+            "type Box<T type> struct {\n"
             "  value T;\n"
             "};\n"
-            "const Box[T]::limit i32 = 4;\n");
+            "const Box<T>::limit i32 = 4;\n");
         EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump, "(field id i32)\n");
         EXPECT_HAS(check, parsed.dump, "(var Entity::spare := (int 3))\n");
-        EXPECT_HAS(check, parsed.dump, "(var Box[T]::limit i32 (int 4))\n");
+        EXPECT_HAS(check, parsed.dump, "(var Box<T>::limit i32 (int 4))\n");
     }
 
     {
@@ -536,7 +536,7 @@ int run_parser_tests() {
             "  const next i32 = 1;\n"
             "  export const shown = 2;\n"
             "};\n"
-            "type Box[T type] struct {\n"
+            "type Box<T type> struct {\n"
             "  value T;\n"
             "  const extra i32 = 1;\n"
             "};\n");
@@ -544,7 +544,7 @@ int run_parser_tests() {
         EXPECT_HAS(check, parsed.dump, "(field id i32)\n");
         EXPECT(check, parsed.dump.find("(var Entity::next") == std::string::npos);
         EXPECT(check, parsed.dump.find("(var Entity::shown") == std::string::npos);
-        EXPECT(check, parsed.dump.find("(var Box[T]::extra") == std::string::npos);
+        EXPECT(check, parsed.dump.find("(var Box<T>::extra") == std::string::npos);
     }
 
     {
@@ -1034,14 +1034,14 @@ int run_parser_tests() {
 
     {
         const Parsed parsed = parse_source(
-            "type Vec[T type] struct { n i32; };\n"
-            "func Vec[T]::get(self *this, i i32) T { return self.data[i]; }\n");
+            "type Vec<T type> struct { n i32; };\n"
+            "func Vec<T>::get(self *this, i i32) T { return self.data[i]; }\n");
         EXPECT(check, parsed.errors.empty());
-        EXPECT_HAS(check, parsed.dump, "(fn Vec[T]::get (params (self struct Vec* receiver) (i i32)) T");
+        EXPECT_HAS(check, parsed.dump, "(fn Vec<T>::get (params (self struct Vec* receiver) (i i32)) T");
     }
 
     {
-        const Parsed parsed = parse_source("func Vec[T type]::get(self this) i32 { return 0; }\n");
+        const Parsed parsed = parse_source("func Vec<T type>::get(self this) i32 { return 0; }\n");
         EXPECT_HAS(check, parsed.errors, "type mismatch");
     }
 
@@ -1100,19 +1100,19 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "func main() i32 {\n"
-            "  var p = Vec[i32]{};\n"
-            "  var q = Vec[i32]{.n = 1};\n"
-            "  var r = geom.Vec[i32]{};\n"
-            "  var b = Buf[4, i32]{};\n"
-            "  var n = Box[Vec[i32]]{};\n"
+            "  var p = Vec<i32>{};\n"
+            "  var q = Vec<i32>{.n = 1};\n"
+            "  var r = geom.Vec<i32>{};\n"
+            "  var b = Buf<4, i32>{};\n"
+            "  var n = Box<Vec<i32>>{};\n"
             "  return 0;\n"
             "}\n");
         EXPECT(check, parsed.errors.empty());
-        EXPECT_HAS(check, parsed.dump, "(init Vec[i32])");
-        EXPECT_HAS(check, parsed.dump, "(init Vec[i32] (.n (int 1)))");
-        EXPECT_HAS(check, parsed.dump, "(init geom.Vec[i32])");
-        EXPECT_HAS(check, parsed.dump, "(init Buf[4, i32])");
-        EXPECT_HAS(check, parsed.dump, "(init Box[Vec[i32]])");
+        EXPECT_HAS(check, parsed.dump, "(init Vec<i32>)");
+        EXPECT_HAS(check, parsed.dump, "(init Vec<i32> (.n (int 1)))");
+        EXPECT_HAS(check, parsed.dump, "(init geom.Vec<i32>)");
+        EXPECT_HAS(check, parsed.dump, "(init Buf<4, i32>)");
+        EXPECT_HAS(check, parsed.dump, "(init Box<Vec<i32>>)");
     }
 
     {
@@ -1145,17 +1145,17 @@ int run_parser_tests() {
     }
 
     {
-        const Parsed parsed = parse_source("func keep[...U](args U) U { return args; }\n");
+        const Parsed parsed = parse_source("func keep<...U>(args U) U { return args; }\n");
         EXPECT_HAS(check, parsed.errors, "expected an identifier");
     }
 
     {
-        const Parsed parsed = parse_source("func keep[T type, ...U](a T, args U) T { return a; }\n");
+        const Parsed parsed = parse_source("func keep<T type, ...U>(a T, args U) T { return a; }\n");
         EXPECT_HAS(check, parsed.errors, "expected an identifier");
     }
 
     {
-        const Parsed parsed = parse_source("func keep[...U, T type](args U, a T) U { return args; }\n");
+        const Parsed parsed = parse_source("func keep<...U, T type>(args U, a T) U { return args; }\n");
         EXPECT_HAS(check, parsed.errors, "expected an identifier");
     }
 
@@ -1465,15 +1465,15 @@ int run_parser_tests() {
     {
         const Parsed parsed = parse_source(
             "var Entity::next i32 = 1;\n"
-            "var Box[T]::extra i32;\n"
-            "var Buf[N, T]::count = 4;\n"
-            "func main() i32 { return Entity.next + Box[i32].extra + Buf[4, i32].count; }\n");
+            "var Box<T>::extra i32;\n"
+            "var Buf<N, T>::count = 4;\n"
+            "func main() i32 { return Entity.next + Box<i32>.extra + Buf<4, i32>.count; }\n");
         EXPECT(check, parsed.errors.empty());
         EXPECT_HAS(check, parsed.dump, "(var Entity::next i32 (int 1))");
-        EXPECT_HAS(check, parsed.dump, "(var Box[T]::extra i32)");
-        EXPECT_HAS(check, parsed.dump, "(var Buf[N, T]::count := (int 4))");
+        EXPECT_HAS(check, parsed.dump, "(var Box<T>::extra i32)");
+        EXPECT_HAS(check, parsed.dump, "(var Buf<N, T>::count := (int 4))");
         EXPECT_HAS(check, parsed.dump, "(. (name Entity) next)");
-        EXPECT_HAS(check, parsed.dump, "(. ([] (name Box) (name i32)) extra)");
+        EXPECT_HAS(check, parsed.dump, "(. (name Box)<i32> extra)");
     }
 
     {

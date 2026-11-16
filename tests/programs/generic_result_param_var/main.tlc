@@ -1,4 +1,4 @@
-func repeat[N i32, T type](value T) [N]T {
+func repeat<N i32, T type>(value T) [N]T {
     var out [N]T;
     out[0] = value;
     return out;
@@ -6,7 +6,7 @@ func repeat[N i32, T type](value T) [N]T {
 
 func ordinary(comptime n i32) i32 {
     var k = n;
-    return repeat[k](1)[0];
+    return repeat<k>(1)[0];
 }
 
 func main() i32 {

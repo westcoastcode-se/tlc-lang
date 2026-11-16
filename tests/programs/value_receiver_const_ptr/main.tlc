@@ -17,11 +17,11 @@ func direct(p *const Rect) i32 {
     return p.area();
 }
 
-func any[T type](p *const T) i32 {
+func any<T type>(p *const T) i32 {
     return p.area();
 }
 
-func shaped[T Shape](p *const T) i32 {
+func shaped<T Shape>(p *const T) i32 {
     return p.area();
 }
 

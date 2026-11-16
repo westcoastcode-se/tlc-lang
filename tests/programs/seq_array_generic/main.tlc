@@ -1,6 +1,6 @@
 import "std/seq";
 
-func sum[T type](items seq.Seq[T]) i32 {
+func sum<T type>(items seq.Seq<T>) i32 {
     return items.at(0) + items.len();
 }
 

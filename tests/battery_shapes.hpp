@@ -139,7 +139,7 @@ std::string nest_case(const std::string &name, int depth, const std::string &E) 
                " == " + V + " && n == 7)" + ok;
     }
     if (name == "generic") {
-        return "func id[T type](v T) T { return v; }\nfunc main() i32 { var a " + A + " = " + L +
+        return "func id<T type>(v T) T { return v; }\nfunc main() i32 { var a " + A + " = " + L +
                "; var b = id(a); if (b" + I + " == " + V + ")" + ok;
     }
     if (name == "slice") {
@@ -372,7 +372,7 @@ std::string ptr_case(const std::string &c, const std::vector<std::string> &shell
                "); " + ok(acc("y")) + " }";
     }
     if (c == "generic") {
-        return "func id[Q type](p Q) Q { return p; }\nfunc main() i32 { " + built + " var y = id(" + top + "); " +
+        return "func id<Q type>(p Q) Q { return p; }\nfunc main() i32 { " + built + " var y = id(" + top + "); " +
                ok(acc("y")) + " }";
     }
     if (c == "field") {
@@ -642,7 +642,7 @@ std::string tup_case(const std::string &c, const std::vector<std::string> &shell
         extra = "func id(p " + T + ") " + T + " { return p; }\n";
         body = code + " " + ok(acc("id(" + top + ")"));
     } else if (c == "generic") {
-        extra = "func id[Q type](p Q) Q { return p; }\n";
+        extra = "func id<Q type>(p Q) Q { return p; }\n";
         body = code + " var y = id(" + top + "); " + ok(acc("y"));
     } else if (c == "field") {
         extra = "type H struct { p " + T + "; n i32; };\n";

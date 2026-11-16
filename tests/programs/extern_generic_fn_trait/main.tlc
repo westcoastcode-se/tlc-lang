@@ -2,7 +2,7 @@ type Shape trait {
     func area() i32;
 };
 
-extern func use[T type](s Shape, n T) T {
+extern func use<T type>(s Shape, n T) T {
     return n;
 }
 

@@ -15,13 +15,13 @@ unsafe func Arena::realloc(self *this, ptr *u8, size i64, align i32) ?*u8 {
     return null;
 }
 
-unsafe func Arena::malloc[T type](self *this) ?*T {
+unsafe func Arena::malloc<T type>(self *this) ?*T {
     self.used = 7;
     return null;
 }
 
 func take(a *Allocator) i32 {
-    var raw = unsafe a.malloc[i32]();
+    var raw = unsafe a.malloc<i32>();
     if (raw == null) {
         return 1;
     }

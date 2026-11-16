@@ -1666,7 +1666,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 }
                 if (const auto *selector = std::get_if<Expr::Selector>(&node.callee->data)) {
                     // `Point` is a type, not a value, so `lookup` does not see it. `Point.make(...)` is the static call.
-                    // `Box[i32].from(...)` and `Buf[4, i32].width()` are the same call on a specialization.
+                    // `Box<i32>.from(...)` and `Buf<4, i32>.width()` are the same call on a specialization.
                     if (selector->base != nullptr) {
                         auto check_args = [&]() {
                             for (const auto &arg : node.args) {
@@ -2789,7 +2789,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return picked;
                     }
                 }
-                // `Something[i32, i32]((40, 2))`. The name becomes that specialization.
+                // `Something<i32, i32>((40, 2))`. The name becomes that specialization.
                 if (!node.is_fn_ptr && !node.type_args.empty()) {
                     Expr::Cast &written = const_cast<Expr::Cast &>(node);
                     bool is_array = false;
@@ -3174,7 +3174,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     bool is_array = false;
                     int64_t array_len = 0;
                     std::string array_len_name;
-                    // Specializing `Box[i32]` rewrites the name on the expression.
+                    // Specializing `Box<i32>` rewrites the name on the expression.
                     Expr::New &written = const_cast<Expr::New &>(node);
                     prepare_written(written.type_name, written.type_package, written.is_struct, is_enum,
                                     written.indirections, written.optional, is_array, array_len, array_len_name,
@@ -3371,7 +3371,7 @@ std::optional<std::string> spell_written(const Slot &slot) {
     return text;
 }
 
-// `func id[T type](value T) T` spells `func[T type](T) T`. The parameter names are the ones written.
+// `func id<T type>(value T) T` spells `func<T type>(T) T`. The parameter names are the ones written.
 std::optional<std::string> spell_generic_function(const FunctionDecl &fn) {
     if (fn.is_comptime || fn.is_macro || fn.infer_result || !fn.method_struct.empty() || fn.type_params.empty()) {
         return std::nullopt;
@@ -3381,7 +3381,7 @@ std::optional<std::string> spell_generic_function(const FunctionDecl &fn) {
             return std::nullopt;
         }
     }
-    std::string text = "func[";
+    std::string text = "func<";
     for (std::size_t i = 0; i < fn.type_params.size(); ++i) {
         const TypeParam &param = fn.type_params[i];
         if (param.is_pack || param.name.empty()) {
@@ -3414,7 +3414,7 @@ std::optional<std::string> spell_generic_function(const FunctionDecl &fn) {
             return std::nullopt;
         }
     }
-    text += "](";
+    text += ">(";
     bool any = false;
     for (const Param &param : fn.params) {
         if (param.is_receiver) {

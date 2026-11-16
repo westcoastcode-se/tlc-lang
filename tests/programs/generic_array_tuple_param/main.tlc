@@ -1,19 +1,19 @@
-func pair[T type](a T, b T) [2]T {
+func pair<T type>(a T, b T) [2]T {
     var row [2]T;
     row[0] = a;
     row[1] = b;
     return row;
 }
 
-func take[T type](row [2]T) i32 {
+func take<T type>(row [2]T) i32 {
     return row[0][0] + row[1][1];
 }
 
-func wide[T type](row [2]T) i32 {
+func wide<T type>(row [2]T) i32 {
     return row[0][0][0] + row[1][1];
 }
 
-func sum[T type](row [2]T) i32 {
+func sum<T type>(row [2]T) i32 {
     return row[0] + row[1];
 }
 

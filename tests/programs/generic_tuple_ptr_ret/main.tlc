@@ -1,8 +1,8 @@
-func id[T type](value *T) *T {
+func id<T type>(value *T) *T {
     return value;
 }
 
-func wide[T type](value *T) *T {
+func wide<T type>(value *T) *T {
     return value;
 }
 

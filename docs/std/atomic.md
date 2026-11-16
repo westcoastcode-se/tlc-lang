@@ -2,7 +2,7 @@
 
 [Index](../README.md) · [Previous: thread](thread.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)
 
-This page describes the atomic integers, `Bool`, `Ptr[T]`, and `Atomic[T]` in `std/atomic`.
+This page describes the atomic integers, `Bool`, `Ptr<T>`, and `Atomic<T>` in `std/atomic`.
 
 ## What a method calls
 
@@ -22,9 +22,9 @@ The method call still records a trace frame.
 
 `Bool` holds a `u8` that is `0` or `1`.
 
-`Ptr[T]` holds a `*T`.
+`Ptr<T>` holds a `*T`.
 
-`Atomic[T]` holds a `T` of 1, 2, 4, or 8 bytes. `load`, `store`, `swap`, and `cmpxchg` use an integer of that width. The bits are the struct. Another size panics with `type mismatch`.
+`Atomic<T>` holds a `T` of 1, 2, 4, or 8 bytes. `load`, `store`, `swap`, and `cmpxchg` use an integer of that width. The bits are the struct. Another size panics with `type mismatch`.
 
 The type is aligned to 8. The size is rounded up to 8.
 
@@ -36,9 +36,9 @@ A file-scope variable starts at `0`.
 
 A local integer starts uninitialized until a store.
 
-`Ptr[T].value` is exported, because a pointer field cannot be left out: `atomic.Ptr[i32]{.value = &slot}`.
+`Ptr<T>.value` is exported, because a pointer field cannot be left out: `atomic.Ptr<i32>{.value = &slot}`.
 
-`var p atomic.Ptr[i32]` is `type mismatch`.
+`var p atomic.Ptr<i32>` is `type mismatch`.
 
 ## Orders and updates
 
@@ -62,7 +62,7 @@ The success order is `seq_cst` and the failure order is `relaxed`.
 
 The results are the previous value and whether the store happened.
 
-`Bool`, `Ptr[T]`, and `Atomic[T]` have `load`, `store`, `swap`, and `cmpxchg`.
+`Bool`, `Ptr<T>`, and `Atomic<T>` have `load`, `store`, `swap`, and `cmpxchg`.
 
 They do not have `add`.
 

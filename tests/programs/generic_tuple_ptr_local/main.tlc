@@ -1,19 +1,19 @@
-func num[T type](value **T) i32 {
+func num<T type>(value **T) i32 {
     var q **T = value;
     return **q;
 }
 
-func id[T type](value **T) i32 {
+func id<T type>(value **T) i32 {
     var q **T = value;
     return (**q)[0] + (**q)[1];
 }
 
-func deep[T type](value **T) i32 {
+func deep<T type>(value **T) i32 {
     var q **T = value;
     return (**q)[0][0] + (**q)[1];
 }
 
-func tri[T type](value ***T) i32 {
+func tri<T type>(value ***T) i32 {
     var q ***T = value;
     return (***q)[0] + (***q)[1];
 }

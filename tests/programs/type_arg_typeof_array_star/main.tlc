@@ -1,9 +1,9 @@
-func plain[T type, U type]() bool {
+func plain<T type, U type>() bool {
     return typeof(*T) == typeof(U);
 }
 
 func main() i32 {
-    if (!plain[[4]i32, *[4]i32]()) { return 1; }
-    if (!plain[[2]u8, *[2]u8]()) { return 2; }
+    if (!plain<[4]i32, *[4]i32>()) { return 1; }
+    if (!plain<[2]u8, *[2]u8>()) { return 2; }
     return 42;
 }

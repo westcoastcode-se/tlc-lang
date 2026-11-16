@@ -2,7 +2,7 @@ import "builtin";
 
 extern(abi="c") func printf(fmt *const u8, ...) i32;
 
-func id[T type](value T) T { return value; }
+func id<T type>(value T) T { return value; }
 
 func main() i32 {
     if (builtin.TypeKind(*typeof(id)) != builtin.TypeKind.Function || typeof(id).Function.generic == false) {

@@ -1,7 +1,7 @@
-type Buf[N i32] struct { raw [N]u8; }
+type Buf<N i32> struct { raw [N]u8; }
 
 func span(comptime n i32) i32 {
-    var buf Buf[n];
+    var buf Buf<n>;
     return buf.raw.len;
 }
 

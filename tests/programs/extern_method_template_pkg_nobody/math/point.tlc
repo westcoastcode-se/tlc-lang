@@ -4,4 +4,4 @@ export type Point struct {
     export x i32;
 };
 
-export extern func Point::id[T type](self *this, value T) T;
+export extern func Point::id<T type>(self *this, value T) T;

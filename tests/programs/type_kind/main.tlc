@@ -6,7 +6,7 @@ type Point struct {
     x i32;
 };
 
-type Box[T type] struct {
+type Box<T type> struct {
     value T;
 };
 
@@ -33,7 +33,7 @@ func Point::make(x i32) Point {
     return p;
 }
 
-func id[T type](value T) T { return value; }
+func id<T type>(value T) T { return value; }
 
 extern(abi="c") func logf(fmt *const u8, ...) i32;
 
@@ -62,7 +62,7 @@ func main() i32 {
     if (builtin.TypeKind(*typeof(Point)) != builtin.TypeKind.Struct || typeof(Point).Struct.generic) {
         return 7;
     }
-    var box Box[i32];
+    var box Box<i32>;
     if (builtin.TypeKind(*typeof(box)) != builtin.TypeKind.Struct || typeof(box).Struct.generic == false) {
         return 8;
     }

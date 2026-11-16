@@ -1,9 +1,9 @@
 // 300 does not fit `comptime n u8`.
-func small[N u8]() u8 {
+func small<N u8>() u8 {
     return N;
 }
 func get(comptime n u8) u8 {
-    return small[n]();
+    return small<n>();
 }
 func main() i32 {
     return i32(get(300));

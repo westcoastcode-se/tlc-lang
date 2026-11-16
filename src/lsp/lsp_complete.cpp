@@ -627,13 +627,38 @@ uint32_t matching_bracket(const std::string &text, uint32_t close) {
     return static_cast<uint32_t>(-1);
 }
 
+// Index of the `<` that matches `close`, a `>` that ends a type list, or -1. A statement or block edge
+// on the way means `close` is a comparison.
+uint32_t matching_angle(const std::string &text, uint32_t close) {
+    if (close >= text.size() || text[close] != '>') {
+        return static_cast<uint32_t>(-1);
+    }
+    int depth = 0;
+    uint32_t i = close;
+    while (i > 0) {
+        --i;
+        const char c = text[i];
+        if (c == '>') {
+            ++depth;
+        } else if (c == '<') {
+            if (depth == 0) {
+                return i;
+            }
+            --depth;
+        } else if (c == ';' || c == '{' || c == '}') {
+            return static_cast<uint32_t>(-1);
+        }
+    }
+    return static_cast<uint32_t>(-1);
+}
+
 // `Point{` and `new(allocator) Point{`. A function body `func f() Point {` is not a value.
 std::string type_named_before(const Doc &doc, uint32_t brace) {
     const std::string &text = doc.text;
     uint32_t at = skip_back(text, brace);
-    // `Box[i32]{` and `new Box[i32]{`. The name is before the argument list.
-    if (at > 0 && text[at - 1] == ']') {
-        const uint32_t open = matching_bracket(text, at - 1);
+    // `Box<i32>{` and `new Box<i32>{`. The name is before the argument list.
+    if (at > 0 && text[at - 1] == '>') {
+        const uint32_t open = matching_angle(text, at - 1);
         if (open == static_cast<uint32_t>(-1)) {
             return {};
         }
@@ -945,7 +970,7 @@ bool call_shape(const std::string &text, uint32_t open) {
         return false;
     }
     const unsigned char c = static_cast<unsigned char>(text[at - 1]);
-    return text[at - 1] == ']' || ident_char(c);
+    return text[at - 1] == ']' || text[at - 1] == '>' || ident_char(c);
 }
 
 bool bracket_range(const std::string &text, uint32_t open, uint32_t close) {
@@ -1324,6 +1349,18 @@ View parse_ending(const Doc &doc, uint32_t end, uint32_t scope, bool want_func, 
         const View inner = parse_ending(doc, end - 1, scope, false, -1, depth + 1);
         return inner.kind == View::Kind::Value ? inner : View{};
     }
+    // `id<i32>` and `Box<i32>` name the function or the type.
+    if (last == '>') {
+        const uint32_t open = matching_angle(doc.text, end - 1);
+        if (open == static_cast<uint32_t>(-1)) {
+            return {};
+        }
+        const View base = parse_ending(doc, open, scope, false, -1, depth + 1);
+        if ((base.kind == View::Kind::Type && base.sym.role != Role::Module) || base.kind == View::Kind::Func) {
+            return base;
+        }
+        return {};
+    }
     if (last == ']') {
         const uint32_t open = matching_bracket(doc.text, end - 1);
         if (open == static_cast<uint32_t>(-1)) {
@@ -1436,7 +1473,7 @@ ExprBase expression_base(const Doc &doc, const Cursor &cursor) {
         return out;
     }
     const char last = doc.text[receiver - 1];
-    if (last != ')' && last != ']') {
+    if (last != ')' && last != ']' && last != '>') {
         return out;
     }
     // The receiver is not a name. An unresolved call or index offers nothing, not keywords.

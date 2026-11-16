@@ -202,30 +202,30 @@ The program returns 4.
 
 ### A generic union
 
-`type Num[T type] union` is that union for each type. A parameter that no field, method, or associated variable uses is `unused parameter`.
+`type Num<T type> union` is that union for each type. A parameter that no field, method, or associated variable uses is `unused parameter`.
 
-`Num[i32]` and `Num[u8]` are different types. Assigning one to the other is `type mismatch`. The fields still share one address.
+`Num<i32>` and `Num<u8>` are different types. Assigning one to the other is `type mismatch`. The fields still share one address.
 
-`type Buf[N i32] union` takes a compile-time integer. `Buf[4]` names it. A field may be `[N]u8`.
+`type Buf<N i32> union` takes a compile-time integer. `Buf<4>` names it. A field may be `[N]u8`.
 
-`export type Num[T type] union` publishes it. Another package names `pkg.Num[i32]` when `Num` is exported. Without `export` the name is `Num is not exported`.
+`export type Num<T type> union` publishes it. Another package names `pkg.Num<i32>` when `Num` is exported. Without `export` the name is `Num is not exported`.
 
-`extern type Num[T type] union` is `not supported yet`. `extern(abi="c") type Num[T type] union` is `extern(abi="c") on a trait or a generic`.
+`extern type Num<T type> union` is `not supported yet`. `extern(abi="c") type Num<T type> union` is `extern(abi="c") on a trait or a generic`.
 
-An empty `type Num[T type] union {}` is `not supported yet`.
+An empty `type Num<T type> union {}` is `not supported yet`.
 
-`n T = 4` is the value stored when an initializer does not name a field. `var u Num[i32]` reads 4 from `u.n` and from `u.m`. Naming a field replaces that value. `Num[i32]{0...}` stores 0.
+`n T = 4` is the value stored when an initializer does not name a field. `var u Num<i32>` reads 4 from `u.n` and from `u.m`. Naming a field replaces that value. `Num<i32>{0...}` stores 0.
 
-`var u Num[i32]`, `var u = Num[i32]{}`, `new Num[i32]`, and a file-scope `var u Num[i32]` store that value. A second value on that union is `not supported yet`. A value on a tagged arm is `not supported yet`. A call is `global initializer is not a constant`.
+`var u Num<i32>`, `var u = Num<i32>{}`, `new Num<i32>`, and a file-scope `var u Num<i32>` store that value. A second value on that union is `not supported yet`. A value on a tagged arm is `not supported yet`. A call is `global initializer is not a constant`.
 
 ```c
-type Num[T type] union {
+type Num<T type> union {
     n T = 4;
     m T;
 };
 
 func main() i32 {
-    var u Num[i32];
+    var u Num<i32>;
     return u.n;
 }
 ```
@@ -239,11 +239,11 @@ retq                             # return
 
 The program returns 4.
 
-`type Box[T type] struct` may hold `data union { n T; m T; }`. Those fields share one address. `data union(Kind)` there is the tagged union, and `Kind(box.data)` reads the tag.
+`type Box<T type> struct` may hold `data union { n T; m T; }`. Those fields share one address. `data union(Kind)` there is the tagged union, and `Kind(box.data)` reads the tag.
 
-A method is `func Num[T]::get(self *this) T`. The call is `u.get()`.
+A method is `func Num<T>::get(self *this) T`. The call is `u.get()`.
 
-`type Shape[T type] union(Kind)` is the tagged union. An arm names a struct, including `Arm[T]`.
+`type Shape<T type> union(Kind)` is the tagged union. An arm names a struct, including `Arm<T>`.
 
 `One struct { value T; }` is that arm. `value` is `T` for that specialization.
 
@@ -253,7 +253,7 @@ type Kind enum {
     Two,
 };
 
-type Shape[T type] union(Kind) {
+type Shape<T type> union(Kind) {
     One struct {
         value T;
     };
@@ -263,7 +263,7 @@ type Shape[T type] union(Kind) {
 };
 
 func main() i32 {
-    var shape Shape[i32] = {.One = {.value = 42}};
+    var shape Shape<i32> = {.One = {.value = 42}};
     return shape.One.value;
 }
 ```
@@ -280,13 +280,13 @@ retq                             # return
 The program returns 42.
 
 ```c
-type Num[T type] union {
+type Num<T type> union {
     n T;
     m T;
 };
 
 func main() i32 {
-    var u Num[i32];
+    var u Num<i32>;
     u.n = 42;
     return u.m;
 }
@@ -299,7 +299,7 @@ movl -8(%rsp), %eax              # move
 retq                             # return
 ```
 
-The program returns 42. `Num[i32]` is 4 bytes. `u.n` and `u.m` are the same memory.
+The program returns 42. `Num<i32>` is 4 bytes. `u.n` and `u.m` are the same memory.
 
 ### C unions
 

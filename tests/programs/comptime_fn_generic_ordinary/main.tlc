@@ -1,9 +1,9 @@
-func bump[N i32](value i32) i32 {
+func bump<N i32>(value i32) i32 {
     return value + N;
 }
 
 func ordinary(comptime n i32) i32 {
-    return bump[n](1);
+    return bump<n>(1);
 }
 
 func main() i32 {

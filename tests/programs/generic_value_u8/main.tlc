@@ -1,29 +1,29 @@
-// `N u8` is a `u8` in the body and takes 0 through 255. `Buf[200]` and `Buf[200u8]` are one type.
-type Buf[N u8] struct {
+// `N u8` is a `u8` in the body and takes 0 through 255. `Buf<200>` and `Buf<200u8>` are one type.
+type Buf<N u8> struct {
     raw [N]u8;
 }
 
-var a Buf[200];
+var a Buf<200>;
 
-func small[N u8]() u8 {
+func small<N u8>() u8 {
     return N;
 }
 
-func size_of_n[N u8]() i64 {
+func size_of_n<N u8>() i64 {
     var x = N;
     return sizeof(x);
 }
 
-func take(b *Buf[200u8]) i64 {
+func take(b *Buf<200u8>) i64 {
     return b.raw.len;
 }
 
 func main() i32 {
     var bad = 0;
-    if (small[200]() != 200u8 || small[255u8]() != 255u8) {
+    if (small<200>() != 200u8 || small<255u8>() != 255u8) {
         bad |= 1;
     }
-    if (size_of_n[7]() != 1) {
+    if (size_of_n<7>() != 1) {
         bad |= 2;
     }
     if (take(&a) != 200) {

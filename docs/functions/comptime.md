@@ -1582,7 +1582,7 @@ Inside a `comptime func`, a parameter is not a constant until the call substitut
 
 `func ordinary(comptime n i32)` uses that parameter as `var row [n]i32`. `row.len` is `n`. The result `[n]i32` is that array. `ordinary(1)[0]` is 40. `func fill(comptime n i32, value i32) [n]i32` is that array too. `fill(1, 40)[0]` is 40. `value` is passed. `n` is not. A negative value is `array length must be >= 0`. A `var` is not a length. A length whose other elements are not stored is `uninitialized`.
 
-`var buf Buf[n]`, `var buf Buf[k]`, and `var buf Buf[value]` write that integer as a type argument. `buf.raw.len` is `n` when `raw` is `[N]u8`. `Buf[n]{}` and `new(&arena) Buf[n]` are that same type. `type Mine[N i32] Buf[N]` then `var buf Mine[n]`, `Mine[n]{}`, and `new(&arena) Mine[n]` are that alias. `Mine` and `Buf` stay different types. `new Buf[n]` and `new Mine[n]` use the heap and are `not supported yet`. A negative value is `array length must be >= 0`. A `var` is `type mismatch`.
+`var buf Buf<n>`, `var buf Buf<k>`, and `var buf Buf<value>` write that integer as a type argument. `buf.raw.len` is `n` when `raw` is `[N]u8`. `Buf<n>{}` and `new(&arena) Buf<n>` are that same type. `type Mine<N i32> Buf<N>` then `var buf Mine<n>`, `Mine<n>{}`, and `new(&arena) Mine<n>` are that alias. `Mine` and `Buf` stay different types. `new Buf<n>` and `new Mine<n>` use the heap and are `not supported yet`. A negative value is `array length must be >= 0`. A `var` is `type mismatch`.
 
 `width(4)` returns 4.
 
@@ -1629,10 +1629,10 @@ A `var` in that condition does not fold.
 `from(4)` returns 4.
 
 ```c
-type Buf[N i32] struct { raw [N]u8; }
+type Buf<N i32> struct { raw [N]u8; }
 
 comptime func from(n i32) i32 {
-    var buf Buf[n];
+    var buf Buf<n>;
     return buf.raw.len;
 }
 
@@ -1647,15 +1647,15 @@ movl $4, %eax                    # constant
 retq                             # return
 ```
 
-`Mine[n]` is that alias. `from(4)` returns 4. `Mine[4]` is a different type from `Buf[4]`.
+`Mine<n>` is that alias. `from(4)` returns 4. `Mine<4>` is a different type from `Buf<4>`.
 
 ```c
-type Buf[N i32] struct { raw [N]u8; }
+type Buf<N i32> struct { raw [N]u8; }
 
-type Mine[N i32] Buf[N];
+type Mine<N i32> Buf<N>;
 
 comptime func from(n i32) i32 {
-    var buf Mine[n];
+    var buf Mine<n>;
     return buf.raw.len;
 }
 
@@ -1708,7 +1708,7 @@ When every parameter is `comptime` and the body is one `return` of a constant `i
 
 The compiler still compiles that function.
 
-When every parameter is `comptime` and the body uses one as a generic value, `func wide(comptime n i64) i64 { return width[n](); }`, the body runs at each call and the call is that result. The result may be `i32`, `bool`, or any integer type. The parameter keeps its written type: `comptime n i64` takes 3000000000, and `comptime n u8` takes 0 through 255. A value that does not fit is `value does not fit`.
+When every parameter is `comptime` and the body uses one as a generic value, `func wide(comptime n i64) i64 { return width<n>(); }`, the body runs at each call and the call is that result. The result may be `i32`, `bool`, or any integer type. The parameter keeps its written type: `comptime n i64` takes 3000000000, and `comptime n u8` takes 0 through 255. A value that does not fit is `value does not fit`.
 
 A mix of a `comptime` parameter and a runtime parameter is specialized per constant.
 
@@ -1732,7 +1732,7 @@ Each use of that name is `Order.acquire`.
 
 A method and a generic function drop that parameter the same way.
 
-When the file is `main.tlc` and `acquire` is `1`, `p.id(Order.acquire)` calls `main.Point.id.spec.1`, and `id[i32](1, Order.acquire)` calls `main.id.spec.i32.spec.1`.
+When the file is `main.tlc` and `acquire` is `1`, `p.id(Order.acquire)` calls `main.Point.id.spec.1`, and `id<i32>(1, Order.acquire)` calls `main.id.spec.i32.spec.1`.
 
 Each use of that name is `Order.acquire`.
 
@@ -1963,7 +1963,7 @@ Those bytes are copied out of the run.
 
 `null` stays `null`.
 
-`width[made.x]()` is `main.width.spec.42` when the file is `main.tlc`.
+`width<made.x>()` is `main.width.spec.42` when the file is `main.tlc`.
 
 That copy is `movl $42, %eax` and `retq`.
 
@@ -2193,7 +2193,7 @@ When the file is `main.tlc`, `take((2, 0), n)` calls `main.take.spec.t_2_0`.
 
 `here.shift((2, 0))` calls `main.Point.shift.spec.t_2_0` and loads `self.x` before adding `2`.
 
-`id[i32](40, (2, 0))` calls `main.id.spec.i32.spec.t_2_0`.
+`id<i32>(40, (2, 0))` calls `main.id.spec.i32.spec.t_2_0`.
 
 A string element uses the spelling of a comptime string, so `("hi", 2)` calls `main.take.spec.t_s26869_2`.
 
@@ -2251,7 +2251,7 @@ The compiler does not pass the parameter, and `p[0][1]` is the immediate `2`.
 
 `null` and an element that is not constant are `type mismatch`.
 
-`func id[T type](value T)` of `((40, 2), 1)` calls `main.id.spec.tuple.2.tuple.2.i32.i32.i32.spec.t_t_40_2_1` and does not pass the tuple.
+`func id<T type>(value T)` of `((40, 2), 1)` calls `main.id.spec.tuple.2.tuple.2.i32.i32.i32.spec.t_t_40_2_1` and does not pass the tuple.
 
 A function nested in another function passes the tuple and does not specialize.
 
@@ -2297,7 +2297,7 @@ The element is a function pointer, the same type as `comptime const op = add`.
 
 `(ops[0])(40, 2)` calls `add`.
 
-`ops[0](40, 2)` is a generic call of `ops`.
+`ops[0](40, 2)` is that same call.
 
 `(ops[0][0])(40, 2)` calls a function in a nested tuple.
 
@@ -2325,7 +2325,7 @@ A `comptime func` in that `var` is that error. Write `comptime const f = add`.
 
 A function element is called through that pointer.
 
-`(p[0])(n, 2)` is the call, and `p[0](n, 2)` is a generic call of `p`.
+`(p[0])(n, 2)` and `p[0](n, 2)` are the call.
 
 ```c
 func add(a i32, b i32) i32 {
@@ -2709,7 +2709,7 @@ retq                             # return
 
 `const k = 3000000000u32` then `field(k)` is those two instructions. `const k = 3000000000` against `i64` and `const k = 4u64` against `u64` are that call. `40u32` and `40i64` are too. `const a = 40i8` against `i8` is that call. `200u8`, `40i16`, and `40000u16` are too. `(k, 42)` passes that value in the tuple. A local `const` is `not supported yet`. `const k = 200i8` is `value does not fit`.
 
-`const n = 4i8` then `var row [n]i32` has `row.len` of 4. `main` is `movl $4, %eax` and `retq`. `4u8`, `4i16`, and `4u16` are that length. `width[4i8]()` and `width[n]()` are `type mismatch`.
+`const n = 4i8` then `var row [n]i32` has `row.len` of 4. `main` is `movl $4, %eax` and `retq`. `4u8`, `4i16`, and `4u16` are that length. `width<4i8>()` and `width<n>()` are `type mismatch`.
 
 `const n = 4i8` then `comptime if (n == 4i8)` keeps that arm. `comptime switch (n)` with `case 4i8` keeps it too. `200u8`, `40i16`, and `4u64` are that value. `main` is `movl $42, %eax` and `retq`. A `var` is `not supported yet`.
 
@@ -3233,7 +3233,7 @@ type Order enum {
     acquire,
 };
 
-func id[T type](value T, comptime order Order) T {
+func id<T type>(value T, comptime order Order) T {
     comptime if (order == Order.acquire) {
         return value + 41;
     }
@@ -3241,7 +3241,7 @@ func id[T type](value T, comptime order Order) T {
 }
 
 func main() i32 {
-    return id[i32](1, Order.acquire);
+    return id<i32>(1, Order.acquire);
 }
 ```
 

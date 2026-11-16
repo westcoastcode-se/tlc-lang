@@ -1,10 +1,10 @@
-extern func id[T type](value T) T;
+extern func id<T type>(value T) T;
 
-func id[T type](value T) T {
+func id<T type>(value T) T {
     return value;
 }
 
-extern(abi="tlc") func add[T type](left T, right T) T {
+extern(abi="tlc") func add<T type>(left T, right T) T {
     return left + right;
 }
 
@@ -21,15 +21,15 @@ func Rect::area(self this) i32 {
     return self.w * self.h;
 }
 
-extern func measure[T Shape](value T) i32 {
+extern func measure<T Shape>(value T) i32 {
     return value.area();
 }
 
-extern func pick[T type](value T) i32 {
+extern func pick<T type>(value T) i32 {
     return value;
 }
 
-extern func pick[T type](value T, extra i32) i32 {
+extern func pick<T type>(value T, extra i32) i32 {
     return value + extra;
 }
 

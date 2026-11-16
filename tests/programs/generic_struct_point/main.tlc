@@ -1,17 +1,17 @@
-type Box[T type] struct {
+type Box<T type> struct {
     point struct {
         x T = 40;
         y T = 2;
     };
 };
 
-var global Box[i32];
+var global Box<i32>;
 
 func main() i32 {
-    var bare Box[i32];
-    var named = Box[i32]{.point = {.x = 1}};
-    var zero = Box[i32]{.point = {0...}};
-    var heap *Box[i32] = new Box[i32];
+    var bare Box<i32>;
+    var named = Box<i32>{.point = {.x = 1}};
+    var zero = Box<i32>{.point = {0...}};
+    var heap *Box<i32> = new Box<i32>;
     if (bare.point.x != 40 || bare.point.y != 2 || named.point.x != 1 || named.point.y != 2) {
         return 1;
     }

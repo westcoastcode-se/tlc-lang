@@ -1,7 +1,7 @@
-type Box[T type] struct { n T; }
+type Box<T type> struct { n T; }
 
-func make[T type](value T) Box[T] {
-    var box Box[T];
+func make<T type>(value T) Box<T> {
+    var box Box<T>;
     box.n = value;
     return box;
 }

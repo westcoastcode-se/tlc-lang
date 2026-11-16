@@ -12,10 +12,10 @@ export func width() i32 {
     return sizeof(Entity);
 }
 
-export type Box[T type] struct {
+export type Box<T type> struct {
     value T;
 };
 
-export comptime const Box[T]::limit = 6;
+export comptime const Box<T>::limit = 6;
 
 export comptime const spare = 2;

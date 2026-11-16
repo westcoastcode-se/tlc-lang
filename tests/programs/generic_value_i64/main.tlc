@@ -3,41 +3,41 @@
 comptime const big i64 = 3000000000;
 const below i64 = -5;
 
-type Buf[N i64] struct {
+type Buf<N i64> struct {
     raw [N]u8;
 }
 
-var store Buf[3000000000];
+var store Buf<3000000000>;
 
-func width[N i64]() i64 {
+func width<N i64>() i64 {
     return N;
 }
 
-func inner[M i64]() i64 {
+func inner<M i64>() i64 {
     return M;
 }
 
-func outer[N i64]() i64 {
-    return inner[N]();
+func outer<N i64>() i64 {
+    return inner<N>();
 }
 
-func len_of(b *Buf[3000000000]) i64 {
+func len_of(b *Buf<3000000000>) i64 {
     return b.raw.len;
 }
 
 func main() i32 {
     var bad = 0;
-    if (width[3000000000]() != 3000000000 || width[big]() != 3000000000) {
+    if (width<3000000000>() != 3000000000 || width<big>() != 3000000000) {
         bad |= 1;
     }
-    if (width[below]() != -5 || width[7]() != 7i64) {
+    if (width<below>() != -5 || width<7>() != 7i64) {
         bad |= 2;
     }
     store.raw[2999999999] = 9;
     if (len_of(&store) != 3000000000 || store.raw[2999999999] != 9) {
         bad |= 4;
     }
-    if (outer[4000000000]() != 4000000000) {
+    if (outer<4000000000>() != 4000000000) {
         bad |= 8;
     }
     return bad == 0 ? 42 : bad;

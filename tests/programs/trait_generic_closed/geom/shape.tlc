@@ -12,6 +12,6 @@ func Box::area(self this) i32 {
     return self.n;
 }
 
-export func measure[T Shape](value T) i32 {
+export func measure<T Shape>(value T) i32 {
     return value.area();
 }

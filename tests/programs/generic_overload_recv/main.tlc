@@ -1,12 +1,12 @@
-type Box[T type] struct {
+type Box<T type> struct {
     value T;
 };
 
-func Box[T]::get(self this) T {
+func Box<T>::get(self this) T {
     return self.value;
 }
 
-func Box[T]::get(self *this) T {
+func Box<T>::get(self *this) T {
     return self.value;
 }
 

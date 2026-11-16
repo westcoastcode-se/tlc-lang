@@ -6,11 +6,11 @@ func pick() func (i32, i32) i32 {
     return add;
 }
 
-type Box[T type] struct {
+type Box<T type> struct {
     op func (T, T) T = pick();
 };
 
 func main() i32 {
-    var box Box[i32];
+    var box Box<i32>;
     return box.op(40, 2);
 }

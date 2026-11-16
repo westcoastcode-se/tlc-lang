@@ -1,6 +1,6 @@
 // `*const *const i32` cannot store through either level, so `**i32` converts to it.
 // `*i32` still converts to `*const i32`, and a generic `*const *const T` binds `T` to `i32`.
-func read[T type](value *const *const T) T {
+func read<T type>(value *const *const T) T {
     return **value;
 }
 

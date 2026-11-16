@@ -1,4 +1,4 @@
-type Box[T type] struct {
+type Box<T type> struct {
     value T;
 };
 
@@ -6,12 +6,12 @@ func show(n i32) i32 {
     return n;
 }
 
-func show(box Box[i32]) i32 {
+func show(box Box<i32>) i32 {
     return box.value;
 }
 
 func main() i32 {
-    var box Box[i32];
+    var box Box<i32>;
     box.value = 3;
     return show(1) + show(box) - 4;
 }

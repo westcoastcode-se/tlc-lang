@@ -1,15 +1,15 @@
-func id[T type](value T) i32 {
+func id<T type>(value T) i32 {
     comptime if (value == 2) {
         return 40;
     }
     return value + 1;
 }
 
-func plain[T type](value T) i32 {
+func plain<T type>(value T) i32 {
     return value;
 }
 
-func only[T type](comptime value T) i32 {
+func only<T type>(comptime value T) i32 {
     return value;
 }
 

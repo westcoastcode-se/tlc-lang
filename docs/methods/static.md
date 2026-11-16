@@ -75,39 +75,39 @@ A missing name, `Point.missing()`, is reported as `undeclared identifier`.
 
 A static method template puts the type parameters after the name.
 
-`func Point::id[T type](value T) T` is called as `Point.id[i32](42)`.
+`func Point::id<T type>(value T) T` is called as `Point.id<i32>(42)`.
 
 A call on a value is reported as `type mismatch`.
 
 A call without the brackets is reported as `undeclared identifier`.
 
-`export` publishes `pkg.Point.id[i32](...)`.
+`export` publishes `pkg.Point.id<i32>(...)`.
 
-On a generic struct, `func Vec[T]::get[U type](value U) U` is called as `Vec[i32].get[i32](value)`.
+On a generic struct, `func Vec<T>::get<U type>(value U) U` is called as `Vec<i32>.get<i32>(value)`.
 
 `T` comes from the struct.
 
 `U` is chosen at the call.
 
-`export` publishes `pkg.Vec[i32].get[i32](...)`.
+`export` publishes `pkg.Vec<i32>.get<i32>(...)`.
 
 Without `export`, that call is `name is not exported`.
 
 An unexported struct is `Vec is not exported`.
 
-A pointer alias uses that same call, `Ptr.make[i32](2)`.
+A pointer alias uses that same call, `Ptr.make<i32>(2)`.
 
 ```c
 type Point struct {
     x i32;
 };
 
-func Point::id[T type](value T) T {
+func Point::id<T type>(value T) T {
     return value;
 }
 
 func main() i32 {
-    return Point.id[i32](42);
+    return Point.id<i32>(42);
 }
 ```
 
@@ -131,16 +131,16 @@ When the file is `main.tlc`, the symbol is `main.Point.id.spec.i32`.
 On a generic struct the call names the specialization.
 
 ```c
-type Vec[T type] struct {
+type Vec<T type> struct {
     n T;
 };
 
-func Vec[T]::get[U type](value U) U {
+func Vec<T>::get<U type>(value U) U {
     return value;
 }
 
 func main() i32 {
-    return Vec[i32].get[i32](42);
+    return Vec<i32>.get<i32>(42);
 }
 ```
 
@@ -161,7 +161,7 @@ The program returns 42.
 
 When the file is `main.tlc`, the symbol is `main.Vec.spec.i32.get.spec.i32`.
 
-`Buf[40, i32].width[i32](2)` is `main.Buf.spec.40.i32.width.spec.i32`.
+`Buf<40, i32>.width<i32>(2)` is `main.Buf.spec.40.i32.width.spec.i32`.
 
 ## The name as a value
 
@@ -195,49 +195,49 @@ The builtin name `i32` cannot either.
 
 A static function on a generic struct uses the same call.
 
-`Box[i32].from(40)` and `Buf[1, i32].width()` name the specialization.
+`Box<i32>.from(40)` and `Buf<1, i32>.width()` name the specialization.
 
-`var ptr = Box[i32].from` and `take(Box[i32].from)` are that function.
+`var ptr = Box<i32>.from` and `take(Box<i32>.from)` are that function.
 
-A call written in the method, `Box[T].from(0)`, uses the same specialization.
+A call written in the method, `Box<T>.from(0)`, uses the same specialization.
 
-Another package calls `pkg.Box[i32].from(40)` and `pkg.Buf[1, i32].width()` when the function is exported.
+Another package calls `pkg.Box<i32>.from(40)` and `pkg.Buf<1, i32>.width()` when the function is exported.
 
 Without `export` that call is reported as `name is not exported`.
 
-An instance method on the specialization, `Vec[i32].get()`, is reported as `type mismatch`.
+An instance method on the specialization, `Vec<i32>.get()`, is reported as `type mismatch`.
 
 A missing name is reported as `undeclared identifier`.
 
 ```c
-type Box[T type] struct {
+type Box<T type> struct {
     value T;
 };
 
-func Box[T]::from(value T) Box[T] {
-    var box Box[T];
+func Box<T>::from(value T) Box<T> {
+    var box Box<T>;
     box.value = value;
     return box;
 }
 
-func Box[T]::zero() Box[T] {
-    return Box[T].from(0);
+func Box<T>::zero() Box<T> {
+    return Box<T>.from(0);
 }
 
-type Buf[N i32, T type] struct {
+type Buf<N i32, T type> struct {
     value T;
 };
 
-func Buf[N, T]::width() i32 {
+func Buf<N, T>::width() i32 {
     return N;
 }
 
 func main() i32 {
-    var box = Box[i32].from(40);
-    var ptr = Box[i32].from;
+    var box = Box<i32>.from(40);
+    var ptr = Box<i32>.from;
     var once = ptr(1);
-    var zero = Box[i32].zero();
-    return box.value + once.value + Buf[1, i32].width() + zero.value;
+    var zero = Box<i32>.zero();
+    return box.value + once.value + Buf<1, i32>.width() + zero.value;
 }
 ```
 

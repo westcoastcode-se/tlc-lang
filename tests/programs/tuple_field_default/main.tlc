@@ -3,7 +3,7 @@ type Box struct {
     n i32 = 1;
 };
 
-type Gen[T type] struct {
+type Gen<T type> struct {
     pair (T, i32) = (18, 2);
 };
 
@@ -14,7 +14,7 @@ func main() i32 {
     var named = Box{.pair = (7, 1)};
     var other = Box{.n = 9};
     var zero = Box{0...};
-    var gen Gen[i32];
+    var gen Gen<i32>;
     if (bare.pair[0] != 40 || bare.pair[1] != 2 || bare.n != 1) {
         return 1;
     }

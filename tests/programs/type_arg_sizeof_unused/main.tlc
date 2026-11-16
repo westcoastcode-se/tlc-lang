@@ -1,3 +1,3 @@
-func width[N i32]() i32 { return 1; }
+func width<N i32>() i32 { return 1; }
 
-func main() i32 { return width[sizeof(i32)](); }
+func main() i32 { return width<sizeof(i32)>(); }

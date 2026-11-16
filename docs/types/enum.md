@@ -18,7 +18,7 @@ The compiler reports `Color.Red` as `undeclared identifier`.
 
 The semicolon after `}` may be omitted.
 
-An enum does not take type parameters, so `type Name[T type] enum` is not a form.
+An enum does not take type parameters, so `type Name<T type> enum` is not a form.
 
 The compiler reports that spelling as `not supported yet`.
 

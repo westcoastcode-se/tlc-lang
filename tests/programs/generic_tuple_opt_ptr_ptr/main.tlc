@@ -1,18 +1,18 @@
-func num[T type](value ?**T) i32 {
+func num<T type>(value ?**T) i32 {
     if (value == null) {
         return 0;
     }
     return **value;
 }
 
-func read[T type](value ?**T) i32 {
+func read<T type>(value ?**T) i32 {
     if (value == null) {
         return 0;
     }
     return (**value)[0] + (**value)[1];
 }
 
-func deep[T type](value ?**T) i32 {
+func deep<T type>(value ?**T) i32 {
     if (value == null) {
         return 0;
     }

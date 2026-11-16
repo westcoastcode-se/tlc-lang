@@ -216,7 +216,7 @@ retq                             # return
 
 `var row = [_][n]i32{{1, 2}}` then `return row.len + row[0].len` is `movl $3, %eax` and `retq`.
 
-`id[[n]i32](row)` calls `main.id.spec.arr.2.i32` when the file is `main.tlc`.
+`id<[n]i32>(row)` calls `main.id.spec.arr.2.i32` when the file is `main.tlc`.
 
 A local `const` hides a file-scope `const` of the same name.
 
@@ -226,7 +226,7 @@ A local `const` hides a file-scope `const` of the same name.
 
 `return 42 + row.len` is `movl $42, %eax` and `retq`.
 
-A file-scope `const n = 4i8` then `var row [n]i32` has `row.len` of 4. `main` is `movl $4, %eax` and `retq`. `4u8`, `4i16`, and `4u16` are that length. `width[n]()` is `type mismatch`.
+A file-scope `const n = 4i8` then `var row [n]i32` has `row.len` of 4. `main` is `movl $4, %eax` and `retq`. `4u8`, `4i16`, and `4u16` are that length. `width<n>()` is `type mismatch`.
 
 A `var` is `not supported yet`.
 
@@ -348,13 +348,13 @@ A file-scope array with no initializer is zero. `var file_row [0]i32` is an empt
 A generic length that folds to 0 is the same array.
 
 ```c
-func buf[M i32]() i32 {
+func buf<M i32>() i32 {
     var local [M]i32;
     return sizeof(local);
 }
 ```
 
-`buf[0]()` is 0. `buf[2]()` is 8.
+`buf<0>()` is 0. `buf<2>()` is 8.
 
 A negative length, `comptime const N = -1` then `[N]i32`, is `array length must be >= 0`.
 

@@ -5,7 +5,7 @@ i32
 *i32
 ?*i32
 [4]i32
-Box[i32]
+Box<i32>
 Point
 []const u8
 Type

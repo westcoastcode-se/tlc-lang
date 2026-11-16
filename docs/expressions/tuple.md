@@ -16,7 +16,7 @@ A `comptime const` element may be a function.
 
 `comptime const ops = (add, 1)` stores that pointer, and `(ops[0])(40, 2)` calls `add`.
 
-`ops[0](40, 2)` is a generic call of `ops`.
+`ops[0](40, 2)` is that same call.
 
 A `comptime const` element may be a pointer.
 
@@ -84,11 +84,11 @@ The element types are the types of the values before promotion, so `(40, 'a')` i
 
 `Duo` is a different type from `(i32, i32)`, so the value is `Duo((40, 2))`.
 
-`type Something[K type, V type] (K, V)` is that alias.
+`type Something<K type, V type> (K, V)` is that alias.
 
-`Something[i32, i32]((40, 2))` names one specialization.
+`Something<i32, i32>((40, 2))` names one specialization.
 
-The compiler reports `type Something[K, V] (K, V)` as `expected a type` on the comma.
+The compiler reports `type Something<K, V> (K, V)` as `expected a type` on the comma.
 
 ## Parameters
 
@@ -96,7 +96,7 @@ A parameter may be written `(i32, i32)`.
 
 A generic parameter `(P1, P2)` is that tuple.
 
-`SomeFunc[i32, i32](0, (40, 2))` writes the types.
+`SomeFunc<i32, i32>(0, (40, 2))` writes the types.
 
 `SomeFunc(0, (40, 2))` infers them.
 

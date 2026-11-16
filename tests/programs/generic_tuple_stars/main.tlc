@@ -1,12 +1,12 @@
-func id[T type](value *const *const *const T) i32 {
+func id<T type>(value *const *const *const T) i32 {
     return (***value)[0] + (***value)[1];
 }
 
-func deep[T type](value ****T) i32 {
+func deep<T type>(value ****T) i32 {
     return (****value)[0] + (****value)[1];
 }
 
-func read[T type](value ?***T) i32 {
+func read<T type>(value ?***T) i32 {
     var q ?***T = value;
     if (q == null) {
         return 0;
@@ -14,16 +14,16 @@ func read[T type](value ?***T) i32 {
     return (***q)[0] + (***q)[1];
 }
 
-type Box[T type] struct {
+type Box<T type> struct {
     p *const *const *const T;
 };
 
-func through[T type](value *const *const *const T) i32 {
-    var box Box[T] = {.p = value};
+func through<T type>(value *const *const *const T) i32 {
+    var box Box<T> = {.p = value};
     return (***box.p)[0] + (***box.p)[1];
 }
 
-func give[T type](value *const *const *const T) *const *const *const T {
+func give<T type>(value *const *const *const T) *const *const *const T {
     return value;
 }
 

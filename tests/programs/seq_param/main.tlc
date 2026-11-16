@@ -1,6 +1,6 @@
 import "std/seq";
 
-func use(items seq.Seq[i32]) i32 {
+func use(items seq.Seq<i32>) i32 {
     return items.len() + items.at(0);
 }
 

@@ -620,7 +620,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
         const auto *base_name = std::get_if<Expr::Name>(&selector->base->data);
         const bool package_call = base_name != nullptr && packages_.contains(base_name->text);
         if (!package_call && !node.trait_method.empty()) {
-            // `a.malloc[i32]()` on a trait parameter. The active specialization names the struct.
+            // `a.malloc<i32>()` on a trait parameter. The active specialization names the struct.
             int struct_id = -1;
             TypedValue addr;
             if (addressable(*selector->base)) {
@@ -669,7 +669,7 @@ CodeGen::PreparedCall CodeGen::prepare_call(const Expr::Call &node) {
             return prepared;
         }
         if (!package_call) {
-            // `Box[i32].from(...)`. The owner is the specialization, and the call passes no receiver.
+            // `Box<i32>.from(...)`. The owner is the specialization, and the call passes no receiver.
             if (!selector->resolved_owner.empty()) {
                 const Binding *method = selected_binding(static_selector_binding(current_file_, *selector));
                 if (method != nullptr && method->decl != nullptr && method->decl->static_method) {

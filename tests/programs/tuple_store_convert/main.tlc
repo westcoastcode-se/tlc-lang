@@ -1,13 +1,13 @@
 // A tuple element converts to the element it is stored into: a float into an integer as `i32(2.5)` does,
 // and an integer into a float. A generic field `(T, i32)` with `T` as `i8` stored `{i32, f64}` before.
-type Box[T type] struct {
+type Box<T type> struct {
     n T;
     pair (T, i32);
 }
 
 func main() i32 {
     var bad = 0;
-    var box Box[i8];
+    var box Box<i8>;
     box.pair = (40, 2.5);
     if (box.pair[0] != 40i8 || box.pair[1] != 2) {
         bad |= 1;

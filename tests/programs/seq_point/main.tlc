@@ -4,7 +4,7 @@ type Point struct {
     n i32;
 };
 
-func use(items seq.Seq[Point]) i32 {
+func use(items seq.Seq<Point>) i32 {
     return items.len() + items.at(0).n;
 }
 

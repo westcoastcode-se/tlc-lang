@@ -17,17 +17,17 @@ type Point struct {
     x i32;
 };
 
-type Box[T type] struct {
+type Box<T type> struct {
     value T;
 };
 
-var Box[T]::extra i32 = 1;
+var Box<T>::extra i32 = 1;
 
-type Buf[N i32, T type] struct {
+type Buf<N i32, T type> struct {
     value T;
 };
 
-var Buf[N, T]::count i32 = N;
+var Buf<N, T>::count i32 = N;
 
 type Color enum { Red };
 
@@ -36,6 +36,6 @@ var Color::label i32;
 func main() i32 {
     var e = Entity.make();
     var p = &Entity.next;
-    Box[Point].extra = 9;
-    return e.id + Box[i32].extra + *p + Buf[4, Point].count + Entity.bias + Entity.spare + Color.label - 44;
+    Box<Point>.extra = 9;
+    return e.id + Box<i32>.extra + *p + Buf<4, Point>.count + Entity.bias + Entity.spare + Color.label - 44;
 }

@@ -3,7 +3,7 @@ type Order enum {
     acquire,
 };
 
-func id[T type](value T, comptime order Order) T {
+func id<T type>(value T, comptime order Order) T {
     comptime if (order == Order.acquire) {
         return value + 41;
     }
@@ -11,5 +11,5 @@ func id[T type](value T, comptime order Order) T {
 }
 
 func main() i32 {
-    return id[i32](1, Order.acquire);
+    return id<i32>(1, Order.acquire);
 }

@@ -10,7 +10,7 @@ func Rect::area(self *this) i32 {
     return self.w;
 }
 
-func measure[T Shape](value T, at *T) i32 {
+func measure<T Shape>(value T, at *T) i32 {
     return value.area() + at.area();
 }
 
