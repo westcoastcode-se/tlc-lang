@@ -1392,6 +1392,34 @@ void CodeGen::store_init_fields(int struct_id, llvm::Value *slot, const Expr::In
     }
 }
 
+std::string CodeGen::shown_type_text(const std::string &text) const {
+    if (graph_ == nullptr || graph_->display_names.empty()) {
+        return text;
+    }
+    // Each name in the spelling, `Box.spec.i32` in `*[2]Box.spec.i32`, is replaced by its written form.
+    const auto name_char = [](char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '.';
+    };
+    std::string out;
+    out.reserve(text.size());
+    std::size_t i = 0;
+    while (i < text.size()) {
+        if (!name_char(text[i])) {
+            out += text[i++];
+            continue;
+        }
+        std::size_t end = i;
+        while (end < text.size() && name_char(text[end])) {
+            ++end;
+        }
+        const std::string word = text.substr(i, end - i);
+        const auto found = graph_->display_names.find(word);
+        out += found != graph_->display_names.end() ? found->second : word;
+        i = end;
+    }
+    return out;
+}
+
 llvm::Constant *CodeGen::intern_type_name(const std::string &text) {
     const auto found = type_names_.find(text);
     if (found != type_names_.end()) {
@@ -1495,11 +1523,11 @@ llvm::Constant *CodeGen::intern_type_desc(const std::string &text) {
     }
     llvm::StructType *desc_ty = type_desc_type();
     if (desc_ty->getNumElements() >= 4) {
-        global->setInitializer(llvm::ConstantStruct::get(desc_ty, {intern_type_name(text), fields, methods, alias}));
+        global->setInitializer(llvm::ConstantStruct::get(desc_ty, {intern_type_name(shown_type_text(text)), fields, methods, alias}));
     } else if (desc_ty->getNumElements() >= 3) {
-        global->setInitializer(llvm::ConstantStruct::get(desc_ty, {intern_type_name(text), fields, methods}));
+        global->setInitializer(llvm::ConstantStruct::get(desc_ty, {intern_type_name(shown_type_text(text)), fields, methods}));
     } else {
-        global->setInitializer(llvm::ConstantStruct::get(desc_ty, {intern_type_name(text), fields}));
+        global->setInitializer(llvm::ConstantStruct::get(desc_ty, {intern_type_name(shown_type_text(text)), fields}));
     }
     return global;
 }

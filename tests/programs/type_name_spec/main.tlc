@@ -1,0 +1,33 @@
+// `name` spells a specialization as it is written, also inside a pointer, an array and another specialization.
+import "builtin";
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+type Box[T type] struct {
+    value T;
+}
+type Pair[A type, B type] struct {
+    a A;
+    b B;
+}
+type Grid[N i32] struct {
+    cells [N]u8;
+}
+type Spec struct {
+    v i32;
+}
+func main() i32 {
+    var a Box[i32];
+    var b ?*Box[*const u8] = null;
+    var c [2]Box[u8];
+    var d Box[Box[i32]];
+    var e Pair[i32, Box[f32]];
+    var f Grid[4];
+    var g Spec;
+    printf("%s\n", typeof(a).name());
+    printf("%s\n", typeof(b).name());
+    printf("%s\n", typeof(c).name());
+    printf("%s\n", typeof(d).name());
+    printf("%s\n", typeof(e).name());
+    printf("%s\n", typeof(f).name());
+    printf("%s\n", typeof(g).name());
+    return 0;
+}

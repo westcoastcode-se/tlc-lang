@@ -58,7 +58,7 @@ A function pointer is `Other`.
 
 `p.name()` on a `*builtin.Type` uses the `Type` `p` points at when `p` is a `comptime const`.
 
-`name` returns `*const u8`. The text is the spelling diagnostics use: `i32`, `*i32`, `?*Point`, `[4]i32`, `Box.spec.i32`, `func(i32, i32) i32`, `*func(i32, i32) i32`.
+`name` returns `*const u8`. The text is the spelling diagnostics use: `i32`, `*i32`, `?*Point`, `[4]i32`, `Box[i32]`, `func(i32, i32) i32`, `*func(i32, i32) i32`.
 
 The bytes are constant. `*text = 0` and `text[0] = 0` are reported as `type mismatch`.
 

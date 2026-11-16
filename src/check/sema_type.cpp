@@ -3873,6 +3873,17 @@ void Checker::publish_reflected_fields() {
         }
     }
     const_cast<PackageGraph *>(graph_)->reflected_fields = std::move(table);
+    std::unordered_map<std::string, std::string> shown;
+    for (std::size_t id = 0; id < structs_.size(); ++id) {
+        if (structs_[id].template_name.empty()) {
+            continue;
+        }
+        Type type;
+        type.kind = TypeKind::Struct;
+        type.struct_id = static_cast<int>(id);
+        shown.emplace(type_desc(type), type_desc(type, true));
+    }
+    const_cast<PackageGraph *>(graph_)->display_names = std::move(shown);
 }
 
 void Checker::publish_reflected_methods() {

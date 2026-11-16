@@ -3504,7 +3504,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                 } else if (rhs.kind != TypeKind::Tuple || rhs.results.size() != node.names.size()) {
                     const std::string found = rhs.kind == TypeKind::Tuple
                                                   ? std::to_string(rhs.results.size()) + " results"
-                                                  : type_desc(rhs);
+                                                  : display_type(rhs);
                     error(node.loc, "type mismatch: expected " + std::to_string(node.names.size()) + " results, found " +
                                         found);
                     return;
