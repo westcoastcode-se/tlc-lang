@@ -1352,6 +1352,10 @@ bool Checker::field_waits(const FieldDecl &field, int self_id) const {
             continue;
         }
         const auto *measured = std::get_if<Expr::Sizeof>(&shell.length_expr->data);
+        // `[sizeof(Box<i64>)]` builds that specialization when the length folds. It does not wait for `Box`.
+        if (measured != nullptr && measured->on_type && !measured->type_args.empty()) {
+            continue;
+        }
         const std::string *operand = nullptr;
         if (measured != nullptr && measured->on_type && measured->type_package.empty() && !measured->type_name.empty()) {
             operand = &measured->type_name;

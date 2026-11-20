@@ -1613,6 +1613,22 @@ int run_lsp_tests() {
     EXPECT_HAS(check, signature, "y i32");
     EXPECT_HAS(check, signature, "\"activeParameter\":0");
 
+    // A comma inside `Pair<i32, u8>` does not separate arguments.
+    const std::string generic_source = "type Pair<A type, B type> struct {\n    a A;\n    b B;\n}\n"
+                                       "func take(p Pair<i32, u8>, n i32, m i32) i32 {\n    return n;\n}\n"
+                                       "func main() i32 {\n    return take(Pair<i32, u8>{.a = 1, .b = 2}, 3, 4);\n}\n";
+    const std::string generic_uri = "file:///tmp/tlc-lsp-generic-sig.tlc";
+    send_json(to_child[1],
+              std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                  generic_uri + R"(","languageId":"tlc","version":1,"text":")" + json_escape(generic_source) + R"("}}})");
+    LineCol generic_at = at_needle(generic_source, "4);", false);
+    send_json(to_child[1], std::string(R"({"jsonrpc":"2.0","id":9101,"method":"textDocument/signatureHelp","params":{"textDocument":{"uri":")") +
+                         generic_uri + R"("},"position":{"line":)" + std::to_string(generic_at.line) + R"(,"character":)" +
+                         std::to_string(generic_at.character) + "}}}");
+    const std::string generic_signature = read_until(from_child[0], "\"id\":9101", 3000);
+    EXPECT_HAS(check, generic_signature, "p Pair<i32, u8>");
+    EXPECT_HAS(check, generic_signature, "\"activeParameter\":2");
+
     const std::string semi_source = "func main() i32 {\n    return 1\n}\n";
     const std::string semi_uri = "file:///tmp/tlc-lsp-semi.tlc";
     send_json(to_child[1],

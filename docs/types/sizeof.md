@@ -18,6 +18,8 @@ Both `sizeof(i32)` and `sizeof n` are accepted.
 
 `sizeof(Point)` and `sizeof(enum Color)` name a declared type, and `sizeof(Shape)` names a union.
 
+`sizeof(Box<i64>)`, `sizeof(*Box<i64>)`, and `sizeof([2]Box<u8>)` name a specialization. Inside `sizeof(...)`, `Name<...>` followed by `)` is that type, so `alignof(Box<i64>)` and `[sizeof(Box<i64>)]u8` work too. `sizeof(a < b)` is still a comparison. A wrong argument is the error the same type gets in `var b Box<...>`.
+
 The compiler reports `sizeof(struct Point)`, `sizeof(union Shape)`, and `sizeof(trait Area)` as `expected a type`.
 
 The compiler reports `sizeof(Area)` as `undeclared identifier` when `Area` is a trait.

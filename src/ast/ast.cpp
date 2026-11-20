@@ -1062,6 +1062,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.on_type = node.on_type;
                 copy.type_name = node.type_name;
                 copy.type_package = node.type_package;
+                copy.type_args = node.type_args;
                 copy.is_struct = node.is_struct;
                 copy.is_enum = node.is_enum;
                 copy.indirections = node.indirections;
@@ -1081,6 +1082,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.on_type = node.on_type;
                 copy.type_name = node.type_name;
                 copy.type_package = node.type_package;
+                copy.type_args = node.type_args;
                 copy.is_struct = node.is_struct;
                 copy.is_enum = node.is_enum;
                 copy.indirections = node.indirections;

@@ -134,6 +134,18 @@ bool Parser::skip_type_base(std::size_t &index, int leading, bool cast) const {
         index += 2;
         return true;
     }
+    // `sizeof(Box<i64>)` and `typeof(pkg.Box<i64>)` name that specialization. `sizeof(a < b)` is a comparison.
+    if (!cast && head.kind == TokenKind::Identifier) {
+        std::size_t at = index + 1;
+        if (peek(at).kind == TokenKind::Dot && peek(at + 1).kind == TokenKind::Identifier) {
+            at += 2;
+        }
+        std::size_t after = 0;
+        if (peek(at).kind == TokenKind::Lt && angle_list_at(at, after)) {
+            index = after;
+            return true;
+        }
+    }
     // `pkg.Name` is a sizeof type. `pkg.Name(x)` is a call, and `*pkg.f()` is a dereference.
     if (!cast && head.kind == TokenKind::Identifier && peek(index + 1).kind == TokenKind::Dot &&
         peek(index + 2).kind == TokenKind::Identifier) {
@@ -680,6 +692,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
             spelled.indirections = array.indirections;
             spelled.optional = array.optional;
             spelled.const_pointee = array.const_pointee;
+            spelled.type_args = array.type_args;
         } else if (starts_type_paren()) {
             spelled = parse_paren_type();
             on_type = true;
@@ -702,6 +715,7 @@ std::unique_ptr<Expr> Parser::parse_unary() {
             node.indirections = spelled.indirections;
             node.optional = spelled.optional;
             node.const_pointee = spelled.const_pointee;
+            node.type_args = std::move(spelled.type_args);
             node.expr = std::move(expr);
         };
         if (is_sizeof) {

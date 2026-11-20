@@ -2720,6 +2720,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 return type_i64();
             } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
                 (void)used;
+                specialize_operand(const_cast<Expr::Typeof &>(node));
                 InitQuiet quiet(*this);
                 // `typeof(Point.get)` is parsed as a qualified type. `Point` is the type, not a package.
                 if (node.on_type && !node.type_package.empty()) {
@@ -3564,6 +3565,8 @@ Type Checker::operand_type(bool on_type, const std::string &type_name, const std
 }
 
 Type Checker::sizeof_operand(const Expr::Sizeof &node) {
+    // Every fold of `sizeof(Box<i64>)` comes here, including an array length checked before the body.
+    specialize_operand(const_cast<Expr::Sizeof &>(node));
     return operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections,
                         node.optional, node.expr.get(), node.loc, node.const_pointee, node.is_array, node.array_len,
                         node.elem_const, node.elem_slice, node.shells);

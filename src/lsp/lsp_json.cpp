@@ -700,6 +700,47 @@ Json range_json(Pos start, Pos end) {
                  {"end", jobj({{"line", jint(end.line)}, {"character", jint(end.character)}})}});
 }
 
+std::string spell_type_args(const std::vector<TypeArg> &args) {
+    if (args.empty()) {
+        return {};
+    }
+    std::string out = "<";
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        const TypeArg &arg = args[i];
+        if (i != 0) {
+            out += ", ";
+        }
+        if (arg.is_value) {
+            out += arg.has_value ? std::to_string(arg.value) : (arg.type_name.empty() ? "_" : arg.type_name);
+            continue;
+        }
+        for (int n = 0; n < arg.indirections; ++n) {
+            if (((arg.optional >> static_cast<uint32_t>(n)) & 1U) != 0) {
+                out.push_back('?');
+            }
+            out.push_back('*');
+            if (((arg.const_pointee >> static_cast<uint32_t>(n)) & 1U) != 0) {
+                out += "const ";
+            }
+        }
+        if (arg.is_array) {
+            out += arg.array_len < 0 ? std::string("[]")
+                                     : "[" + (arg.array_len_name.empty() ? std::to_string(arg.array_len)
+                                                                         : arg.array_len_name) +
+                                           "]";
+            if (arg.elem_const) {
+                out += "const ";
+            }
+        }
+        if (!arg.type_package.empty()) {
+            out += arg.type_package + ".";
+        }
+        out += arg.type_name;
+        out += spell_type_args(arg.args);
+    }
+    return out + ">";
+}
+
 std::string spell_type(const Place &place) {
     std::string stars;
     for (int n = 0; n < place.indirections; ++n) {
@@ -711,7 +752,7 @@ std::string spell_type(const Place &place) {
             stars += "const ";
         }
     }
-    std::string core = place.type_name;
+    std::string core = place.type_name + place.type_args;
     if (place.elem_const) {
         core = "const " + core;
     }
@@ -728,23 +769,31 @@ std::string spell_type(const Place &place) {
 }
 
 Place place_of_slot(const ResultSlot &slot) {
-    return Place{slot.type_name, slot.indirections, slot.optional, slot.const_pointee, slot.is_array, slot.array_len,
-                 slot.elem_slice, slot.elem_const};
+    Place place{slot.type_name, slot.indirections, slot.optional, slot.const_pointee, slot.is_array, slot.array_len,
+                slot.elem_slice, slot.elem_const};
+    place.type_args = spell_type_args(slot.type_args);
+    return place;
 }
 
 Place place_of_param(const Param &param) {
-    return Place{param.type_name, param.indirections, param.optional, param.const_pointee, param.is_array, param.array_len,
-                 param.elem_slice, param.elem_const};
+    Place place{param.type_name, param.indirections, param.optional, param.const_pointee, param.is_array,
+                param.array_len, param.elem_slice, param.elem_const};
+    place.type_args = spell_type_args(param.type_args);
+    return place;
 }
 
 Place place_of_var(const VarDecl &var) {
-    return Place{var.type_name, var.indirections, var.optional, var.const_pointee, var.is_array, var.array_len,
-                 var.elem_slice, var.elem_const};
+    Place place{var.type_name, var.indirections, var.optional, var.const_pointee, var.is_array, var.array_len,
+                var.elem_slice, var.elem_const};
+    place.type_args = spell_type_args(var.type_args);
+    return place;
 }
 
 Place place_of_field(const FieldDecl &field) {
-    return Place{field.type_name, field.indirections, field.optional, field.const_pointee, field.is_array,
-                 field.array_len, field.elem_slice, field.elem_const, field.is_const};
+    Place place{field.type_name, field.indirections, field.optional, field.const_pointee, field.is_array,
+                field.array_len, field.elem_slice, field.elem_const, field.is_const};
+    place.type_args = spell_type_args(field.type_args);
+    return place;
 }
 
 std::string spell_fn_params(const std::vector<FnParam> &params, bool variadic) {

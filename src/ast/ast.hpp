@@ -262,6 +262,8 @@ struct Expr {
         bool on_type = false;
         std::string type_name;
         std::string type_package;
+        // `sizeof(Box<i64>)`. The checker replaces the name with the specialization and clears this.
+        std::vector<TypeArg> type_args;
         bool is_struct = false;
         bool is_enum = false;
         int indirections = 0;
@@ -286,6 +288,8 @@ struct Expr {
         bool on_type = false;
         std::string type_name;
         std::string type_package;
+        // `sizeof(Box<i64>)`. The checker replaces the name with the specialization and clears this.
+        std::vector<TypeArg> type_args;
         bool is_struct = false;
         bool is_enum = false;
         int indirections = 0;

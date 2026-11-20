@@ -376,6 +376,8 @@ struct OpenCall {
     bool member = false;
     uint32_t name_at = 0;
     int commas = 0;
+    // The `[` and `{` depth at the `(`. A comma deeper than that is inside an argument.
+    int brackets = 0;
 };
 
 } // namespace
@@ -394,9 +396,18 @@ Json signature_help(const Doc &doc, uint32_t offset) {
             break;
         }
         const char c = doc.text[i];
+        // `Pair<i32, u8>` in an argument. Its comma does not separate arguments.
+        if (c == '<') {
+            const uint32_t end = type_list_end(doc.text, i);
+            if (end != static_cast<uint32_t>(-1) && end <= offset) {
+                i = end;
+                continue;
+            }
+        }
         if (c == '(') {
             OpenCall call;
             call.paren = i;
+            call.brackets = brackets;
             name_before(doc.text, i, call.name, call.name_at, call.member, call.base);
             stack.push_back(std::move(call));
         } else if (c == ')') {
@@ -407,7 +418,7 @@ Json signature_help(const Doc &doc, uint32_t offset) {
             ++brackets;
         } else if ((c == ']' || c == '}') && brackets > 0) {
             --brackets;
-        } else if (c == ',' && brackets == 0 && !stack.empty() && i < offset) {
+        } else if (c == ',' && !stack.empty() && brackets == stack.back().brackets && i < offset) {
             ++stack.back().commas;
         }
         if (i >= offset && c != '(') {

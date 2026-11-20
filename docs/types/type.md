@@ -28,7 +28,7 @@ The compiler supplies the bodies of `name` and `fields`. `fields` returns `[]con
 
 `typeof(i32)` and `typeof n` produce that pointer. A bare `Type`, with no such import, is reported as `not supported yet`.
 
-`typeof(Point)`, `typeof(*i32)`, and `typeof(enum Color)` name a declared type. `typeof(struct Point)`, `typeof(union Shape)`, and `typeof(trait Area)` are reported as `expected a type`.
+`typeof(Point)`, `typeof(*i32)`, `typeof(enum Color)`, and `typeof(Box<i64>)` name a declared type. `typeof(struct Point)`, `typeof(union Shape)`, and `typeof(trait Area)` are reported as `expected a type`.
 
 `typeof('A')` is `u8`, and that value is different from `typeof(i8)`.
 

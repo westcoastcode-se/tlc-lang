@@ -1012,6 +1012,9 @@ void note_expr_node(Used &used, const Shadow &shadow, const Node &node) {
         if (node.type_package.empty()) {
             note_type(used, shadow, node.type_name);
         }
+        for (const TypeArg &arg : node.type_args) {
+            note_type_arg(used, shadow, arg);
+        }
         for (const TypeShell &shell : node.shells) {
             note_value(used, shadow, shell.length_name);
         }
@@ -3027,6 +3030,15 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                     return;
                 }
             } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
+                // `sizeof(Box<T>)`. The arguments are substituted, and the name stays the template's.
+                if (node.on_type && !node.type_args.empty()) {
+                    bool is_array = false;
+                    int64_t array_len = 0;
+                    std::string array_len_name;
+                    substitute_type(params, bounds, node.type_name, node.type_package, node.is_struct, node.is_enum,
+                                    node.indirections, node.optional, is_array, array_len, array_len_name,
+                                    node.type_args, node.loc);
+                }
                 // `sizeof(T)` is parsed as a type. The parameter is replaced before the value is folded.
                 // `sizeof([4]T)` keeps that array outside `T`. `sizeof(*T)` keeps that star outside an
                 // array bound. `sizeof(T)` when `T` is `[4]i32` copies that array.
@@ -3095,6 +3107,15 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                     }
                 }
             } else if constexpr (std::is_same_v<T, Expr::Typeof>) {
+                // `sizeof(Box<T>)`. The arguments are substituted, and the name stays the template's.
+                if (node.on_type && !node.type_args.empty()) {
+                    bool is_array = false;
+                    int64_t array_len = 0;
+                    std::string array_len_name;
+                    substitute_type(params, bounds, node.type_name, node.type_package, node.is_struct, node.is_enum,
+                                    node.indirections, node.optional, is_array, array_len, array_len_name,
+                                    node.type_args, node.loc);
+                }
                 // `typeof(T)` is parsed as a type, the same way as `sizeof(T)`.
                 if (node.on_type) {
                     if (const SpecArg *bound = find_arg(params, bounds, node.type_name);

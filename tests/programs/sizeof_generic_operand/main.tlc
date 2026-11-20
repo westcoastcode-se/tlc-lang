@@ -1,0 +1,35 @@
+// `sizeof`, `alignof`, and `typeof` take a specialization, also behind a star or inside an array, as a field
+// length, and inside a generic body. A comparison inside `sizeof` stays a comparison.
+import "builtin";
+extern(abi="c") func printf(fmt *const u8, ...) i32;
+type Box<T type> struct {
+    v T;
+    w T;
+}
+type Point struct {
+    x i32;
+}
+type Holder struct {
+    raw [sizeof(Box<i64>)]u8;
+}
+var file_raw [sizeof(Box<u8>)]u8;
+func size_of<T type>() i32 {
+    return sizeof(Box<T>);
+}
+func main() i32 {
+    var bad = 0;
+    var a = 1;
+    var b = 2;
+    if (sizeof(Box<i64>) != 16 || alignof(Box<i64>) != 8 || sizeof(Box<u8>) != 2) { bad |= 1; }
+    if (sizeof(*Box<i64>) != 8 || sizeof([2]Box<u8>) != 4 || sizeof(?*Box<Box<i32>>) != 8) { bad |= 2; }
+    if (sizeof(Box<Box<i32>>) != 16 || size_of<i16>() != 4) { bad |= 4; }
+    if (typeof(Box<i64>) != typeof(Box<i64>) || typeof(Box<i64>) == typeof(Box<i32>)) { bad |= 8; }
+    var h Holder;
+    if (h.raw.len != 16 || file_raw.len != 2) { bad |= 64; }
+    var box Box<i64>;
+    if (typeof(box) != typeof(Box<i64>)) { bad |= 16; }
+    // A comparison inside `sizeof` is still a comparison.
+    if (sizeof(a < b) != sizeof(a == b)) { bad |= 32; }
+    printf("%s %s\n", typeof(Box<i64>).name(), typeof(*Box<u8>).name());
+    return bad == 0 ? 42 : bad;
+}

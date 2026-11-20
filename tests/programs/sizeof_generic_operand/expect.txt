@@ -1,0 +1,4 @@
+link: -lc
+exit: 42
+stdout:
+Box<i64> *Box<u8>

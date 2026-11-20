@@ -2188,6 +2188,8 @@ After a name in an expression, `<` starts type arguments when everything up to t
 
 `ops[i]()` and `ops[0]()` call that element. `pair[0](40, 2)` calls the function element of a comptime tuple, and so does `(pair[0])(40, 2)`.
 
+Inside `sizeof(...)`, `alignof(...)`, and `typeof(...)`, `Name<...>` followed by `)` is a type: `sizeof(Box<i64>)` and `typeof(*Box<u8>)`.
+
 `f(a < b, c > (d))` is a generic call of `a`. Two comparisons are `f((a < b), c > (d))`.
 
 `>` before `{` is a struct value: `Vec<i32>{}` and `Buf<4, i32>{}`.

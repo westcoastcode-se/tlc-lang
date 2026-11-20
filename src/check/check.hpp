@@ -1637,6 +1637,17 @@ class Checker {
     // One variable for this specialization. Safe to call again when the struct already exists.
     void instantiate_assoc(uint32_t owner_file, const StructDecl &templ, const std::string &spec_name,
                            const std::vector<SpecArg> &bounds);
+    // `sizeof(Box<i64>)` and `typeof(Box<i64>)`. The operand's name becomes that specialization.
+    template <typename Node> void specialize_operand(Node &node) {
+        if (!node.on_type || node.type_args.empty()) {
+            return;
+        }
+        bool is_array = false;
+        int64_t array_len = 0;
+        std::string array_len_name;
+        prepare_written(node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections,
+                        node.optional, is_array, array_len, array_len_name, node.type_args, node.loc);
+    }
     // `Box<i32>.from` and `Buf<4, i32>.width` in this package. Empty when `node` is not that form.
     // `failed` means the form was recognized and the arguments did not specialize.
     std::string same_package_spec(const Expr::Selector &node, bool &failed);

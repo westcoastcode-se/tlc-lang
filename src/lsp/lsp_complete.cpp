@@ -393,6 +393,17 @@ int call_nargs(const std::string &text, uint32_t word_end) {
     while (i < text.size() && is_space(text[i])) {
         ++i;
     }
+    // `id<i32>(1)`. The list is not an argument.
+    if (i < text.size() && text[i] == '<') {
+        const uint32_t end = type_list_end(text, i);
+        if (end == static_cast<uint32_t>(-1)) {
+            return -1;
+        }
+        i = end;
+        while (i < text.size() && is_space(text[i])) {
+            ++i;
+        }
+    }
     if (i >= text.size() || text[i] != '(') {
         return -1;
     }
@@ -410,6 +421,16 @@ int call_nargs(const std::string &text, uint32_t word_end) {
             continue;
         }
         const char c = text[i];
+        if (c == '<') {
+            const uint32_t end = type_list_end(text, i);
+            if (end != static_cast<uint32_t>(-1)) {
+                if (depth == 1) {
+                    any = true;
+                }
+                i = end;
+                continue;
+            }
+        }
         if (c == '(' || c == '[' || c == '{') {
             ++depth;
         } else if (c == ')' || c == ']' || c == '}') {
@@ -650,6 +671,62 @@ uint32_t matching_angle(const std::string &text, uint32_t close) {
         }
     }
     return static_cast<uint32_t>(-1);
+}
+
+uint32_t type_list_end(const std::string &text, uint32_t open) {
+    constexpr uint32_t none = static_cast<uint32_t>(-1);
+    if (open >= text.size() || text[open] != '<') {
+        return none;
+    }
+    const uint32_t before = skip_back(text, open);
+    if (before == 0 || !ident_char(static_cast<unsigned char>(text[before - 1]))) {
+        return none;
+    }
+    int depth = 0;
+    int parens = 0;
+    uint32_t i = open;
+    while (i < text.size() && i - open < 4096) {
+        const uint32_t next = skip_lex(text, i);
+        if (next != i) {
+            if (parens == 0) {
+                return none;
+            }
+            i = next;
+            continue;
+        }
+        const char c = text[i];
+        if (parens > 0) {
+            if (c == '(') {
+                ++parens;
+            } else if (c == ')') {
+                --parens;
+            } else if (c == ';' || c == '{' || c == '}') {
+                return none;
+            }
+        } else if (c == '<') {
+            ++depth;
+        } else if (c == '>') {
+            --depth;
+            if (depth == 0) {
+                const uint32_t after = i + 1;
+                uint32_t look = after;
+                while (look < text.size() && is_space(text[look])) {
+                    ++look;
+                }
+                if (look < text.size() && (text[look] == '(' || text[look] == '{' || text[look] == '.')) {
+                    return after;
+                }
+                return none;
+            }
+        } else if (c == '(') {
+            ++parens;
+        } else if (!ident_char(static_cast<unsigned char>(c)) && !is_space(c) && c != '.' && c != '*' &&
+                   c != '?' && c != ',' && c != '[' && c != ']' && c != '-') {
+            return none;
+        }
+        ++i;
+    }
+    return none;
 }
 
 // `Point{` and `new(allocator) Point{`. A function body `func f() Point {` is not a value.

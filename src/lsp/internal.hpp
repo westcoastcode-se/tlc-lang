@@ -399,7 +399,11 @@ struct Place {
     bool elem_const = false;
     // `kind const Type`. Const sits on the value, outside any brackets.
     bool value_const = false;
+    // `<i32, u8>` after the name, already spelled.
+    std::string type_args;
 };
+
+std::string spell_type_args(const std::vector<TypeArg> &args);
 
 std::string spell_type(const Place &place);
 Place place_of_slot(const ResultSlot &slot);
@@ -610,6 +614,9 @@ std::string field_direct_type(const Doc &doc, const std::string &owner, const st
 uint32_t matching_open(const std::string &text, uint32_t close);
 uint32_t matching_bracket(const std::string &text, uint32_t close);
 uint32_t matching_angle(const std::string &text, uint32_t close);
+// One past the `>` of the type list that starts at `open`, a `<` after a name, the way the parser reads it:
+// only type and value-argument text inside, and `(`, `{`, or `.` after it. -1 when the `<` is a comparison.
+uint32_t type_list_end(const std::string &text, uint32_t open);
 std::string type_named_before(const Doc &doc, uint32_t brace);
 
 std::string type_of_brace(const Doc &doc, uint32_t brace);
