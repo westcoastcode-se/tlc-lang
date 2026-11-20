@@ -1862,6 +1862,28 @@ class CodeGen {
     // not inside another array, is zero there. `struct_fills` names each one, and `tlc.fill` writes it.
     bool skip_big_defaults_ = false;
     int default_array_depth_ = 0;
+    // The array depth `skip_big_defaults_` applies at. A listed global `[2]World = {...}` builds its
+    // elements one array deep.
+    int skip_depth_ = 0;
+    // A struct whose defaults hold such an array, through nested fields. Its image would hold that whole
+    // array, so it is written field by field.
+    bool heavy_defaults(int struct_id) {
+        const auto found = heavy_defaults_.find(struct_id);
+        if (found != heavy_defaults_.end()) {
+            return found->second;
+        }
+        std::vector<PendingFill> fills;
+        struct_fills(struct_id, 0, fills, 0);
+        const bool heavy = !fills.empty();
+        heavy_defaults_.emplace(struct_id, heavy);
+        return heavy;
+    }
+    std::unordered_map<int, bool> heavy_defaults_;
+    // The fills of a one-dimensional listed array of heavy structs. Empty unless every element is a struct
+    // literal with named fields, so the list is built the usual way.
+    void list_fills(const Expr::Init &list, const Binding &binding, std::vector<PendingFill> &out);
+    // `count` elements of `struct_id` from `raw`, each written by `store_struct_defaults` in one loop.
+    void store_defaults_each(llvm::Value *raw, uint64_t count, int struct_id, std::unordered_set<int> &seen);
     // Each field of `struct_id`, through nested struct fields, that is such an array. `base` is the byte offset.
     // `overlay` is the literal the global was written with. A field it names is not a default; a struct
     // literal there is searched with its own list.
@@ -1880,6 +1902,14 @@ class CodeGen {
         return struct_has_default(struct_id, seen) && leaf_count(type, leaf.type) >= kCompactTail;
     }
     std::vector<PendingFill> pending_fills_;
+    bool filled_at_start(const llvm::GlobalVariable *global) const {
+        for (const PendingFill &fill : pending_fills_) {
+            if (fill.global == global) {
+                return true;
+            }
+        }
+        return false;
+    }
     llvm::Function *fill_fn_ = nullptr;
     // Elements of `leaf` in `type`, through nested arrays. Zero when the leaf is another type.
     static uint64_t leaf_count(llvm::Type *type, llvm::Type *leaf) {
@@ -1897,18 +1927,22 @@ class CodeGen {
     // runs it before the call.
     llvm::Function *emit_fill_function();
     // A `var` with no initializer whose leaf is a struct with field defaults, `kCompactTail` elements or more.
+    // A struct `var w World` or an array of structs whose defaults hold a large array of defaulted structs,
+    // `heavy_defaults`, is that too. It is zero, in `.bss`, until `tlc.fill` writes it.
     bool fills_at_start(const VarDecl &var, const Lowered &low, llvm::Type *ty) {
-        if (var.is_const_decl || var.init != nullptr || !low.is_array || low.depth != 0 || low.is_slice ||
-            low.struct_id < 0 || low.struct_id >= static_cast<int>(structs_.size()) ||
-            !pointer_free_shells(low)) {
+        if (var.is_const_decl || var.init != nullptr || low.depth != 0 || low.is_slice || low.struct_id < 0 ||
+            low.struct_id >= static_cast<int>(structs_.size()) || !pointer_free_shells(low)) {
             return false;
         }
         const StructLayout &layout = structs_[static_cast<std::size_t>(low.struct_id)];
-        if (layout.type == nullptr || layout.is_union) {
+        if (layout.type == nullptr || layout.is_union || leaf_count(ty, layout.type) == 0) {
             return false;
         }
+        if (heavy_defaults(low.struct_id)) {
+            return true;
+        }
         std::unordered_set<int> seen;
-        return struct_has_default(low.struct_id, seen) && leaf_count(ty, layout.type) >= kCompactTail;
+        return low.is_array && struct_has_default(low.struct_id, seen) && leaf_count(ty, layout.type) >= kCompactTail;
     }
     static bool pointer_free_shells(const Lowered &low) {
         for (const TypeShell &shell : low.shells) {

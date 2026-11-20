@@ -1,0 +1,41 @@
+// A copy of a global that has no initializer is that global's defaults: a struct, an array of structs, a
+// list element, and a struct field. A global that `tlc.fill` writes at start is copied the same way.
+type Point struct {
+    x i32 = 3;
+    y i32 = 4;
+}
+type Box struct {
+    p Point;
+    k i32 = 5;
+}
+type World struct {
+    n i32 = 7;
+    pts [5000]Point;
+}
+type Holder struct {
+    w World;
+    t i32 = 2;
+}
+var p Point;
+var q = p;
+var row [4]Point;
+var row_copy = row;
+var b Box;
+var box_copy = b;
+var pair [2]Point = {p, p};
+var boxed = Box{.p = p};
+var w World;
+var w_copy = w;
+var worlds [2]World = {w, w};
+var held = Holder{.w = w};
+var big [5000]Point;
+var big_copy = big;
+func main() i32 {
+    var bad = 0;
+    if (q.y != 4 || row_copy[3].x != 3 || box_copy.p.x != 3 || box_copy.k != 5) { bad |= 1; }
+    if (pair[1].x != 3 || boxed.p.y != 4 || boxed.k != 5) { bad |= 2; }
+    if (w_copy.n != 7 || w_copy.pts[4999].y != 4 || worlds[1].pts[0].x != 3 || worlds[0].n != 7) { bad |= 4; }
+    if (held.w.pts[4999].y != 4 || held.w.n != 7 || held.t != 2) { bad |= 8; }
+    if (big_copy[4999].x != 3 || big_copy[0].y != 4) { bad |= 16; }
+    return bad == 0 ? 42 : bad;
+}

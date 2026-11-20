@@ -183,6 +183,63 @@ void CodeGen::struct_fills(int struct_id, uint64_t base, std::vector<PendingFill
     }
 }
 
+void CodeGen::list_fills(const Expr::Init &list, const Binding &binding, std::vector<PendingFill> &out) {
+    auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(binding.value);
+    if (global == nullptr || binding.struct_id < 0 || binding.struct_id >= static_cast<int>(structs_.size()) ||
+        list.is_tuple || !heavy_defaults(binding.struct_id)) {
+        return;
+    }
+    llvm::StructType *elem = structs_[static_cast<std::size_t>(binding.struct_id)].type;
+    auto *array = llvm::dyn_cast<llvm::ArrayType>(global->getValueType());
+    if (elem == nullptr || array == nullptr || array->getElementType() != elem || !elem->isSized() ||
+        list.elements.size() > array->getNumElements()) {
+        return;
+    }
+    const uint64_t stride = module_.getDataLayout().getTypeAllocSize(elem).getFixedValue();
+    std::vector<PendingFill> found;
+    for (std::size_t index = 0; index < list.elements.size(); ++index) {
+        const Expr *element = list.elements[index].get();
+        const auto *literal = element == nullptr ? nullptr : std::get_if<Expr::Init>(&element->data);
+        if (literal == nullptr || literal->is_tuple || literal->array_literal || !literal->elements.empty()) {
+            return;
+        }
+        struct_fills(binding.struct_id, index * stride, found, 0, literal);
+    }
+    out.insert(out.end(), found.begin(), found.end());
+}
+
+void CodeGen::store_defaults_each(llvm::Value *raw, uint64_t count, int struct_id, std::unordered_set<int> &seen) {
+    if (raw == nullptr || count == 0 || terminated() || function_ == nullptr || struct_id < 0 ||
+        struct_id >= static_cast<int>(structs_.size())) {
+        return;
+    }
+    llvm::StructType *elem = structs_[static_cast<std::size_t>(struct_id)].type;
+    if (elem == nullptr) {
+        return;
+    }
+    if (count == 1) {
+        store_struct_defaults(raw, struct_id, seen);
+        return;
+    }
+    llvm::AllocaInst *step = alloca_typed(len_ty(), "fill.i");
+    builder_.CreateStore(const_len(0), step);
+    llvm::BasicBlock *cond = llvm::BasicBlock::Create(context_, "fill.each", function_);
+    llvm::BasicBlock *body = llvm::BasicBlock::Create(context_, "fill.each.body", function_);
+    llvm::BasicBlock *done = llvm::BasicBlock::Create(context_, "fill.each.done", function_);
+    builder_.CreateBr(cond);
+    builder_.SetInsertPoint(cond);
+    llvm::Value *index = builder_.CreateLoad(len_ty(), step);
+    builder_.CreateCondBr(builder_.CreateICmpSLT(index, const_len(static_cast<int64_t>(count))), body, done);
+    builder_.SetInsertPoint(body);
+    llvm::Value *at = builder_.CreateInBoundsGEP(elem, raw, llvm::ArrayRef<llvm::Value *>{index});
+    store_struct_defaults(at, struct_id, seen);
+    // The body may end in its own loop. The step continues from wherever that left the builder.
+    llvm::Value *again = builder_.CreateLoad(len_ty(), step);
+    builder_.CreateStore(builder_.CreateAdd(again, const_len(1)), step);
+    builder_.CreateBr(cond);
+    builder_.SetInsertPoint(done);
+}
+
 llvm::Function *CodeGen::emit_fill_function() {
     if (fill_fn_ != nullptr || pending_fills_.empty()) {
         return fill_fn_;
@@ -201,6 +258,15 @@ llvm::Function *CodeGen::emit_fill_function() {
     builder_.SetCurrentDebugLocation(llvm::DebugLoc());
     for (const PendingFill &fill : pending_fills_) {
         const StructLayout &layout = structs_[static_cast<std::size_t>(fill.struct_id)];
+        if (heavy_defaults(fill.struct_id)) {
+            llvm::Value *raw = fill.global;
+            if (fill.offset != 0) {
+                raw = builder_.CreateConstInBoundsGEP1_64(i8(), fill.global, fill.offset);
+            }
+            std::unordered_set<int> seen;
+            store_defaults_each(raw, fill.count, fill.struct_id, seen);
+            continue;
+        }
         // One element's defaults, copied into each element.
         llvm::Constant *image = default_struct(fill.struct_id);
         if (image == nullptr || image->getType() != layout.type) {

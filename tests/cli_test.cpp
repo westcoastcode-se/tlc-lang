@@ -342,7 +342,8 @@ int run_cli_tests() {
     EXPECT_HAS(check, defaults_ir.out, "[100000000 x %");
     EXPECT_HAS(check, defaults_ir.out, "define internal void @tlc.fill()");
     std::remove(defaults.c_str());
-    // The same array as a field of a struct global. The field is zero in the constant and filled at start.
+    // The same array as a field of a struct global, and in an array of such structs. The globals are zero, in
+    // `.bss`, and `tlc.fill` writes each element field by field at start.
     const std::string world = "/tmp/tlc-field-defaults.tlc";
     {
         std::ofstream out(world);
@@ -355,15 +356,17 @@ int run_cli_tests() {
                "    pts [100000000]Point;\n"
                "}\n"
                "var w World;\n"
+               "var worlds [4]World;\n"
                "\n"
                "func main() i32 {\n"
-               "    return w.n + w.pts[99999999].x + w.pts[0].y + 28;\n"
+               "    return w.n + w.pts[99999999].x + worlds[3].pts[0].y + 28;\n"
                "}\n";
     }
     const tlc::test::Proc world_ir = tlc::test::spawn({bin, "--max-memory", "128M", "--emit-llvm", world});
     EXPECT(check, world_ir.code == 0);
     EXPECT(check, world_ir.err.empty());
-    EXPECT_HAS(check, world_ir.out, "Point] zeroinitializer");
+    EXPECT_HAS(check, world_ir.out, "World zeroinitializer");
+    EXPECT_HAS(check, world_ir.out, "World] zeroinitializer");
     EXPECT_HAS(check, world_ir.out, "define internal void @tlc.fill()");
     std::remove(world.c_str());
 

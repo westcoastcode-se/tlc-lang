@@ -138,6 +138,12 @@ llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) 
         }
         return const_struct(*init, slot.struct_id);
     }
+    // `Box{.p = p}` copies the struct global `p`, its defaults when it has no initializer.
+    if (slot.depth == 0 && slot.struct_id >= 0 && std::holds_alternative<Expr::Name>(expr.data)) {
+        if (llvm::Constant *copied = const_struct_base(expr, slot.struct_id)) {
+            return copied;
+        }
+    }
     if (slot.depth > 0) {
         if (std::holds_alternative<Expr::Nullptr>(expr.data)) {
             return null_ptr();
@@ -463,7 +469,7 @@ llvm::Constant *CodeGen::default_array(llvm::Type *type, int struct_id, std::uno
     }
     // A field of a struct global that `tlc.fill` writes at start. Inside another array it is a copy of each
     // element and stays built here.
-    if (skip_big_defaults_ && default_array_depth_ == 0 && big_default_array(type, struct_id)) {
+    if (skip_big_defaults_ && default_array_depth_ == skip_depth_ && big_default_array(type, struct_id)) {
         return llvm::ConstantAggregateZero::get(array);
     }
     llvm::Type *elem = array->getElementType();
@@ -793,6 +799,10 @@ void CodeGen::paint_omitted_elements(llvm::Value *slot, llvm::ArrayType *array_t
     if (list == nullptr && struct_id < static_cast<int>(structs_.size())) {
         llvm::StructType *leaf = structs_[static_cast<std::size_t>(struct_id)].type;
         const uint64_t leaves = leaf == nullptr ? 0 : leaf_count(array_ty, leaf);
+        if (leaves >= kLoopDefaults && heavy_defaults(struct_id)) {
+            store_defaults_each(slot, leaves, struct_id, seen);
+            return;
+        }
         if (leaves >= kLoopDefaults) {
             llvm::Constant *image = default_struct(struct_id);
             if (image != nullptr && image->getType() == leaf) {
@@ -1006,7 +1016,18 @@ llvm::Constant *CodeGen::const_array_base(const Expr &expr) {
     if (written != nullptr && written->init != nullptr) {
         copied = const_array_copied(*written->init, found->second);
     } else if (auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found->second.value)) {
-        copied = llvm::ConstantAggregateZero::get(global->getValueType());
+        // No initializer: the element defaults. A global that `tlc.fill` writes holds zero until start, so
+        // the copy builds those defaults itself.
+        if (filled_at_start(global) && found->second.struct_id >= 0) {
+            const bool saved_skip = skip_big_defaults_;
+            skip_big_defaults_ = false;
+            std::unordered_set<int> stack;
+            copied = default_array(global->getValueType(), found->second.struct_id, stack);
+            skip_big_defaults_ = saved_skip;
+        } else {
+            const auto pending = compact_inits_.find(global);
+            copied = pending != compact_inits_.end() ? pending->second : global->getInitializer();
+        }
     }
     const_names_.erase(named->text);
     return copied;
@@ -1041,9 +1062,17 @@ llvm::Constant *CodeGen::const_struct_base(const Expr &expr, int struct_id) {
             copied = const_struct_base(*written->init, struct_id);
         }
     } else if (auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found->second.value)) {
-        // No initializer: the struct's defaults, as the source global holds them.
-        const auto pending = compact_inits_.find(global);
-        copied = pending != compact_inits_.end() ? pending->second : global->getInitializer();
+        // No initializer: the struct's defaults, as the source global holds them. A global that `tlc.fill`
+        // writes holds zero until start, so the copy builds those defaults itself.
+        if (filled_at_start(global)) {
+            const bool saved_skip = skip_big_defaults_;
+            skip_big_defaults_ = false;
+            copied = default_struct(struct_id);
+            skip_big_defaults_ = saved_skip;
+        } else {
+            const auto pending = compact_inits_.find(global);
+            copied = pending != compact_inits_.end() ? pending->second : global->getInitializer();
+        }
     }
     const_names_.erase(named->text);
     return copied;
@@ -1969,6 +1998,10 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
                                  : sized_int(dest, written->const_value);
                 } else if (written->init != nullptr) {
                     copied = const_initializer(*written->init, dest);
+                } else if (dest.struct_id >= 0 && dest.depth == 0 && !dest.is_array) {
+                    // `{w, w}` when `var w World`. The copy is w's defaults.
+                    const_names_.erase(named->text);
+                    return const_struct_base(*cursor, dest.struct_id);
                 } else {
                     llvm::Type *ty = leaf_type(dest.depth, dest.elem_char, dest.struct_id, dest.elem_bool, dest.elem_bits,
                                                dest.elem_float);
@@ -2310,14 +2343,31 @@ void CodeGen::apply_initializer(const VarDecl &var) {
     }
     if (const auto *init = std::get_if<Expr::Init>(&var.init->data)) {
         if (found_early != file.globals.end() && found_early->second.is_array) {
+            // `[2]World = {World{.n = 6}}`. Each listed literal's omitted large array of defaulted structs is
+            // zero here, and `tlc.fill` writes it at start. An element past the list is zero.
+            std::vector<PendingFill> fills;
+            if (!var.is_const_decl) {
+                list_fills(*init, found_early->second, fills);
+            }
+            const bool saved_skip = skip_big_defaults_;
+            const int saved_depth = skip_depth_;
+            skip_big_defaults_ = !fills.empty();
+            skip_depth_ = 1;
             llvm::Constant *value = const_array(*init, found_early->second);
+            skip_big_defaults_ = saved_skip;
+            skip_depth_ = saved_depth;
             if (value == nullptr || found_early->second.value == nullptr) {
                 error(var.loc, "global initializer is not a constant");
                 return;
             }
-            if (!set_global_initializer(llvm::cast<llvm::GlobalVariable>(found_early->second.value), value)) {
+            auto *global = llvm::cast<llvm::GlobalVariable>(found_early->second.value);
+            if (!set_global_initializer(global, value)) {
                 error(var.loc, "global initializer is not a constant");
                 return;
+            }
+            for (PendingFill &fill : fills) {
+                fill.global = global;
+                pending_fills_.push_back(fill);
             }
             file.folded.insert(key);
             return;

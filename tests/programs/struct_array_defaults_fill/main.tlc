@@ -1,0 +1,43 @@
+// A struct global and an array of structs whose defaults hold a large array of defaulted structs are zero in
+// `.bss` and written field by field at start. A listed array fills each literal's omitted array. An element past
+// the list is zero.
+type Point struct {
+    x i32 = 3;
+    y i32 = 4;
+}
+type World struct {
+    n i32 = 7;
+    pts [5000]Point;
+    tail i32 = 9;
+}
+type Mid struct {
+    n i32 = 7;
+    pts [5000]Point;
+}
+type Outer struct {
+    tag i32 = 1;
+    world World;
+}
+var w World;
+var worlds [10]World;
+var many [100]Outer;
+var listed [3]World = {World{.n = 6}, {.tail = 5, .pts = {Point{.x = 1, .y = 1}, 0...}}};
+comptime func peek() i32 {
+    return worlds[9].pts[4999].y + many[50].world.pts[3].x + w.tail;
+}
+func main() i32 {
+    var bad = 0;
+    if (w.n != 7 || w.tail != 9 || w.pts[4999].x != 3) { bad |= 1; }
+    if (worlds[0].n != 7 || worlds[9].pts[4999].y != 4 || worlds[5].pts[0].x != 3 || worlds[3].tail != 9) { bad |= 2; }
+    if (many[99].tag != 1 || many[99].world.pts[4999].y != 4 || many[0].world.n != 7) { bad |= 4; }
+    if (listed[0].n != 6 || listed[0].pts[5].x != 3 || listed[0].tail != 9) { bad |= 8; }
+    if (listed[1].n != 7 || listed[1].tail != 5 || listed[1].pts[0].x != 1 || listed[1].pts[1].x != 0) { bad |= 16; }
+    if (listed[2].n != 0 || listed[2].pts[7].x != 0) { bad |= 32; }
+    var local [20]Mid;
+    if (local[19].pts[4999].y != 4 || local[1].n != 7) { bad |= 64; }
+    var heap = new [100]Mid;
+    if (heap[99].pts[4999].x != 3 || heap[0].n != 7) { bad |= 64; }
+    comptime const p = peek();
+    if (p != 4 + 3 + 9) { bad |= 128; }
+    return bad == 0 ? 42 : bad;
+}
