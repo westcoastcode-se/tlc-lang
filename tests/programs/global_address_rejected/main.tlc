@@ -1,0 +1,11 @@
+// The address of a global is not a constant for a file-scope `var`. `--check` reports it too.
+type Point struct {
+    x i32 = 3;
+}
+
+var p Point;
+var at *Point = &p;
+
+func main() i32 {
+    return at.x;
+}

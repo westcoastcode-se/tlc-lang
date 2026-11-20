@@ -1,0 +1,27 @@
+// A read of part of a global set at start runs at start, after that global.
+type Point struct {
+    x i32 = 3;
+    y i32 = 4;
+}
+type Box struct {
+    p Point;
+    rows [2]Point;
+}
+func make() Box {
+    var b Box;
+    b.p.x = 40;
+    b.rows[1].y = 2;
+    return b;
+}
+var h = make();
+var hx = h.p.x;
+var hrow = h.rows[1];
+var k Box;
+var kx = k.rows[0].y;
+comptime func peek() i32 {
+    return kx;
+}
+func main() i32 {
+    comptime const c = peek();
+    return hx + hrow.y + c - 4;
+}

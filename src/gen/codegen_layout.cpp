@@ -1985,6 +1985,59 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         return promote(lower(file, fn.return_type, fn.type_package, fn.is_struct, fn.indirections, false, 0, false));
     };
 
+    // `p.x` and `b.row`. The field's own type.
+    const auto field_lowered = [](const FieldLayout &field) {
+        Lowered low;
+        low.type = field.type;
+        low.depth = field.depth;
+        low.elem_char = field.elem_char;
+        low.is_array = field.is_array;
+        low.array_len = field.array_len;
+        low.struct_id = field.struct_id;
+        low.elem_void = field.elem_void;
+        low.elem_bool = field.elem_bool;
+        low.elem_bits = field.elem_bits;
+        low.elem_unsigned = field.elem_unsigned;
+        low.elem_float = field.elem_float;
+        low.enum_id = field.enum_id;
+        low.is_slice = field.is_slice;
+        low.elem_slice = field.elem_slice;
+        low.shells = field.shells;
+        low.fn_ty = field.fn_ty;
+        low.fn_ret_depth = field.fn_ret_depth;
+        low.fn_ret_float = field.fn_ret_float;
+        low.fn_ret_bits = field.fn_ret_bits;
+        low.fn_ret_unsigned = field.fn_ret_unsigned;
+        low.fn_ret_char = field.fn_ret_char;
+        low.fn_ret_bool = field.fn_ret_bool;
+        low.fn_ret_struct = field.fn_ret_struct;
+        low.fn_results = field.fn_results;
+        low.is_tuple = field.is_tuple;
+        low.tuple_parts = field.tuple_parts;
+        return low;
+    };
+    // `row[2]` and `grid[1]`. One array level less than the base.
+    const auto element_lowered = [](Lowered low) -> std::optional<Lowered> {
+        auto *array = llvm::dyn_cast_or_null<llvm::ArrayType>(low.type);
+        if (array == nullptr || !low.is_array || low.is_slice) {
+            return std::nullopt;
+        }
+        low.type = array->getElementType();
+        if (!low.shells.empty() && low.shells.front().kind == TypeShell::Kind::Array) {
+            low.shells.erase(low.shells.begin());
+        }
+        if (auto *row = llvm::dyn_cast<llvm::ArrayType>(low.type)) {
+            low.array_len = static_cast<int64_t>(row->getNumElements());
+            auto *inner = llvm::dyn_cast<llvm::ArrayType>(row->getElementType());
+            low.inner_array_len = inner == nullptr ? 0 : static_cast<int64_t>(inner->getNumElements());
+        } else {
+            low.is_array = false;
+            low.array_len = 0;
+            low.inner_array_len = 0;
+        }
+        return low;
+    };
+
     std::function<std::optional<Lowered>(const Expr &)> value;
     std::function<std::optional<Lowered>(const Expr &)> raw;
     raw = [&](const Expr &node) -> std::optional<Lowered> {
@@ -2070,6 +2123,16 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                             low.elem_bits = layout.is_bool ? 0 : layout.bits;
                             low.type = enum_mem_type(enum_id);
                             return low;
+                        }
+                    }
+                    // `var g = p.x` reads the field of a global.
+                    if (item.base != nullptr) {
+                        const auto base = raw(*item.base);
+                        if (base && base->struct_id >= 0 && base->depth == 0 && !base->is_array && !base->is_slice) {
+                            int index = -1;
+                            if (const FieldLayout *field = find_field(base->struct_id, item.field, index)) {
+                                return field_lowered(*field);
+                            }
                         }
                     }
                     return std::nullopt;
@@ -2171,6 +2234,12 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     if (!item.is_range) {
                         if (fold(node)) {
                             return as_int(32, false);
+                        }
+                        // `var g = row[2]` reads that element of a global array.
+                        if (item.base != nullptr && item.index != nullptr && fold(*item.index)) {
+                            if (const auto base = raw(*item.base)) {
+                                return element_lowered(*base);
+                            }
                         }
                         return std::nullopt;
                     }

@@ -767,6 +767,13 @@ CodeGen::Shape CodeGen::raw_shape(const Expr &expr) const {
                 if (const Binding *binding = lookup(node.text)) {
                     return shape_from_binding(*binding);
                 }
+                // A file-scope initializer has no scope yet. `var g = sizeof(p)` reads this file's global.
+                if (const auto file = files_.find(current_file_); file != files_.end()) {
+                    if (const auto global = file->second.globals.find(node.text);
+                        global != file->second.globals.end()) {
+                        return shape_from_binding(global->second);
+                    }
+                }
                 const Alias *alias = find_alias(current_file_, node.text);
                 if (alias == nullptr) {
                     alias = selective_alias(current_file_, node.text);

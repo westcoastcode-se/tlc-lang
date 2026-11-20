@@ -984,6 +984,11 @@ llvm::Constant *CodeGen::const_array(const Expr::Init &init, const Binding &dest
 }
 
 llvm::Constant *CodeGen::const_array_base(const Expr &expr) {
+    // `b.row` is that field of a struct global.
+    if (std::holds_alternative<Expr::Selector>(expr.data)) {
+        int struct_id = -1;
+        return const_place(expr, struct_id);
+    }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
         // `grid[1]` is one row of that constant. A range is a slice header.
         if (index->is_range || index->base == nullptr || index->index == nullptr) {
@@ -1033,7 +1038,62 @@ llvm::Constant *CodeGen::const_array_base(const Expr &expr) {
     return copied;
 }
 
+llvm::Constant *CodeGen::const_place(const Expr &expr, int &struct_id) {
+    struct_id = -1;
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        int base_id = -1;
+        llvm::Constant *base = selector->base == nullptr ? nullptr : const_place(*selector->base, base_id);
+        int index = -1;
+        const FieldLayout *field = base == nullptr || base_id < 0 ? nullptr : find_field(base_id, selector->field, index);
+        if (field == nullptr || index < 0 || !base->getType()->isStructTy()) {
+            return nullptr;
+        }
+        struct_id = field->depth == 0 ? field->struct_id : -1;
+        return base->getAggregateElement(static_cast<unsigned>(index));
+    }
+    if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+        if (index->is_range || index->base == nullptr || index->index == nullptr) {
+            return nullptr;
+        }
+        const std::optional<int32_t> at = fold(*index->index);
+        int base_id = -1;
+        llvm::Constant *base = at && *at >= 0 ? const_place(*index->base, base_id) : nullptr;
+        if (base == nullptr || (!base->getType()->isArrayTy() && !base->getType()->isStructTy())) {
+            return nullptr;
+        }
+        struct_id = base_id;
+        return array_element(base, static_cast<uint64_t>(*at));
+    }
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    const auto file = files_.find(current_file_);
+    if (named == nullptr || file == files_.end()) {
+        return nullptr;
+    }
+    const auto found = file->second.globals.find(named->text);
+    if (found == file->second.globals.end() || found->second.is_slice || found->second.depth != 0) {
+        return nullptr;
+    }
+    const Binding &binding = found->second;
+    if (binding.is_array) {
+        struct_id = binding.struct_id;
+        return const_array_base(expr);
+    }
+    if (binding.struct_id >= 0) {
+        struct_id = binding.struct_id;
+        return const_struct_base(expr, binding.struct_id);
+    }
+    Binding scalar = binding;
+    scalar.value = nullptr;
+    return const_initializer(expr, scalar);
+}
+
 llvm::Constant *CodeGen::const_struct_base(const Expr &expr, int struct_id) {
+    // `var g = b.p` and `var g = row[2]` read that part of a global.
+    if (std::holds_alternative<Expr::Selector>(expr.data) || std::holds_alternative<Expr::Index>(expr.data)) {
+        int found_id = -1;
+        llvm::Constant *part = const_place(expr, found_id);
+        return part != nullptr && found_id == struct_id ? part : nullptr;
+    }
     const auto *named = std::get_if<Expr::Name>(&expr.data);
     if (named == nullptr) {
         return nullptr;
@@ -1974,6 +2034,16 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
             }
         }
     }
+    // `var g = p.x` and `var g = crow[2]` read that part of a global's start value.
+    if (std::holds_alternative<Expr::Selector>(cursor->data) || std::holds_alternative<Expr::Index>(cursor->data)) {
+        int struct_id = -1;
+        llvm::Constant *part = const_place(*cursor, struct_id);
+        llvm::Type *want = leaf_type(dest.depth, dest.elem_char, dest.struct_id, dest.elem_bool, dest.elem_bits,
+                                     dest.elem_float);
+        if (part != nullptr && want != nullptr && part->getType() == want) {
+            return part;
+        }
+    }
     if (const auto *named = std::get_if<Expr::Name>(&cursor->data)) {
         if (const Binding *binding = find_here(named->text)) {
             if (binding->immediate) {
@@ -2437,6 +2507,24 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         llvm::Constant *value = global == nullptr ? nullptr : const_initializer(*var.init, found_early->second);
         // A compact array is accepted. It waits for the global of its own type.
         if (value == nullptr || global == nullptr || !set_global_initializer(global, value)) {
+            error(var.loc, "global initializer is not a constant");
+            return;
+        }
+        file.folded.insert(key);
+        return;
+    }
+    // `var g = p.x`, `var g = b.p`, and `var g = w.pts[4999]` take that part of the global's start value.
+    if (found_early != file.globals.end() && !found_early->second.is_slice &&
+        (std::holds_alternative<Expr::Selector>(var.init->data) || std::holds_alternative<Expr::Index>(var.init->data)) &&
+        !fold(*var.init) && !fold_wide(*var.init)) {
+        auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found_early->second.value);
+        int struct_id = -1;
+        llvm::Constant *part = global == nullptr ? nullptr : const_place(*var.init, struct_id);
+        if (part != nullptr && part->getType() != global->getValueType() &&
+            !same_layout(part->getType(), global->getValueType())) {
+            part = nullptr;
+        }
+        if (part == nullptr || !set_global_initializer(global, part)) {
             error(var.loc, "global initializer is not a constant");
             return;
         }

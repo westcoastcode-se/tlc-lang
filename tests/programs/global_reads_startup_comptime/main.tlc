@@ -1,0 +1,30 @@
+// A `comptime func` that reads a value set at start, `var hx = h.p.x` after `var h = make()`, is an error.
+type Point struct {
+    x i32 = 3;
+    y i32 = 4;
+}
+type Box struct {
+    p Point;
+    rows [2]Point;
+}
+func make() Box {
+    var b Box;
+    b.p.x = 40;
+    b.rows[1].y = 2;
+    return b;
+}
+var h = make();
+var hx = h.p.x;
+var hrow = h.rows[1];
+var k Box;
+var kx = k.rows[0].y;
+comptime func peek() i32 {
+    return kx;
+}
+comptime func bad() i32 {
+    return hx;
+}
+func main() i32 {
+    comptime const c = peek() + bad() - 40;
+    return hx + hrow.y + c - 4;
+}

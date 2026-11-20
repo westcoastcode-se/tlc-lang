@@ -313,7 +313,11 @@ A file-scope `var copy = row`, `const copy = row`, and `var copy [2]i32 = row` c
 
 A file-scope `var copy = h` and `const frozen = h` copy that struct the same way, including a copy of a copy and a struct whose fields have defaults.
 
-When the source's value comes from a call, `var h = make()`, the copy `var copy = h` runs before `main` too, after `h`. That holds for a struct, an array, and a scalar, and for a copy of that copy. The source must be in the same file. A `const frozen = h` is `global initializer is not a constant`, since a `const` is a constant.
+A part of a global is copied the same way: a field `var x = p.x`, a nested field `var r = b.row`, an element with a constant index `var e = row[2]` and `var y = w.pts[4999].y`, and the size `var n = sizeof(w)`. The value is the global's start value. A source with no initializer is its defaults. An index that does not fold is `global initializer is not a constant`.
+
+An address is not that constant for a `var`. `var at *Point = &p`, `var at = &row[1]`, and `var y = *q` are `global initializer is not a constant`, and `--check` reports them. A `const at *i32 = &n` is a constant.
+
+When the source's value comes from a call, `var h = make()`, the copy `var copy = h` runs before `main` too, after `h`. That holds for a struct, an array, and a scalar, for a copy of that copy, and for a part of it, `var x = h.p.x`. A `comptime func` that reads such a copy is `set at start, not at compile time`. The source must be in the same file. A `const frozen = h` is `global initializer is not a constant`, since a `const` is a constant.
 
 ## A length written as `_`
 

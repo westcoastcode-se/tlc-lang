@@ -562,6 +562,8 @@ class Checker {
     bool comptime_body_broken(const FunctionDecl &fn);
     // `expr` names a global of `unit` whose value is set at start, `var h = make()`.
     bool copies_startup_global(const Expr &expr, const TranslationUnit &unit) const;
+    // `&p` or `*q` in a file-scope initializer, outside a call. Such a `var` is not a constant.
+    bool reads_through_pointer(const Expr &expr) const;
     // `var h = make()`, or a copy of one: the value exists only once the program has started.
     bool set_at_start(const VarDecl &var, const TranslationUnit &unit, int depth = 0) const;
     // A read of such a global in `fn` or a comptime func it calls is `set at start, not at compile time`,

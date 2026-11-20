@@ -1965,6 +1965,9 @@ class CodeGen {
     };
     // The constant of the struct global `expr` names, built from that global's own initializer.
     llvm::Constant *const_struct_base(const Expr &expr, int struct_id);
+    // The constant value of a place rooted at a global of this file: `p`, `p.x`, `w.pts[4999]`, `b.row`.
+    // `struct_id` is the struct of that value or of its elements, -1 otherwise. Null when it does not fold.
+    llvm::Constant *const_place(const Expr &expr, int &struct_id);
     // The constant array stored by `expr`, using that array's own global when `expr` is a name.
     llvm::Constant *const_array_base(const Expr &expr);
     // `expr` copied into `dest`. A list is filled as `dest`. A name or an index must match `dest`.

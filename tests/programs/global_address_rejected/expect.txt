@@ -1,0 +1,1 @@
+compile-error: main.tlc:7:5: error: global initializer is not a constant

@@ -1415,6 +1415,27 @@ void Checker::bind_file_const(VarDecl &written) {
 }
 
 bool Checker::constant_array_source(const Expr &expr, std::unordered_set<std::string> &seen) {
+    // `b.row` is that field of a global of this file. Its start value is in the binary unless it runs at start.
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        const Expr *root = selector->base.get();
+        while (root != nullptr) {
+            if (const auto *inner = std::get_if<Expr::Selector>(&root->data)) {
+                root = inner->base.get();
+            } else if (const auto *index = std::get_if<Expr::Index>(&root->data)) {
+                if (index->is_range || index->index == nullptr || !fold_int(*index->index)) {
+                    return false;
+                }
+                root = index->base.get();
+            } else {
+                break;
+            }
+        }
+        const auto *named = root == nullptr ? nullptr : std::get_if<Expr::Name>(&root->data);
+        const Symbol *symbol = named == nullptr ? nullptr : lookup(named->text);
+        const VarDecl *var = named == nullptr ? nullptr : global_var(named->text);
+        return symbol != nullptr && !symbol->is_package && !symbol->is_type && var != nullptr && !var->runtime_init &&
+               symbol->type.kind == TypeKind::Struct;
+    }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
         // `grid[1]` is that row. A range is a slice, and a runtime index is not in the binary.
         if (index->is_range || index->base == nullptr || index->index == nullptr || !fold_int(*index->index)) {
@@ -1496,7 +1517,19 @@ bool Checker::set_at_start(const VarDecl &var, const TranslationUnit &unit, int 
 }
 
 bool Checker::copies_startup_global(const Expr &expr, const TranslationUnit &unit) const {
-    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    // `var g = h.x` and `var g = h.rows[1]` read part of that global. The root decides.
+    const Expr *root = &expr;
+    while (true) {
+        if (const auto *selector = std::get_if<Expr::Selector>(&root->data); selector != nullptr && selector->base) {
+            root = selector->base.get();
+        } else if (const auto *index = std::get_if<Expr::Index>(&root->data);
+                   index != nullptr && index->base && !index->is_range) {
+            root = index->base.get();
+        } else {
+            break;
+        }
+    }
+    const auto *named = std::get_if<Expr::Name>(&root->data);
     if (named == nullptr) {
         return false;
     }
@@ -1509,6 +1542,32 @@ bool Checker::copies_startup_global(const Expr &expr, const TranslationUnit &uni
         }
     }
     return false;
+}
+
+bool Checker::reads_through_pointer(const Expr &expr) const {
+    return std::visit(
+        [&](const auto &node) -> bool {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Unary>) {
+                if (node.op == TokenKind::Amp || (node.op == TokenKind::Star && !node.postfix)) {
+                    return true;
+                }
+                return node.expr != nullptr && reads_through_pointer(*node.expr);
+            } else if constexpr (std::is_same_v<T, Expr::Cast>) {
+                return node.expr != nullptr && reads_through_pointer(*node.expr);
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                return node.base != nullptr && reads_through_pointer(*node.base);
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                return (node.base != nullptr && reads_through_pointer(*node.base)) ||
+                       (node.index != nullptr && reads_through_pointer(*node.index));
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                return (node.lhs != nullptr && reads_through_pointer(*node.lhs)) ||
+                       (node.rhs != nullptr && reads_through_pointer(*node.rhs));
+            } else {
+                return false;
+            }
+        },
+        expr.data);
 }
 
 bool Checker::accept_array_copy(VarDecl &var) {
@@ -2083,6 +2142,9 @@ void Checker::check_globals(const TranslationUnit &unit) {
                         const_cast<VarDecl *>(var)->runtime_init = true;
                     } else if (var->is_const_decl && !var->is_comptime && unfolded_call(unfolded_call, *var->init)) {
                         // `const pt Point = {.x = give()}` would run `give` before `main`. A `const` does not.
+                        error(var->loc, "global initializer is not a constant");
+                    } else if (!var->is_const_decl && reads_through_pointer(*var->init)) {
+                        // `var g *Point = &p` and `var g = *q`. The address is not a constant here. A `const` is.
                         error(var->loc, "global initializer is not a constant");
                     } else if (is_slice(want)) {
                         require_slice_name(*var->init, want, var->loc, before);
