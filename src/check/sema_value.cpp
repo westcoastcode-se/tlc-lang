@@ -88,6 +88,35 @@ bool comptime_wide_int(const Type &type) {
 
 } // namespace
 
+bool Checker::index_past_length(const Expr::Index &node, const Type &base) {
+    // A `comptime func` body reports the index when the call runs, with the call chain.
+    if (quiet_ || comptime_depth_ != 0 || node.range_reported || node.is_range || node.base == nullptr ||
+        node.index == nullptr) {
+        return false;
+    }
+    int64_t length = -1;
+    if (base.kind == TypeKind::Array && !is_slice(base) && base.element != nullptr && !base.length_stand_in) {
+        length = base.length;
+    } else if (is_decayed_array(base) && !base.optional) {
+        length = base.decayed_len;
+    } else if (base.kind == TypeKind::Pointer && !base.optional && base.pointee != nullptr &&
+               base.pointee->kind == TypeKind::Array && !is_slice(*base.pointee) && base.pointee->element != nullptr &&
+               !base.pointee->length_stand_in) {
+        // `p[i]` on `*[N]T` is `(*p)[i]`.
+        length = base.pointee->length;
+    }
+    if (length < 0) {
+        return false;
+    }
+    const std::optional<int> at = constant_index(*node.index);
+    if (!at || (*at >= 0 && *at < length)) {
+        return false;
+    }
+    node.range_reported = true;
+    error(expr_loc(*node.index), "index out of range");
+    return true;
+}
+
 Type Checker::increment_operand(const Expr &expr) {
     if (!is_lvalue_form(expr)) {
         error(expr_loc(expr), "not an lvalue");
@@ -185,6 +214,9 @@ Type Checker::increment_operand(const Expr &expr) {
         }
         if (base.kind == TypeKind::Invalid) {
             return base;
+        }
+        if (index_past_length(*index, base)) {
+            return type_invalid();
         }
         Type element;
         if (is_slice(base) || (base.kind == TypeKind::Array && base.length >= 0 && !is_slice(base))) {
@@ -1062,6 +1094,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         InitPush push(*this, std::move(step));
                         // A sized array stays `[N]T`. `row[i] = n` stores one element.
                         base = check_raw(*index->base, true);
+                    }
+                    if (index_past_length(*index, base)) {
+                        check_expr(*node.rhs, true);
+                        return type_invalid();
                     }
                     if (base.kind == TypeKind::Tuple) {
                         // `t[0] = 1` stores one element. The index is a constant.
@@ -2648,18 +2684,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return type_invalid();
                     }
                 }
-                // `comptime const row = [_]i32{40, 2}` then `row[2]` is outside that array.
-                // A `var` index still loads. A file-scope `const` array does not fold.
-                if (!quiet_ && comptime_depth_ == 0 && !node.range_reported && node.base != nullptr &&
-                    node.index != nullptr && base.kind == TypeKind::Array && !is_slice(base) && base.length >= 0 &&
-                    comptime_const_array(*node.base)) {
-                    if (const std::optional<int> at = fold_int(*node.index)) {
-                        if (*at < 0 || *at >= base.length) {
-                            node.range_reported = true;
-                            error(expr_loc(*node.index), "index out of range");
-                            return type_invalid();
-                        }
-                    }
+                if (index_past_length(node, base)) {
+                    return type_invalid();
                 }
                 if (base.kind == TypeKind::Array && base.element != nullptr) {
                     Type element = *base.element;

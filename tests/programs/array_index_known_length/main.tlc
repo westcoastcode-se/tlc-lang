@@ -1,0 +1,28 @@
+func pick<N i32>() i32 {
+    var r [N]i32;
+    r[0] = 40;
+    // Only a specialization with a third element compiles this arm.
+    comptime if (N > 2) {
+        r[2] = 2;
+        return r[0] + r[2];
+    }
+    return r[0];
+}
+
+func last(comptime n i32) i32 {
+    var r [n]i32;
+    r[0] = 1;
+    r[1] = 2;
+    return r[1];
+}
+
+func main() i32 {
+    var row = [_]i32{1, 2, 3};
+    var i = 1;
+    const k = 2;
+    row[k] = 4;
+    // A `var` index loads. It is checked when the program runs.
+    var sum = row[i] + row[k];
+    sum += pick<3>() - pick<2>();
+    return sum + last(2) + 32;
+}

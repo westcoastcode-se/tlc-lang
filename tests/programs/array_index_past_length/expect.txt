@@ -1,0 +1,14 @@
+compile-error: index out of range
+stderr:
+main.tlc:10:16: error: index out of range
+main.tlc:14:14: error: index out of range
+main.tlc:21:21: error: index out of range
+main.tlc:22:16: error: index out of range
+main.tlc:23:16: error: index out of range
+main.tlc:24:18: error: index out of range
+main.tlc:25:20: error: index out of range
+main.tlc:26:17: error: index out of range
+main.tlc:27:20: error: index out of range
+main.tlc:28:9: error: index out of range
+main.tlc:29:9: error: index out of range
+main.tlc:30:13: error: index out of range

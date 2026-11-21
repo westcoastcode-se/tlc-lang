@@ -44,6 +44,9 @@ struct Type {
     // A function type from an `extern(abi="c")` signature or field. Calls through it use the C convention.
     // A tlc function type is a different type.
     bool c_abi = false;
+    // `[n]T` while a `comptime` parameter `n` waits for the call. One element stands in, so an index is not
+    // checked against that length. The copy for the call has the real length.
+    bool length_stand_in = false;
 };
 
 inline bool is_decayed_array(const Type &type) {

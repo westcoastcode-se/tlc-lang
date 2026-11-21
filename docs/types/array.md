@@ -136,6 +136,10 @@ A range of `[N]Duo` is `[]Duo`, and of `[N][M]Duo` is `[][M]Duo`. A range of `[_
 
 `v[i]` reads an element. `v.len` is `i64`.
 
+A constant index outside a sized array is `index out of range` when the program compiles. The length is in the type, so that holds for a `const`, a `var`, a global, a field, a parameter `[N]T`, and `p[i]` on `*[N]T`. A read, a store, `row[i] += 1`, and `&row[i]` are checked. `const k = 2` then `row[k]` on `[2]i32` is that error. An index that is a `var` is checked when the program runs, and one outside the length panics with `index out of range`.
+
+The check also covers an ordinary `if` whose condition is constant. In a generic body, an arm that only some lengths compile goes in `comptime if (N > 2)`. A `comptime` parameter length, `var r [n]i32`, is checked in each call's copy, with the call chain below the error.
+
 `row.len` on a sized array is `i64`, the number of elements, with the same spelling. `row.len()` is that same length. An empty array has length 0.
 
 `comptime const row = [_]i32{40, 2}` then `row[1]` is 2. `assert(row[1] == 2, "x")` folds.

@@ -3444,7 +3444,9 @@ Type Checker::object_type_unchecked(const std::string &name, int indirections, b
             if (ordinary && !checking_.empty() && checking_.back() != nullptr) {
                 checking_.back()->pending_generic = true;
             }
-            return type_array(std::move(type), 1);
+            Type stand_in = type_array(std::move(type), 1);
+            stand_in.length_stand_in = true;
+            return stand_in;
         }
         if (!failed) {
             error(loc, "not supported yet");

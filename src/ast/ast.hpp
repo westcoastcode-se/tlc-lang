@@ -254,7 +254,7 @@ struct Expr {
         mutable int tuple_index = -1;
         // The base is a slice. The element is readonly.
         mutable bool slice_element = false;
-        // A constant string index outside the length was already reported.
+        // A constant index outside the string or the array length was already reported.
         mutable bool range_reported = false;
     };
     struct Sizeof {

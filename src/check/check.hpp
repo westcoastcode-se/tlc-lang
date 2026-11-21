@@ -972,6 +972,9 @@ class Checker {
     // A folded integer, or a file-scope `const` used as an index of a constant string.
     // That `const` is not a comptime value on its own.
     std::optional<int> string_bound(const Expr &bound, const Expr *base);
+    // `row[2]` on `[2]i32`, a parameter `[2]i32`, or a `*[2]i32` is `index out of range` when the index folds.
+    // Reports it once and returns true.
+    bool index_past_length(const Expr::Index &node, const Type &base);
     // A `comptime const` array, or an index of one. A runtime `const` is not.
     const Type *comptime_array_type(const Expr &expr);
     bool comptime_const_array(const Expr &expr);
