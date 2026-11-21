@@ -1,0 +1,13 @@
+func main() i32 {
+    const s = "abc";
+    const k = 2;
+    const copy = s;
+    var i = 1;
+    var sum = i32(s[0]) + i32(copy[k]) + i32(s[i]);
+    if (sum > 0) {
+        const s = "abcdef";
+        sum += i32(s[5]);
+    }
+    // 97 + 99 + 98 + 102
+    return sum - 354;
+}

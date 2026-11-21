@@ -116,6 +116,9 @@ struct Symbol {
     const Expr *promote_init = nullptr;
     // Initializer of a `comptime const`. `*p` reads it when `p` is a comptime pointer.
     const Expr *const_init = nullptr;
+    // Initializer of a local runtime `const` slice. `s[5]` checks that index against those bytes when they
+    // are a constant string. The name is not a compile-time string.
+    const Expr *const_text = nullptr;
     // Pointer receiver `self *this`. The name is not assigned. `*self` and `self.x` are.
     bool fixed_receiver = false;
     // A parameter marked `comptime`. A method or a generic call may forward the name.
@@ -1080,6 +1083,8 @@ class Checker {
     // A string literal, a constant range of one, or a file-scope const in this file
     // whose initializer is one. A pointer const is not that slice. A `var` is not a constant.
     std::optional<std::string> constant_string(const Expr &expr, std::unordered_set<std::string> &seen);
+    // Set while an index is checked against a constant string. A local `const` slice is then that string.
+    bool text_through_locals_ = false;
     // An `i32` case, or an enumerator such as `Color.Blue`. Other expressions are not case constants.
     std::optional<int> fold_switch_case(const Expr &expr);
     bool switch_case_matches(const SwitchFrame &frame, const Type &got) const;

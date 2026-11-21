@@ -3643,6 +3643,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                         }
                     } else if (node.is_const && !node.is_comptime) {
                         note_promotable(symbol, node.value.get());
+                        if (node.names.size() == 1 && is_slice(symbol.type)) {
+                            symbol.const_text = node.value.get();
+                        }
                     } else if (node.is_define && node.names.size() == 1 && node.value != nullptr) {
                         note_held(symbol, *node.value);
                     }
@@ -3862,6 +3865,9 @@ void Checker::check_stmt(const Stmt &stmt) {
                                 }
                             } else if (var.is_const_decl && var.init != nullptr) {
                                 note_promotable(*live, var.init.get());
+                                if (is_slice(live->type)) {
+                                    live->const_text = var.init.get();
+                                }
                             }
                             init_cover(*live, var.init.get());
                             note_local_slice(*live, var.init.get());

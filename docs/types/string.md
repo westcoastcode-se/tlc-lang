@@ -66,6 +66,8 @@ The length does not include the terminating null, so `"hi"[2]` is not that null.
 
 The compiler reports `const n = "hi"[2]` and `assert("hi"[2] == 0)` as `index out of range`.
 
+A local `const s = "hi"` is that string for the check, and so is a `const` that copies it or takes a constant range of it. `s[2]` and `s[k]`, with `const k = 2`, are `index out of range`. A `var` index still loads, and `s[i]` past the end panics at run time.
+
 A `var` used as the index at file scope is `global initializer is not a constant`.
 
 Inside a function, `"hi"[i]` when `i` is a `var` still loads the byte.

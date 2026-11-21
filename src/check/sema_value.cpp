@@ -2627,18 +2627,25 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     InitPush push(*this, std::move(step));
                     base = check_raw(*node.base, true);
                 }
-                // `"hi"[2]` and `"hello"[1:4][3]` are outside the constant bytes.
-                // A `var` index still loads. A quiet probe does not record the diagnostic.
+                // `"hi"[2]` and `"hello"[1:4][3]` are outside the constant bytes, and so is `s[2]` after a
+                // local `const s = "hi"`. A `var` index still loads. A quiet probe does not record the diagnostic.
                 if (!quiet_ && !node.range_reported && node.base != nullptr && node.index != nullptr) {
-                    if (const std::optional<int> at = string_bound(*node.index, node.base.get())) {
+                    const bool saved_text = text_through_locals_;
+                    text_through_locals_ = true;
+                    std::optional<int> at = string_bound(*node.index, node.base.get());
+                    if (!at) {
+                        at = constant_index(*node.index);
+                    }
+                    std::optional<std::string> bytes;
+                    if (at) {
                         std::unordered_set<std::string> seen;
-                        if (const std::optional<std::string> bytes = constant_string(*node.base, seen)) {
-                            if (*at < 0 || static_cast<std::size_t>(*at) >= bytes->size()) {
-                                node.range_reported = true;
-                                error(expr_loc(*node.index), "index out of range");
-                                return type_invalid();
-                            }
-                        }
+                        bytes = constant_string(*node.base, seen);
+                    }
+                    text_through_locals_ = saved_text;
+                    if (bytes && (*at < 0 || static_cast<std::size_t>(*at) >= bytes->size())) {
+                        node.range_reported = true;
+                        error(expr_loc(*node.index), "index out of range");
+                        return type_invalid();
                     }
                 }
                 // `comptime const row = [_]i32{40, 2}` then `row[2]` is outside that array.

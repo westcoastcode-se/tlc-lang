@@ -1044,6 +1044,12 @@ std::optional<std::string> Checker::constant_string(const Expr &expr, std::unord
         seen.erase(named->text);
         return bytes;
     }
+    // `const s = "ab"` inside a function, while an index is checked against it.
+    if (text_through_locals_ && symbol != nullptr && symbol->runtime_const && symbol->const_text != nullptr) {
+        std::optional<std::string> bytes = constant_string(*symbol->const_text, seen);
+        seen.erase(named->text);
+        return bytes;
+    }
     // A local `const` and a `var` are not a compile-time string. A file-scope `const` is.
     if (symbol == nullptr || symbol->is_auto || symbol->is_function || symbol->is_type || symbol->is_package) {
         seen.erase(named->text);

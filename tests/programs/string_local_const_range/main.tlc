@@ -1,0 +1,21 @@
+const word = "ab";
+
+func main() i32 {
+    const s = "ab";
+    const k = 5;
+    const copy = s;
+    const typed []const u8 = "ab";
+    const cut = "abc"[0:2];
+    var sum = i32(s[2]);
+    sum += i32(s[k]);
+    sum += i32(s[-1]);
+    sum += i32(copy[2]);
+    sum += i32(typed[2]);
+    sum += i32(cut[2]);
+    sum += i32(word[k]);
+    if (sum > 0) {
+        const s = "a";
+        sum += i32(s[1]);
+    }
+    return sum;
+}

@@ -99,7 +99,6 @@ No open items.
 An accepted form whose rule does not match its page is inserted here. Each bullet is one change. The first sentence is what `tlc --check` does. Closing a bullet updates the pages it names. A gap that is already listed above stays there.
 
 - `type A *i32` then `var y A = x` with `x` a `*i32` is accepted without a cast. `docs/types/alias.md` says `Ptr` is a different type from `*Point`.
-- An index outside a local `const s = "ab"`, `s[5]`, passes `--check` and panics at run time. The same index of a file-scope `const` or of the literal is `index out of range`.
 - `alignof(i64)` is accepted. The `unary` rule in `docs/grammar.md` lists only `sizeof` and `typeof`.
 - `"hi"b`, `'A'b`, and `import "std/mem"b` are accepted. The `string` and `char-literal` rules in `docs/grammar.md` have no suffix.
 - `func P::read(self *const this)`, `?*this`, and `?*const this` are accepted. The `receiver` rule in `docs/grammar.md` is `identifier ["*"] "this"`, and `method` does not reference it.
