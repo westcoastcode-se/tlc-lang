@@ -407,6 +407,20 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return inner_value;
                 }
                 llvm::Value *inner = inner_value.value;
+                // `-n` and `~n` on a `u8`, `i8`, `u16`, or `i16` work on the operand promoted to a signed `i32`,
+                // so `-n` is -101 when `n` is 101u8, and `i64(-n)` keeps that sign.
+                int bits = inner_value.elem_bits;
+                bool is_unsigned = inner_value.elem_unsigned;
+                const bool integer = inner != nullptr && inner->getType()->isIntegerTy() && !inner_value.elem_float &&
+                                     !inner_value.elem_bool && inner_value.depth == 0;
+                if (integer && (node.op == TokenKind::Minus || node.op == TokenKind::Tilde) &&
+                    (bits < 32 || inner->getType()->getIntegerBitWidth() < 32)) {
+                    if (inner->getType()->getIntegerBitWidth() < 32) {
+                        inner = is_unsigned ? builder_.CreateZExt(inner, i32()) : builder_.CreateSExt(inner, i32());
+                    }
+                    bits = 32;
+                    is_unsigned = false;
+                }
                 switch (node.op) {
                 case TokenKind::Plus: return inner_value;
                 case TokenKind::Minus:
@@ -414,11 +428,9 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         return {builder_.CreateFNeg(inner), 0, false, -1, false, false, false, inner_value.elem_bits, false,
                                 -1, true};
                     }
-                    return {builder_.CreateNeg(inner), 0, false, -1, false, false, false, inner_value.elem_bits,
-                            inner_value.elem_unsigned};
+                    return {builder_.CreateNeg(inner), 0, false, -1, false, false, false, bits, is_unsigned};
                 case TokenKind::Tilde:
-                    return {builder_.CreateNot(inner), 0, false, -1, false, false, false, inner_value.elem_bits,
-                            inner_value.elem_unsigned};
+                    return {builder_.CreateNot(inner), 0, false, -1, false, false, false, bits, is_unsigned};
                 case TokenKind::Bang:
                     return {builder_.CreateNot(as_bool(inner)), 0, false, -1, false, false, true};
                 default: return {zero(), 0};

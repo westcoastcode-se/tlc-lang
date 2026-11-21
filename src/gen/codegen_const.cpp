@@ -1787,6 +1787,15 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
                 return llvm::ConstantInt::get(i1(), *number == 0 ? 0 : 1, false);
             }
             return sized_int(dest, *number);
+        } else if (const std::optional<WideInt> wide = fold_wide(expr); wide && !dest.elem_bool) {
+            // `u64(u32(-1))` is 4294967295. The `i32` fold does not hold it, and the stripped `-1` is not it.
+            llvm::Type *ty = leaf_type(dest.depth, dest.elem_char, dest.struct_id, dest.elem_bool, dest.elem_bits,
+                                       dest.elem_float);
+            if (ty != nullptr && ty->isIntegerTy()) {
+                if (llvm::Constant *constant = wide_constant(*wide, ty)) {
+                    return constant;
+                }
+            }
         }
     }
     if (const auto *call = std::get_if<Expr::Call>(&cursor->data)) {

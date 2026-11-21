@@ -1,0 +1,14 @@
+// `u64(u32(-1))` is 4294967295 and `i64(u32(3851538065))` is 3851538065, at file scope, in a global, and
+// in a local `const`. The inner cast keeps its width before the outer one widens.
+const a = u64(u32(-1));
+var b = i64(u32(3851538065i64));
+const c = i64(u32(-1));
+func main() i32 {
+    const d = u64(u32(3851538065i64));
+    var bad = 0;
+    if (a != 4294967295u64) { bad |= 1; }
+    if (b != 3851538065) { bad |= 2; }
+    if (c != 4294967295) { bad |= 4; }
+    if (d != 3851538065u64) { bad |= 8; }
+    return bad == 0 ? 42 : bad;
+}

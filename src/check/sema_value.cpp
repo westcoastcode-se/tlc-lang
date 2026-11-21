@@ -879,6 +879,22 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         if (zero || wide) {
                             return type_invalid();
                         }
+                    } else if (const std::optional<WideInt> folded = fold_wide_int(*node.rhs)) {
+                        // `x >> (u64(...) ^ 63u32)` is past every width. The `i32` fold does not hold that amount.
+                        const bool shift = node.op == TokenKind::LtLt || node.op == TokenKind::GtGt;
+                        const uint64_t mask =
+                            folded->bits >= 64 ? ~uint64_t{0} : (uint64_t{1} << static_cast<unsigned>(folded->bits)) - 1u;
+                        const uint64_t value = folded->value & mask;
+                        const bool negative = !folded->is_unsigned && ((value >> (folded->bits - 1)) & 1u) != 0;
+                        const bool zero = !shift && value == 0;
+                        const bool wide =
+                            shift && (negative || value >= static_cast<uint64_t>(integer_width(common)));
+                        if ((zero || wide) && constant_faults_.insert(&expr).second) {
+                            error(node.loc, zero ? "division by zero" : "shift out of range");
+                        }
+                        if (zero || wide) {
+                            return type_invalid();
+                        }
                     }
                 }
                 switch (node.op) {

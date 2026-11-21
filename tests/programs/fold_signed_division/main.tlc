@@ -1,0 +1,26 @@
+// A signed quotient and remainder truncate toward zero at every width, in a `comptime func` too. The lowest
+// value divided by -1 wraps to itself.
+comptime func rem() i64 {
+    return i64(i8(-76) % i16(-2));
+}
+comptime func quot() i64 {
+    return i64(-76 / -2);
+}
+comptime func low() i64 {
+    return i64(i32(-2147483647 - 1) % i8(5));
+}
+comptime func wrap() i64 {
+    return i64((-2147483647 - 1) / -1);
+}
+func main() i32 {
+    comptime const r = rem();
+    comptime const q = quot();
+    comptime const l = low();
+    comptime const w = wrap();
+    var bad = 0;
+    if (r != 0) { bad |= 1; }
+    if (q != 38) { bad |= 2; }
+    if (l != -3) { bad |= 4; }
+    if (w != -2147483648) { bad |= 8; }
+    return bad == 0 ? 42 : bad;
+}

@@ -1,0 +1,23 @@
+// A constant mixes widths and signedness with the usual arithmetic conversions, at file scope, in a global,
+// in a local `const`, and in a `comptime func`. `u32` with `u64`, `u32` with `i64`, and `i64` with `u64`.
+const a = u32(60) << u64(35);
+var b = u32(1) + i64(-2);
+const c = u32(4294967295u32) + i64(1);
+var d = i64(-1) + u64(2);
+const e = i64(-8) / u32(2);
+comptime func f() i64 {
+    return i64(u32(1) - u64(2));
+}
+func main() i32 {
+    const g = i16(-1) + u32(0);
+    comptime const h = f();
+    var bad = 0;
+    if (i64(a) != 2061584302080) { bad |= 1; }
+    if (b != -1) { bad |= 2; }
+    if (c != 4294967296) { bad |= 4; }
+    if (d != 1u64) { bad |= 8; }
+    if (e != -4) { bad |= 16; }
+    if (h != -1) { bad |= 32; }
+    if (g != 4294967295u32) { bad |= 64; }
+    return bad == 0 ? 42 : bad;
+}

@@ -1,0 +1,8 @@
+// `a * (b)` multiplies. A name followed by `*` is not a type unless a type of that name is declared above.
+func mul(a i32, b i32) i32 {
+    var r = a * (b + 1);
+    return i32(a * (b)) + r + sizeof(a * (b));
+}
+func main() i32 {
+    return mul(3, 2) == 6 + 9 + 4 ? 42 : 1;
+}

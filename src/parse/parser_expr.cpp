@@ -175,8 +175,9 @@ bool Parser::skip_type_base(std::size_t &index, int leading, bool cast) const {
         }
         return leading > 0;
     }
-    // `Point *` is the old postfix cast. The caller reports type mismatch.
-    if (leading == 0 && peek(index + 1).kind == TokenKind::Star) {
+    // `Point *` is the old postfix cast. The caller reports type mismatch. Only a type declared above is that
+    // form. `a * (b)` multiplies.
+    if (leading == 0 && peek(index + 1).kind == TokenKind::Star && type_names_.count(head.text) != 0) {
         ++index;
         return true;
     }

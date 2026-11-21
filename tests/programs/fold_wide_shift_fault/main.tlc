@@ -1,0 +1,5 @@
+// A constant shift amount past the width is `shift out of range` when it only folds as a 64-bit value.
+const x = i16(0) >> (u64(3284467935729014936i64) ^ u32(63));
+func main() i32 {
+    return 0;
+}

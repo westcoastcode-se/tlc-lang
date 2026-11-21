@@ -883,7 +883,9 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                         type = raw;
                         type.is_const = false;
                         const_cast<VarDecl *>(var)->narrow_bits = rank_of(raw) == 1 ? 8 : 16;
-                        const_cast<VarDecl *>(var)->narrow_unsigned = raw.is_unsigned || raw.kind == TypeKind::Char;
+                        // A plain `char` is `u8`. `i8` is a `Char` too, and it keeps its sign.
+                        const_cast<VarDecl *>(var)->narrow_unsigned =
+                            raw.is_unsigned || (raw.kind == TypeKind::Char && raw.plain_char);
                     }
                     // `null` has no pointee until a pointer type is written around it.
                     if (type.kind == TypeKind::Tuple || type.kind == TypeKind::Void || type.kind == TypeKind::Nullptr) {

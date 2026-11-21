@@ -97,17 +97,17 @@ The usual arithmetic conversions apply after that widening.
 
 `+`, `-`, `*`, `/`, `%`, and the bitwise operators produce the common type.
 
-Comparisons and `!` produce `i32`, either 0 or 1.
+Comparisons produce `bool`. `!` takes a `bool`. `i32(a < b)` is that comparison as 0 or 1.
 
 Unsigned arithmetic wraps.
 
 A `u32` that is 0 and then decreased by 1 becomes `4294967295`, so `n < 1` is false.
 
-A signed quotient wraps in its width. `(-2147483647 - 1) / -1` is `-2147483648`, and `(-2147483647 - 1) % -1` is `0`.
+A signed quotient truncates toward zero and wraps in its width. `-76 / -2` is 38, `-77 % 5` is -2, `(-2147483647 - 1) / -1` is `-2147483648`, and `(-2147483647 - 1) % -1` is `0`.
 
 > **Warning:** A mixed comparison converts the signed operand. `1u32 < -1` is true, because `-1` becomes the largest unsigned value.
 
-A constant folds with these same conversions. `const less = 1u32 < -1` is true, `(0u32 - 1u32) >> 28u32` is 15, and `3u64 + -1` is 2, at file scope, in a local `const`, and in `comptime if`.
+A constant folds with these same conversions. `const less = 1u32 < -1` is true, `(0u32 - 1u32) >> 28u32` is 15, `3u64 + -1` is 2, `u32(1) + i64(-2)` is -1, and `u64(u32(-1))` is 4294967295, at file scope, in a global, in a local `const`, in a `comptime const`, in a `comptime func`, and in `comptime if`. A unary `-` or `~` on a narrower operand works on the promoted `i32`, so `-n` is -101 when `n` is `101u8`.
 
 ## Stores
 

@@ -1411,23 +1411,24 @@ std::optional<Checker::WideInt> Checker::fold_wide_int_uncached(const Expr &expr
                     }
                     const std::optional<WideInt> left = promote(*left_raw);
                     const std::optional<WideInt> right = promote(*right_raw);
-                    // Same suffix, or a signed `i32` converted into the wider operand.
-                    const WideInt *kept = nullptr;
-                    if (left->bits == right->bits && left->is_unsigned == right->is_unsigned) {
-                        kept = &*left;
-                    } else if (left->bits == 32 && !left->is_unsigned && (right->bits > 32 || right->is_unsigned)) {
-                        kept = &*right;
-                    } else if (right->bits == 32 && !right->is_unsigned && (left->bits > 32 || left->is_unsigned)) {
-                        kept = &*left;
+                    // The usual arithmetic conversions. Equal signedness takes the wider type. Otherwise the
+                    // unsigned type wins when it is at least as wide, and the signed type when it is wider.
+                    WideInt common = *left;
+                    if (left->is_unsigned == right->is_unsigned) {
+                        common = left->bits >= right->bits ? *left : *right;
                     } else {
-                        return std::nullopt;
+                        const WideInt &unsigned_side = left->is_unsigned ? *left : *right;
+                        const WideInt &signed_side = left->is_unsigned ? *right : *left;
+                        common = unsigned_side.bits >= signed_side.bits ? unsigned_side : signed_side;
                     }
+                    const WideInt *kept = &common;
                     const auto as_kept = [&](const WideInt &from) -> uint64_t {
-                        // `3u64 + -1` is 2. A signed `i32` sign-extends into `u64` as into `i64`.
-                        if (kept->bits == 64 && from.bits <= 32 && !from.is_unsigned) {
-                            return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(from.value)));
+                        // `3u64 + -1` is 2. A signed operand sign-extends into a wider type, signed or not.
+                        uint64_t value = from.value & wide_mask(from.bits);
+                        if (!from.is_unsigned && from.bits < 64 && ((value >> (from.bits - 1)) & 1u) != 0) {
+                            value |= ~wide_mask(from.bits);
                         }
-                        return from.value & wide_mask(kept->bits);
+                        return value & wide_mask(kept->bits);
                     };
                     const uint64_t a = as_kept(*left);
                     const uint64_t b = as_kept(*right);
@@ -1467,15 +1468,17 @@ std::optional<Checker::WideInt> Checker::fold_wide_int_uncached(const Expr &expr
                         if (b == 0) {
                             return std::nullopt;
                         }
-                        if (signed64) {
-                            const int64_t sa = static_cast<int64_t>(a);
-                            const int64_t sb = static_cast<int64_t>(b);
-                            if (sa == static_cast<int64_t>(uint64_t{1} << 63) && sb == -1) {
-                                wide.value = item.op == TokenKind::Slash ? static_cast<uint64_t>(sa) : 0;
+                        // A signed quotient truncates toward zero at every width. `-76 / -2` is 38, and the
+                        // lowest value divided by -1 wraps to itself.
+                        if (!kept->is_unsigned) {
+                            const int64_t sa = as_signed(a);
+                            const int64_t sb = as_signed(b);
+                            if (sb == -1) {
+                                wide.value = item.op == TokenKind::Slash ? (0u - static_cast<uint64_t>(sa)) & mask : 0;
                                 break;
                             }
                             const int64_t result = item.op == TokenKind::Slash ? sa / sb : sa % sb;
-                            wide.value = static_cast<uint64_t>(result);
+                            wide.value = static_cast<uint64_t>(result) & mask;
                             break;
                         }
                         wide.value = (item.op == TokenKind::Slash ? a / b : a % b) & mask;
@@ -2029,6 +2032,20 @@ std::optional<int> Checker::fold_int_uncached(const Expr &expr) {
                 }
                 if (!is_integer(named) && named.kind != TypeKind::Bool && !is_c_enum(named)) {
                     return std::nullopt;
+                }
+                // `u64(u32(3851538065))` is past `i32`. The `i32` fold would hold the inner `u32` as a negative
+                // number and widen its sign. A 64-bit cast is that fold only when the whole value fits.
+                if (is_integer(named) && !is_c_enum(named) && width_of(named) == 64) {
+                    if (const std::optional<WideInt> whole = fold_wide_int(expr)) {
+                        const uint64_t value = whole->value;
+                        const bool fits = whole->is_unsigned ? value <= 2147483647u
+                                                             : static_cast<int64_t>(value) >= -2147483648LL &&
+                                                                   static_cast<int64_t>(value) <= 2147483647LL;
+                        if (!fits) {
+                            return std::nullopt;
+                        }
+                        return static_cast<int>(static_cast<int64_t>(value));
+                    }
                 }
                 std::optional<int> inner = fold_int(*node.expr);
                 // `Integer(k)` when `k` is a file-scope integer `const`. `a + b` is not this cast.
