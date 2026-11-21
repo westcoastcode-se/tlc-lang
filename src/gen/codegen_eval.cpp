@@ -131,6 +131,8 @@ bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn,
             }
         }
     }
+    // `tlc.fill` copies places between globals, which needs the package graph. Made here, while it is set.
+    emit_fill_function();
     // A global that is not part of this call may fail to fold. The function's own emission is the gate.
     const std::size_t prepared = diags_.size();
     const PackageNode *home = find_node(file);
@@ -274,6 +276,8 @@ bool CodeGen::define_comptime_string(const PackageGraph &graph, const FunctionDe
             }
         }
     }
+    // `tlc.fill` copies places between globals, which needs the package graph. Made here, while it is set.
+    emit_fill_function();
     const std::size_t prepared = diags_.size();
     const PackageNode *home = find_node(file);
     const auto give_up = [&]() {
@@ -1540,6 +1544,8 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
             }
         }
     }
+    // `tlc.fill` copies places between globals, which needs the package graph. Made here, while it is set.
+    emit_fill_function();
     const std::size_t prepared = diags_.size();
     const PackageNode *home = find_node(file);
     if (home == nullptr) {

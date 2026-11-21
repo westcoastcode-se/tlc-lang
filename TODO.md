@@ -12,6 +12,7 @@ These were found by review and have a repro. They are not fixed yet.
 
 ### Checker
 
+- A float argument to a `comptime` integer parameter, `f(2.5)` with `comptime n i32`, passes `--check` and is not converted. `return n` is 0, while an ordinary parameter `n i32` is 2. As an array length, `var row [n]i64` then `row[0] = 40` in a function that returns `i64`, the compile-time run of `ordinary(1.0)` crashes the compiler.
 - A file-scope `comptime const k = f(2)` used as an array length in a struct field, `type S struct { buf [k]u8; }`, is `not supported yet` twice. Types are resolved before the call runs. A `const` or a `var` that names `k` binds it first.
 - A C function pointer type that differs from the tlc one has no spelling of its own. A local or a tlc struct field holds it only by inference, `var f = get_cb()`. A generic parameter `func (T) i32` is a tlc type, so a C pointer that passes a struct is `type mismatch` there.
 - Each `if` in a function with held `k := i` locals copies and merges every held name, so a function with H held names and B branches costs H times B. 1500 of each take 0.8 seconds in a release build, 3000 take 3.6, and 6000 take 15. Before, each merge also scanned both arms for each name, and 1500 took 57 seconds in a debug build. Recording each change to a held name, instead of copying them all, would make an `if` cost only what its arms change. There are 31 places that change that state.
@@ -19,7 +20,9 @@ These were found by review and have a repro. They are not fixed yet.
 - An array length is a literal or a name. `[sizeof(Pair) + 1]u8` is `expected ']'`.
 - `?func` is not allowed as an array element, `[2]?func (i32) i32`, or behind a pointer, `*?func (i32) i32`. The cast form `?func (i32) i32(x)` is `expected an expression`.
 - Deeply nested blocks check in quadratic time. In a release build 2000 nested `if` take 33 ms, 4000 take 98 ms, and 8000 take 0.35 seconds. The nesting limit stays at 10000 levels.
-- A listed array of structs with a large array of defaulted structs fills its literals at start only when it is one-dimensional and each element is a struct literal with named fields. `[2][2]World = {...}` and `{w, w}` build every element's defaults as a constant. A copy of such a global, `var c = w`, is built the same way, so `pts [100000000]Point` there is `compile-time memory limit exceeded`.
+- A file-scope value built from a global that holds a large array of defaulted structs is written at start only when it is that global or a place in it: `var c = w`, `var n = w.n`, `{w, w}`, and `Pair{.left = w}`. A `const` copy, `const c = w`, builds the global's defaults as a constant, so `pts [100000000]Point` there is `compile-time memory limit exceeded`. A list element that is neither a struct literal, a nested list, nor such a place, `{make_world(), w}` with a `comptime func`, does the same.
+- An expression of a part of a global, `var n = w.n + 1` or `var m = p.x * 2`, passes `--check` and is `global initializer is not a constant` when code is emitted, for any struct. The part alone, `var n = w.n`, is a constant.
+- An omitted field with no default is `uninitialized` when it is read from a struct global, `var r = S{.b = 5}` then `var g = r.a`. The same field of a listed element, `var r [2]S = {S{.b = 5}}` then `var g = r[0].a`, is accepted and is zero.
 - A copy of a global set at start from another file of the same package, `var copy = h` where `var h = make()` is in a sibling file, stays `global initializer is not a constant`. Files start in path order, so `h` may not be set yet.
 
 ### Runtime

@@ -542,8 +542,10 @@ llvm::Constant *CodeGen::const_struct_into(const Expr::Init *overlay, int struct
             if (!strict) {
                 continue;
             }
-            llvm::Constant *value = const_field(*field.value, *slot);
             llvm::Type *expected = layout.type->getElementType(static_cast<unsigned>(index));
+            // `tlc.fill` copies this field at start.
+            llvm::Constant *value = start_part(field.value.get()) ? llvm::Constant::getNullValue(expected)
+                                                                  : const_field(*field.value, *slot);
             if (value == nullptr || !fits_field(value, expected)) {
                 return leave(nullptr);
             }
@@ -934,7 +936,10 @@ llvm::Constant *CodeGen::fill_array(const Expr::Init &init, llvm::ArrayType *arr
             return nullptr;
         }
         llvm::Constant *value = nullptr;
-        if (element == slice_type()) {
+        if (start_part(item.get())) {
+            // `tlc.fill` copies this element at start.
+            value = llvm::Constant::getNullValue(element);
+        } else if (element == slice_type()) {
             // `[_][]i32{a[:], b[:]}` stores one header per element.
             std::unordered_set<std::string> seen;
             value = constant_slice(*item, seen);
@@ -2049,7 +2054,9 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
         llvm::Constant *part = const_place(*cursor, struct_id);
         llvm::Type *want = leaf_type(dest.depth, dest.elem_char, dest.struct_id, dest.elem_bool, dest.elem_bits,
                                      dest.elem_float);
-        if (part != nullptr && want != nullptr && part->getType() == want) {
+        // A part with a compact array has that array's layout, not its type.
+        if (part != nullptr && want != nullptr &&
+            (part->getType() == want || (want->isAggregateType() && same_layout(part->getType(), want)))) {
             return part;
         }
     }
@@ -2063,7 +2070,9 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
             }
             if (auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(binding->value);
                 global != nullptr && global->isConstant() && global->hasInitializer()) {
-                return as_float(global->getInitializer());
+                // A compact value waits for the swap. The initializer is zero until then.
+                const auto pending = compact_inits_.find(global);
+                return as_float(pending != compact_inits_.end() ? pending->second : global->getInitializer());
             }
             // `var n = 1; var row = [_]i32{n}` copies n's constant initializer.
             if (const VarDecl *written = global_decl(named->text)) {
@@ -2240,6 +2249,35 @@ llvm::Constant *CodeGen::constant_slice(const Expr &expr, std::unordered_set<std
     return llvm::ConstantStruct::get(slice_type(), {pieces->pointer, const_i32(pieces->length)});
 }
 
+bool CodeGen::place_initializer(const VarDecl &var, const Binding &binding, llvm::GlobalVariable *global,
+                                llvm::Constant *value) {
+    if (global == nullptr || value == nullptr) {
+        return false;
+    }
+    // A `var` that holds a large array of defaulted structs stays zero, in `.bss`. Any other byte of the
+    // constant would put the whole global in the binary. `tlc.fill` writes those bytes at start.
+    if (var.is_const_decl || binding.depth != 0 || binding.is_slice ||
+        !heavy_value(binding.struct_id, binding.is_array, global->getValueType())) {
+        return set_global_initializer(global, value);
+    }
+    if (!same_layout(value->getType(), global->getValueType())) {
+        return false;
+    }
+    if (!set_global_initializer(global, llvm::Constant::getNullValue(global->getValueType()))) {
+        return false;
+    }
+    StartWrite write;
+    write.global = global;
+    write.type = value->getType();
+    write.image = value;
+    write.file_id = current_file_;
+    write.loc = var.loc;
+    write.name = var.name;
+    start_writes_.push_back(write);
+    start_written_.insert(global);
+    return true;
+}
+
 void CodeGen::apply_initializer(const VarDecl &var) {
     // A file-scope value may be compact: a long zero tail in an array, a field, or a field default.
     const CompactScope compact(*this);
@@ -2389,6 +2427,19 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         return;
     }
     const auto found_early = file.globals.find(key);
+    // `var c = w` and `var g = w.pts[4].x` when `w` holds a large array of defaulted structs. The constant
+    // would hold that array. The global is zero, and `tlc.fill` copies the place at start.
+    if (found_early != file.globals.end() && !found_early->second.is_slice) {
+        if (auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found_early->second.value)) {
+            std::vector<StartWrite> copies;
+            if (start_copy_part(*var.init, global->getValueType(), 0, copies)) {
+                set_global_initializer(global, llvm::Constant::getNullValue(global->getValueType()));
+                commit_start_writes(copies, global, var);
+                file.folded.insert(key);
+                return;
+            }
+        }
+    }
     if (const auto *kind = std::get_if<Expr::Typeof>(&var.init->data)) {
         const bool type_slot = found_early != file.globals.end() && found_early->second.depth == 1 &&
                                ((type_struct_id_ >= 0 && found_early->second.struct_id == type_struct_id_) ||
@@ -2424,23 +2475,35 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         if (found_early != file.globals.end() && found_early->second.is_array) {
             // `[2]World = {World{.n = 6}}`. Each listed literal's omitted large array of defaulted structs is
             // zero here, and `tlc.fill` writes it at start. An element past the list is zero.
+            // `{w, w}` copies each element at start, and the constant holds zero there.
             std::vector<PendingFill> fills;
-            if (!var.is_const_decl) {
-                list_fills(*init, found_early->second, fills);
+            std::vector<StartWrite> writes;
+            auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found_early->second.value);
+            if (!var.is_const_decl && global != nullptr) {
+                list_fills(*init, found_early->second, fills, writes);
+                commit_start_writes(writes, global, var);
+            }
+            // `[2][2]World` builds its elements two arrays deep.
+            int depth = 0;
+            for (llvm::Type *level = global == nullptr ? nullptr : global->getValueType();
+                 level != nullptr && level->isArrayTy(); level = level->getArrayElementType()) {
+                ++depth;
             }
             const bool saved_skip = skip_big_defaults_;
             const int saved_depth = skip_depth_;
             skip_big_defaults_ = !fills.empty();
-            skip_depth_ = 1;
+            skip_depth_ = depth;
+            const llvm::GlobalVariable *saved_filling = filling_global_;
+            filling_global_ = global;
             llvm::Constant *value = const_array(*init, found_early->second);
+            filling_global_ = saved_filling;
             skip_big_defaults_ = saved_skip;
             skip_depth_ = saved_depth;
-            if (value == nullptr || found_early->second.value == nullptr) {
+            if (value == nullptr || global == nullptr) {
                 error(var.loc, "global initializer is not a constant");
                 return;
             }
-            auto *global = llvm::cast<llvm::GlobalVariable>(found_early->second.value);
-            if (!set_global_initializer(global, value)) {
+            if (!place_initializer(var, found_early->second, global, value)) {
                 error(var.loc, "global initializer is not a constant");
                 return;
             }
@@ -2456,16 +2519,22 @@ void CodeGen::apply_initializer(const VarDecl &var) {
             return;
         }
         // An omitted large array field of defaulted structs is zero here, and `tlc.fill` writes it at start.
+        // `.inner = w` copies that field at start, and the constant holds zero there.
         std::vector<PendingFill> fills;
+        std::vector<StartWrite> writes;
+        auto *global = llvm::cast<llvm::GlobalVariable>(found_early->second.value);
         if (!var.is_const_decl) {
-            struct_fills(found_early->second.struct_id, 0, fills, 0, init);
+            struct_fills(found_early->second.struct_id, 0, fills, 0, init, &writes);
+            commit_start_writes(writes, global, var);
         }
         const bool saved_skip = skip_big_defaults_;
         skip_big_defaults_ = !fills.empty();
+        const llvm::GlobalVariable *saved_filling = filling_global_;
+        filling_global_ = global;
         llvm::Constant *value = const_struct(*init, found_early->second.struct_id);
+        filling_global_ = saved_filling;
         skip_big_defaults_ = saved_skip;
-        auto *global = llvm::cast<llvm::GlobalVariable>(found_early->second.value);
-        if (value == nullptr || !set_global_initializer(global, value)) {
+        if (value == nullptr || !place_initializer(var, found_early->second, global, value)) {
             error(var.loc, "global initializer is not a constant");
             return;
         }

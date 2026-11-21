@@ -391,6 +391,10 @@ void CodeGen::declare_globals(const PackageNode &node) {
                 } else if (fills_at_start(*var, low, ty)) {
                     // Zero here. `tlc.fill` writes the defaults at start, after the global exists.
                     init = llvm::ConstantAggregateZero::get(ty);
+                } else if (var->init != nullptr && !var->runtime_init && !var->is_const_decl && low.depth == 0 &&
+                           !low.is_slice && pointer_free_shells(low) && heavy_value(low.struct_id, low.is_array, ty)) {
+                    // The initializer replaces this image. Building the defaults first would hold the large array.
+                    init = llvm::ConstantAggregateZero::get(ty);
                 } else if (low.is_array || (low.depth == 0 && low.struct_id >= 0)) {
                     // Unset fields are zero, or the field's default.
                     init = bare_initializer(low, ty);

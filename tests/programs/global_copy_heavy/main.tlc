@@ -1,0 +1,57 @@
+// Each global below holds a large array of defaulted structs. None of them is built as a constant: the
+// binary holds zeros in `.bss`, and the program writes the values when it starts.
+type Point struct {
+    x i32 = 1;
+    y i32 = 2;
+}
+
+type World struct {
+    pts [5000]Point;
+    n i32 = 7;
+}
+
+type Pair struct {
+    left World;
+    right World;
+    tag i32 = 5;
+}
+
+var base World;
+var named = World{.n = 3};
+var copy = named;
+var again = copy;
+var both = [_]World{base, named};
+var grid [2][2]World = {{World{.n = 11}, named}, {World{}}};
+var pair = Pair{.left = named, .tag = 6};
+var field = named.n;
+var deep = grid[0][1].pts[4999].y;
+var row = named.pts;
+// `box` copies `light` at start. A `const` read of `box` builds its literal again and reads `light` itself.
+var light = named.pts[3];
+type Box struct {
+    pt Point;
+    n i32 = 1;
+}
+var box = Box{.pt = light};
+const boxed = box.pt.y;
+var box_copy = box;
+
+comptime func read() i32 {
+    return copy.n + both[1].n + pair.left.n;
+}
+
+func main() i32 {
+    var bad = 0;
+    if (copy.n != 3 || copy.pts[4999].x != 1) { bad = 1; }
+    if (again.n != 3 || again.pts[0].y != 2) { bad = 2; }
+    if (both[0].n != 7 || both[1].n != 3 || both[1].pts[17].x != 1) { bad = 3; }
+    if (grid[0][0].n != 11 || grid[0][1].n != 3 || grid[1][0].n != 7 || grid[1][0].pts[4].y != 2) { bad = 4; }
+    // An element past a file-scope list is zero.
+    if (grid[1][1].n != 0 || grid[1][1].pts[4].y != 0) { bad = 5; }
+    if (pair.left.n != 3 || pair.right.n != 7 || pair.tag != 6 || pair.right.pts[4999].y != 2) { bad = 6; }
+    if (field != 3 || deep != 2 || row[4999].x != 1) { bad = 7; }
+    if (boxed != 2 || box_copy.pt.y != 2 || box_copy.n != 1 || box.pt.x != 1) { bad = 9; }
+    comptime const k = read();
+    if (k != 9) { bad = 8; }
+    return bad;
+}

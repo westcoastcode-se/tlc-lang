@@ -67,15 +67,10 @@ llvm::Constant *CodeGen::finish_listed_array(llvm::ArrayType *array_ty, std::vec
     if (compact && values.size() < total && (total - values.size() >= kCompactTail || !exact)) {
         return compact_array(array_ty, values);
     }
+    // A compact row among the elements. Each element is a field, then the tail, empty when every element is
+    // listed, so `array_element` reads one shape.
     if (!exact) {
-        if (values.size() != total) {
-            return compact_array(array_ty, values);
-        }
-        std::vector<llvm::Type *> types;
-        for (llvm::Constant *value : values) {
-            types.push_back(value->getType());
-        }
-        return llvm::ConstantStruct::get(llvm::StructType::get(context_, types), values);
+        return compact_array(array_ty, values);
     }
     while (values.size() < total) {
         values.push_back(llvm::Constant::getNullValue(element));
@@ -139,7 +134,7 @@ bool CodeGen::set_global_initializer(llvm::GlobalVariable *global, llvm::Constan
 }
 
 void CodeGen::struct_fills(int struct_id, uint64_t base, std::vector<PendingFill> &out, int depth,
-                           const Expr::Init *overlay) {
+                           const Expr::Init *overlay, std::vector<StartWrite> *copies) {
     if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size()) || depth > 64) {
         return;
     }
@@ -164,7 +159,10 @@ void CodeGen::struct_fills(int struct_id, uint64_t base, std::vector<PendingFill
             const auto *nested = std::get_if<Expr::Init>(&named->data);
             if (nested != nullptr && !field.is_array && field.depth == 0 && field.struct_id >= 0 && !nested->is_tuple &&
                 !nested->array_literal && nested->elements.empty()) {
-                struct_fills(field.struct_id, at, out, depth + 1, nested);
+                struct_fills(field.struct_id, at, out, depth + 1, nested, copies);
+            } else if (copies != nullptr && !field.is_slice) {
+                // `.inner = w` copies that global's start value at start.
+                start_copy_part(*named, layout.type->getElementType(static_cast<unsigned>(index)), at, *copies);
             }
             continue;
         }
@@ -183,29 +181,179 @@ void CodeGen::struct_fills(int struct_id, uint64_t base, std::vector<PendingFill
     }
 }
 
-void CodeGen::list_fills(const Expr::Init &list, const Binding &binding, std::vector<PendingFill> &out) {
+void CodeGen::list_fills(const Expr::Init &list, const Binding &binding, std::vector<PendingFill> &out,
+                         std::vector<StartWrite> &copies) {
     auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(binding.value);
     if (global == nullptr || binding.struct_id < 0 || binding.struct_id >= static_cast<int>(structs_.size()) ||
-        list.is_tuple || !heavy_defaults(binding.struct_id)) {
+        list.is_tuple) {
         return;
     }
-    llvm::StructType *elem = structs_[static_cast<std::size_t>(binding.struct_id)].type;
     auto *array = llvm::dyn_cast<llvm::ArrayType>(global->getValueType());
-    if (elem == nullptr || array == nullptr || array->getElementType() != elem || !elem->isSized() ||
-        list.elements.size() > array->getNumElements()) {
+    llvm::StructType *elem = structs_[static_cast<std::size_t>(binding.struct_id)].type;
+    if (array == nullptr || elem == nullptr || leaf_count(array, elem) == 0) {
         return;
     }
-    const uint64_t stride = module_.getDataLayout().getTypeAllocSize(elem).getFixedValue();
     std::vector<PendingFill> found;
-    for (std::size_t index = 0; index < list.elements.size(); ++index) {
-        const Expr *element = list.elements[index].get();
-        const auto *literal = element == nullptr ? nullptr : std::get_if<Expr::Init>(&element->data);
-        if (literal == nullptr || literal->is_tuple || literal->array_literal || !literal->elements.empty()) {
-            return;
-        }
-        struct_fills(binding.struct_id, index * stride, found, 0, literal);
+    std::vector<StartWrite> moved;
+    if (!collect_list_fills(list, array, 0, binding.struct_id, found, moved)) {
+        return;
     }
     out.insert(out.end(), found.begin(), found.end());
+    copies.insert(copies.end(), moved.begin(), moved.end());
+}
+
+bool CodeGen::collect_list_fills(const Expr::Init &list, llvm::ArrayType *array, uint64_t base, int struct_id,
+                                 std::vector<PendingFill> &fills, std::vector<StartWrite> &copies) {
+    if (array == nullptr || list.is_tuple || !list.fields.empty() || list.elements.size() > array->getNumElements()) {
+        return false;
+    }
+    llvm::Type *elem = array->getElementType();
+    if (!elem->isSized()) {
+        return false;
+    }
+    const uint64_t stride = module_.getDataLayout().getTypeAllocSize(elem).getFixedValue();
+    for (std::size_t index = 0; index < list.elements.size(); ++index) {
+        const Expr *element = list.elements[index].get();
+        if (element == nullptr) {
+            return false;
+        }
+        const uint64_t at = base + index * stride;
+        // `{w, w}` copies that global at start.
+        if (start_copy_part(*element, elem, at, copies)) {
+            continue;
+        }
+        const auto *literal = std::get_if<Expr::Init>(&element->data);
+        if (literal == nullptr) {
+            return false;
+        }
+        if (auto *inner = llvm::dyn_cast<llvm::ArrayType>(elem)) {
+            if (!collect_list_fills(*literal, inner, at, struct_id, fills, copies)) {
+                return false;
+            }
+            continue;
+        }
+        if (elem != structs_[static_cast<std::size_t>(struct_id)].type || literal->is_tuple || literal->array_literal ||
+            !literal->elements.empty()) {
+            return false;
+        }
+        struct_fills(struct_id, at, fills, 0, literal, &copies);
+    }
+    return true;
+}
+
+llvm::GlobalVariable *CodeGen::heavy_root(const Expr &place) {
+    const Expr *cursor = &place;
+    for (int depth = 0; depth < 256; ++depth) {
+        if (const auto *selector = std::get_if<Expr::Selector>(&cursor->data)) {
+            if (selector->base == nullptr) {
+                return nullptr;
+            }
+            cursor = selector->base.get();
+            continue;
+        }
+        if (const auto *index = std::get_if<Expr::Index>(&cursor->data)) {
+            if (index->is_range || index->base == nullptr || index->index == nullptr) {
+                return nullptr;
+            }
+            const std::optional<int32_t> at = fold(*index->index);
+            if (!at || *at < 0) {
+                return nullptr;
+            }
+            cursor = index->base.get();
+            continue;
+        }
+        break;
+    }
+    const auto *named = std::get_if<Expr::Name>(&cursor->data);
+    const auto file = files_.find(current_file_);
+    if (named == nullptr || file == files_.end()) {
+        return nullptr;
+    }
+    const auto found = file->second.globals.find(named->text);
+    if (found == file->second.globals.end() || found->second.is_slice || found->second.depth != 0) {
+        return nullptr;
+    }
+    auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found->second.value);
+    if (global == nullptr) {
+        return nullptr;
+    }
+    if (start_written_.contains(global) ||
+        heavy_value(found->second.struct_id, found->second.is_array, global->getValueType())) {
+        return global;
+    }
+    return nullptr;
+}
+
+bool CodeGen::start_copy_part(const Expr &source, llvm::Type *type, uint64_t offset, std::vector<StartWrite> &out) {
+    llvm::GlobalVariable *root = type == nullptr ? nullptr : heavy_root(source);
+    if (root == nullptr) {
+        return false;
+    }
+    StartWrite write;
+    write.offset = offset;
+    write.type = type;
+    write.source = &source;
+    write.root = root;
+    out.push_back(write);
+    return true;
+}
+
+void CodeGen::commit_start_writes(std::vector<StartWrite> &writes, llvm::GlobalVariable *global, const VarDecl &var) {
+    for (StartWrite &write : writes) {
+        write.global = global;
+        write.file_id = current_file_;
+        write.loc = var.loc;
+        write.name = var.name;
+        if (write.source != nullptr) {
+            start_parts_[write.source] = global;
+        }
+        start_writes_.push_back(write);
+    }
+    if (!writes.empty()) {
+        start_written_.insert(global);
+    }
+    writes.clear();
+}
+
+void CodeGen::store_image(llvm::Value *base, uint64_t offset, llvm::Constant *value) {
+    if (value == nullptr || value->isNullValue() || terminated()) {
+        return;
+    }
+    const llvm::DataLayout &layout = module_.getDataLayout();
+    llvm::Type *type = value->getType();
+    auto at = [&](uint64_t bytes) -> llvm::Value * {
+        return bytes == 0 ? base : builder_.CreateConstInBoundsGEP1_64(i8(), base, bytes);
+    };
+    // A small part, or a scalar, is one store.
+    if (!type->isAggregateType() || layout.getTypeAllocSize(type).getFixedValue() <= 64) {
+        const llvm::Align align = layout.getABITypeAlign(type);
+        builder_.CreateAlignedStore(value, at(offset), offset % align.value() == 0 ? align : llvm::Align(1));
+        return;
+    }
+    if (auto *record = llvm::dyn_cast<llvm::StructType>(type)) {
+        const llvm::StructLayout *fields = layout.getStructLayout(record);
+        for (unsigned index = 0; index < record->getNumElements(); ++index) {
+            store_image(base, offset + fields->getElementOffset(index), value->getAggregateElement(index));
+        }
+        return;
+    }
+    auto *array = llvm::cast<llvm::ArrayType>(type);
+    const uint64_t count = array->getNumElements();
+    llvm::Type *elem = array->getElementType();
+    const uint64_t stride = layout.getTypeAllocSize(elem).getFixedValue();
+    // The same element throughout is one loop.
+    llvm::Constant *first = count == 0 ? nullptr : value->getAggregateElement(0U);
+    bool same = first != nullptr;
+    for (uint64_t index = 1; same && index < count; ++index) {
+        same = value->getAggregateElement(static_cast<unsigned>(index)) == first;
+    }
+    if (same && count > 1) {
+        store_each_element(at(offset), const_len(static_cast<int64_t>(count)), elem, first);
+        return;
+    }
+    for (uint64_t index = 0; index < count; ++index) {
+        store_image(base, offset + index * stride, value->getAggregateElement(static_cast<unsigned>(index)));
+    }
 }
 
 void CodeGen::store_defaults_each(llvm::Value *raw, uint64_t count, int struct_id, std::unordered_set<int> &seen) {
@@ -241,7 +389,7 @@ void CodeGen::store_defaults_each(llvm::Value *raw, uint64_t count, int struct_i
 }
 
 llvm::Function *CodeGen::emit_fill_function() {
-    if (fill_fn_ != nullptr || pending_fills_.empty()) {
+    if (fill_fn_ != nullptr || (pending_fills_.empty() && start_writes_.empty())) {
         return fill_fn_;
     }
     auto *type = llvm::FunctionType::get(llvm::Type::getVoidTy(context_), false);
@@ -256,6 +404,12 @@ llvm::Function *CodeGen::emit_fill_function() {
     return_type_ = fill_fn_->getReturnType();
     builder_.SetInsertPoint(llvm::BasicBlock::Create(context_, "entry", fill_fn_));
     builder_.SetCurrentDebugLocation(llvm::DebugLoc());
+    // A literal's image first. Its large default arrays are zero there and filled below.
+    for (const StartWrite &write : start_writes_) {
+        if (write.image != nullptr) {
+            store_image(write.global, write.offset, write.image);
+        }
+    }
     for (const PendingFill &fill : pending_fills_) {
         const StructLayout &layout = structs_[static_cast<std::size_t>(fill.struct_id)];
         if (heavy_defaults(fill.struct_id)) {
@@ -278,12 +432,87 @@ llvm::Function *CodeGen::emit_fill_function() {
         }
         store_each_element(raw, const_len(static_cast<int64_t>(fill.count)), layout.type, image);
     }
+    emit_start_copies();
     builder_.CreateRetVoid();
     builder_.restoreIP(saved);
     builder_.SetCurrentDebugLocation(saved_loc);
     function_ = saved_function;
     return_type_ = saved_return;
     return fill_fn_;
+}
+
+void CodeGen::emit_start_copies() {
+    std::vector<const StartWrite *> waiting;
+    for (const StartWrite &write : start_writes_) {
+        if (write.source != nullptr) {
+            waiting.push_back(&write);
+        }
+    }
+    if (waiting.empty() || graph_ == nullptr) {
+        return;
+    }
+    const uint32_t saved_file = current_file_;
+    const std::string saved_trace = trace_name_;
+    const llvm::DataLayout &layout = module_.getDataLayout();
+    // A copy reads its root after every copy into that root. The checker rejects a cycle; if one is left,
+    // the first waiting copy goes next.
+    std::vector<char> done(waiting.size(), 0);
+    auto ready = [&](std::size_t index) {
+        for (std::size_t other = 0; other < waiting.size(); ++other) {
+            if (other != index && done[other] == 0 && waiting[other]->global == waiting[index]->root) {
+                return false;
+            }
+        }
+        return true;
+    };
+    for (std::size_t left = waiting.size(); left > 0 && !terminated(); --left) {
+        std::size_t index = 0;
+        while (index < waiting.size() && (done[index] != 0 || !ready(index))) {
+            ++index;
+        }
+        if (index == waiting.size()) {
+            index = 0;
+            while (done[index] != 0) {
+                ++index;
+            }
+        }
+        done[index] = 1;
+        const StartWrite &write = *waiting[index];
+        const PackageNode *node = find_node(write.file_id);
+        if (node == nullptr) {
+            continue;
+        }
+        current_file_ = write.file_id;
+        packages_.clear();
+        push();
+        bind_package_globals();
+        bind_imports(*node);
+        trace_name_ = write.name;
+        set_loc(write.loc);
+        llvm::Value *dest = write.offset == 0 ? static_cast<llvm::Value *>(write.global)
+                                              : builder_.CreateConstInBoundsGEP1_64(i8(), write.global, write.offset);
+        if (write.type->isAggregateType()) {
+            const TypedValue place = emit_addr(*write.source);
+            if (place.value != nullptr && !terminated()) {
+                builder_.CreateMemCpy(dest, llvm::MaybeAlign(1), place.value, llvm::MaybeAlign(1),
+                                      layout.getTypeAllocSize(write.type).getFixedValue());
+            }
+        } else {
+            const TypedValue value = emit_rvalue(*write.source);
+            llvm::Value *stored = value.value == nullptr || terminated()
+                                      ? nullptr
+                                      : as_stored(value.value, value.depth, write.type, value.elem_unsigned);
+            if (stored == nullptr || stored->getType() != write.type) {
+                error(write.loc, "type mismatch");
+            } else {
+                builder_.CreateStore(stored, dest);
+            }
+        }
+        pop();
+    }
+    current_file_ = saved_file;
+    trace_name_ = saved_trace;
+    packages_.clear();
 }
 
 void CodeGen::finish_compact_globals() {

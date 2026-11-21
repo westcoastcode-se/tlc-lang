@@ -1,0 +1,19 @@
+// A field of an element of a file-scope array is that element's start value.
+type Cell struct {
+    vals [3]i16;
+    b i32 = 4;
+}
+
+var listed [2]Cell = {Cell{.vals = {5, 6, 7}, .b = 5}, 0...};
+var empty [3]Cell;
+var vals = listed[0].vals;
+var past = listed[1].vals;
+var plain = empty[2].vals;
+var b = empty[1].b;
+
+func main() i32 {
+    var bad = 0;
+    if (vals[2] != 7 || past[1] != 0 || plain[0] != 0) { bad = 1; }
+    if (b != 4) { bad = 2; }
+    return bad;
+}

@@ -1858,6 +1858,21 @@ class CodeGen {
         // Bytes from the global's start. A field `pts [N]Point` of a struct global is not at 0.
         uint64_t offset = 0;
     };
+    // A part of a file-scope `var` that `tlc.fill` writes at start, so the global stays zero in `.bss`.
+    // `image` is the constant a literal built, with its large default arrays left zero. Otherwise `source`
+    // is a place in another global, `var c = w` or the element `w` of `{w, w}`, copied from its address.
+    // Images are written first, then `pending_fills_`, then the copies, each after the copies into its root.
+    struct StartWrite {
+        llvm::GlobalVariable *global = nullptr;
+        uint64_t offset = 0;
+        llvm::Type *type = nullptr;
+        llvm::Constant *image = nullptr;
+        const Expr *source = nullptr;
+        const llvm::GlobalVariable *root = nullptr;
+        uint32_t file_id = 0;
+        SourceLoc loc;
+        std::string name;
+    };
     // Set while a struct global's defaults are built. A large array of defaulted structs among its fields,
     // not inside another array, is zero there. `struct_fills` names each one, and `tlc.fill` writes it.
     bool skip_big_defaults_ = false;
@@ -1879,16 +1894,18 @@ class CodeGen {
         return heavy;
     }
     std::unordered_map<int, bool> heavy_defaults_;
-    // The fills of a one-dimensional listed array of heavy structs. Empty unless every element is a struct
-    // literal with named fields, so the list is built the usual way.
-    void list_fills(const Expr::Init &list, const Binding &binding, std::vector<PendingFill> &out);
+    // The fills and copies of a listed array of heavy structs, at any depth. Empty unless every element is
+    // a struct literal with named fields or a place in a heavy global, so the list is built the usual way.
+    void list_fills(const Expr::Init &list, const Binding &binding, std::vector<PendingFill> &out,
+                    std::vector<StartWrite> &copies);
     // `count` elements of `struct_id` from `raw`, each written by `store_struct_defaults` in one loop.
     void store_defaults_each(llvm::Value *raw, uint64_t count, int struct_id, std::unordered_set<int> &seen);
     // Each field of `struct_id`, through nested struct fields, that is such an array. `base` is the byte offset.
     // `overlay` is the literal the global was written with. A field it names is not a default; a struct
     // literal there is searched with its own list.
+    // A named field whose value is a place in a heavy global is a copy in `copies` when that is given.
     void struct_fills(int struct_id, uint64_t base, std::vector<PendingFill> &out, int depth = 0,
-                      const Expr::Init *overlay = nullptr);
+                      const Expr::Init *overlay = nullptr, std::vector<StartWrite> *copies = nullptr);
     // A large array whose leaf is a struct with field defaults, `kCompactTail` elements or more.
     bool big_default_array(llvm::Type *type, int struct_id) {
         if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
@@ -1902,6 +1919,38 @@ class CodeGen {
         return struct_has_default(struct_id, seen) && leaf_count(type, leaf.type) >= kCompactTail;
     }
     std::vector<PendingFill> pending_fills_;
+    std::vector<StartWrite> start_writes_;
+    // A list element or a named field that a copy writes at start, and the global it belongs to. Its constant
+    // is zero only while that global's own constant is built. A copy of the global that builds the same
+    // literal again reads the source.
+    std::unordered_map<const Expr *, const llvm::GlobalVariable *> start_parts_;
+    const llvm::GlobalVariable *filling_global_ = nullptr;
+    bool start_part(const Expr *expr) const {
+        const auto found = start_parts_.find(expr);
+        return found != start_parts_.end() && found->second == filling_global_ && filling_global_ != nullptr;
+    }
+    // The global at the root of `w`, `w.pts[4].x`, or `grid[1]`, when its value holds a large array of
+    // defaulted structs. A constant read of it would build that array. Null for any other expression.
+    llvm::GlobalVariable *heavy_root(const Expr &place);
+    // A copy of `source`, typed `type`, into `offset` of the global, written at start. False when the
+    // place is not rooted in such a global.
+    bool start_copy_part(const Expr &source, llvm::Type *type, uint64_t offset, std::vector<StartWrite> &out);
+    // The writes found for one global, made its own. A copy's source is zero in that global's constant.
+    void commit_start_writes(std::vector<StartWrite> &writes, llvm::GlobalVariable *global, const VarDecl &var);
+    // A global that a start write fills. A constant read of it would miss that write.
+    std::unordered_set<const llvm::GlobalVariable *> start_written_;
+    // The non-zero parts of `value`, stored at `offset` bytes from `base`.
+    void store_image(llvm::Value *base, uint64_t offset, llvm::Constant *value);
+    // The copies in `start_writes_`, inside `tlc.fill`, each after the copies into its root.
+    void emit_start_copies();
+    // The constant of a file-scope global. A `var` that holds a large array of defaulted structs stays zero,
+    // and its non-zero bytes become an image written at start.
+    bool place_initializer(const VarDecl &var, const Binding &binding, llvm::GlobalVariable *global,
+                           llvm::Constant *value);
+    // The fills and copies of a listed array of heavy structs, through nested lists. False when an element is
+    // neither a struct literal with named fields, a nested list, nor a place in such a global.
+    bool collect_list_fills(const Expr::Init &list, llvm::ArrayType *array, uint64_t base, int struct_id,
+                            std::vector<PendingFill> &fills, std::vector<StartWrite> &copies);
     bool filled_at_start(const llvm::GlobalVariable *global) const {
         for (const PendingFill &fill : pending_fills_) {
             if (fill.global == global) {
@@ -1943,6 +1992,14 @@ class CodeGen {
         }
         std::unordered_set<int> seen;
         return low.is_array && struct_has_default(low.struct_id, seen) && leaf_count(ty, layout.type) >= kCompactTail;
+    }
+    // A struct or an array of structs whose defaults hold a large array of defaulted structs, through
+    // nested fields, or a large array of defaulted structs itself. Its full image would hold that array.
+    bool heavy_value(int struct_id, bool is_array, llvm::Type *ty) {
+        if (struct_id < 0 || struct_id >= static_cast<int>(structs_.size())) {
+            return false;
+        }
+        return heavy_defaults(struct_id) || (is_array && big_default_array(ty, struct_id));
     }
     static bool pointer_free_shells(const Lowered &low) {
         for (const TypeShell &shell : low.shells) {

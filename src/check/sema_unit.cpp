@@ -1417,7 +1417,8 @@ void Checker::bind_file_const(VarDecl &written) {
 }
 
 bool Checker::constant_array_source(const Expr &expr, std::unordered_set<std::string> &seen) {
-    // `b.row` is that field of a global of this file. Its start value is in the binary unless it runs at start.
+    // `b.row` and `rows[1].cells` are that field of a global of this file. Its start value is in the binary
+    // unless it runs at start.
     if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
         const Expr *root = selector->base.get();
         while (root != nullptr) {
@@ -1436,7 +1437,8 @@ bool Checker::constant_array_source(const Expr &expr, std::unordered_set<std::st
         const Symbol *symbol = named == nullptr ? nullptr : lookup(named->text);
         const VarDecl *var = named == nullptr ? nullptr : global_var(named->text);
         return symbol != nullptr && !symbol->is_package && !symbol->is_type && var != nullptr && !var->runtime_init &&
-               symbol->type.kind == TypeKind::Struct;
+               (symbol->type.kind == TypeKind::Struct ||
+                (symbol->type.kind == TypeKind::Array && symbol->type.element != nullptr && !is_slice(symbol->type)));
     }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
         // `grid[1]` is that row. A range is a slice, and a runtime index is not in the binary.

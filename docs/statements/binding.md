@@ -313,7 +313,9 @@ A file-scope `var copy = row`, `const copy = row`, and `var copy [2]i32 = row` c
 
 A file-scope `var copy = h` and `const frozen = h` copy that struct the same way, including a copy of a copy and a struct whose fields have defaults.
 
-A part of a global is copied the same way: a field `var x = p.x`, a nested field `var r = b.row`, an element with a constant index `var e = row[2]` and `var y = w.pts[4999].y`, and the size `var n = sizeof(w)`. The value is the global's start value. A source with no initializer is its defaults. An index that does not fold is `global initializer is not a constant`.
+A part of a global is copied the same way: a field `var x = p.x`, a nested field `var r = b.row`, an element with a constant index `var e = row[2]` and `var y = w.pts[4999].y`, a field of an element `var cells = rows[1].cells`, and the size `var n = sizeof(w)`. The value is the global's start value. A source with no initializer is its defaults. An index that does not fold is `global initializer is not a constant`.
+
+A global that holds a large array of defaulted structs, as described in [array](../types/array.md), is not built as a constant. A copy of it, or of a part of it, is written when the program starts, before any initializer that runs before `main`. The value is the same.
 
 An address is not that constant for a `var`. `var at *Point = &p`, `var at = &row[1]`, and `var y = *q` are `global initializer is not a constant`, and `--check` reports them. A `const at *i32 = &n` is a constant.
 

@@ -1,0 +1,21 @@
+// `{.f0 = {78, 0...}}` on `[4100]i32` is a compact constant: the listed element and a zero tail.
+type Row struct {
+    f0 [4100]i32;
+}
+
+const first = Row{.f0 = {78, 0...}};
+var rows [2]Row = {first};
+var mixed [2]Row = {Row{.f0 = {88, 0...}}, first};
+var grid [2][2]Row = {{first}};
+var g = mixed[1].f0[0];
+const whole = mixed[1];
+
+func main() i32 {
+    var bad = 0;
+    if (rows[0].f0[0] != 78 || rows[1].f0[0] != 0) { bad = 1; }
+    if (mixed[0].f0[0] != 88 || mixed[1].f0[0] != 78) { bad = 2; }
+    if (grid[0][0].f0[0] != 78 || grid[1][1].f0[0] != 0) { bad = 3; }
+    if (g != 78) { bad = 4; }
+    if (whole.f0[0] != 78 || whole.f0[4099] != 0) { bad = 5; }
+    return bad;
+}
