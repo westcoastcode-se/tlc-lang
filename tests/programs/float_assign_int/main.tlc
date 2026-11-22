@@ -1,22 +1,22 @@
-// A float assigned to an integer local, global, element, or pointee drops the fraction, as `i32(2.5)` does.
+// A float cast to an integer local, global, element, or pointee drops the fraction, as `i32(2.5)` does.
 // The `double` was stored as eight bytes into a four-byte slot. Under comptime that overwrote the frame.
 var g = 0;
 var gb bool = false;
-func set(p *i32) void { *p = 7.9; }
+func set(p *i32) void { *p = i32(7.9); }
 func main() i32 {
     var a = 0;
     set(&a);
-    g = 3.7;
+    g = i32(3.7);
     var row [2]i64 = {0, 0};
-    row[1] = 5.5;
+    row[1] = i64(5.5);
     var q *i64 = &row[0];
-    *q = 2.2;
+    *q = i64(2.2);
     var u u8 = 0;
-    u = 250.9;
+    u = u8(250.9);
     var k = 0;
     var pk = &k;
-    *pk = 1.5;
-    gb = 0.25;
+    *pk = i32(1.5);
+    gb = bool(0.25);
     var bad = 0;
     if (a != 7) { bad += 1; }
     if (g != 3) { bad += 2; }

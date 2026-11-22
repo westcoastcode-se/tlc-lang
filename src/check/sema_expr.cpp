@@ -203,6 +203,11 @@ void Checker::expect_value(const Type &got, const Type &want, const Expr &, Sour
         }
         return;
     }
+    // `var n i32 = 2.5` drops the fraction. That is written `i32(2.5)`. An integer still becomes a float.
+    if (is_float(got) && is_numeric(want) && !is_float(want)) {
+        mismatch(loc, want, got);
+        return;
+    }
     if (is_numeric(got) && is_numeric(want)) {
         // An alias is confirmed with a cast. `type Count const i32` still accepts a copy.
         if ((got.alias_id != 0 || want.alias_id != 0) && !allows_added_const(got, want)) {

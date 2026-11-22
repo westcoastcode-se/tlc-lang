@@ -1,0 +1,34 @@
+// A float becomes an integer only through a cast, `i32(2.5)`. Each form below is `type mismatch`.
+type Point struct {
+    x i32;
+}
+
+var g i32 = 2.5;
+
+func take(n i32) i32 {
+    return n;
+}
+
+func pinned(comptime n i32) i32 {
+    return n;
+}
+
+comptime func bias(n i32) i32 {
+    return n;
+}
+
+func give() f64 {
+    return 2.5;
+}
+
+func main() i32 {
+    var n i32 = 2.5;
+    var m = 0;
+    m = 1.5f;
+    var flag bool = 0.5;
+    var from_call i64 = give();
+    var p = Point{.x = 2.5};
+    var t (i32, u8) = (1, 2.5);
+    comptime const k = bias(2.5);
+    return take(2.5) + pinned(2.5) + m + k;
+}

@@ -1,0 +1,12 @@
+// `3e9` is an `f64`, so `last(3e9)` is a type mismatch. The call is not compiled and run with that value
+// as the length of `r`, which crashed the compiler.
+func last(comptime n i32) i32 {
+    var r [n]i32;
+    r[0] = 1;
+    r[1] = 2;
+    return r[1];
+}
+
+func main() i32 {
+    return last(3e9);
+}

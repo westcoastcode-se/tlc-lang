@@ -1,5 +1,5 @@
-// A tuple element converts to the element it is stored into: a float into an integer as `i32(2.5)` does,
-// and an integer into a float. A generic field `(T, i32)` with `T` as `i8` stored `{i32, f64}` before.
+// A tuple element converts to the element it is stored into: a cast float into an integer, and an integer
+// into a float. A generic field `(T, i32)` with `T` as `i8` stored `{i32, f64}` before.
 type Box<T type> struct {
     n T;
     pair (T, i32);
@@ -8,12 +8,12 @@ type Box<T type> struct {
 func main() i32 {
     var bad = 0;
     var box Box<i8>;
-    box.pair = (40, 2.5);
+    box.pair = (40, i32(2.5));
     if (box.pair[0] != 40i8 || box.pair[1] != 2) {
         bad |= 1;
     }
     var f (f64, u32) = (0.0, 0u32);
-    f = (2, 3.9);
+    f = (2, u32(3.9));
     if (f[0] != 2.0 || f[1] != 3u32) {
         bad |= 2;
     }

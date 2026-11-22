@@ -1,0 +1,12 @@
+compile-error: type mismatch
+stderr:
+main.tlc:6:13: error: type mismatch: expected i32, found f64
+main.tlc:25:17: error: type mismatch: expected i32, found f64
+main.tlc:27:9: error: type mismatch: expected i32, found f32
+main.tlc:28:21: error: type mismatch: expected bool, found f64
+main.tlc:29:25: error: type mismatch: expected i64, found f64
+main.tlc:30:24: error: type mismatch: expected i32, found f64
+main.tlc:31:27: error: type mismatch: expected u8, found f64
+main.tlc:32:29: error: type mismatch: expected i32, found f64
+main.tlc:33:17: error: type mismatch: expected i32, found f64
+main.tlc:33:31: error: type mismatch: expected i32, found f64

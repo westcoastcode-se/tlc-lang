@@ -1,0 +1,3 @@
+compile-error: type mismatch
+stderr:
+main.tlc:11:17: error: type mismatch: expected i32, found f64

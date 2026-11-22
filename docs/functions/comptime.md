@@ -2639,6 +2639,8 @@ retq                             # return
 
 A float is that argument too.
 
+A float passed to an integer parameter, `comptime n i32`, is `type mismatch: expected i32, found f64`, the same as for an ordinary parameter. `pinned(i32(2.5))` passes 2.
+
 `comptime if (v == 0.5)` keeps one arm.
 
 When the file is `main.tlc`, `const scale = 0.5` and the literal `0.5` call `main.take.spec.d3fe0000000000000`.

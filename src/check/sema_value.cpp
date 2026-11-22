@@ -1416,7 +1416,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             }
                         }
                     }
+                    // `last(3e9)` with `comptime n i32` is a type mismatch. The call is not run with that value.
                     if (diags_.size() != before) {
+                        node.comptime_failed = true;
                         return type_invalid();
                     }
                     const Type result = function_result(*fn);
@@ -2339,6 +2341,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 if (!count_ok) {
                     error(node.loc, "argument count");
                 }
+                const std::size_t args_mark = diags_.size();
                 for (std::size_t i = 0; i < node.args.size(); ++i) {
                     if (count_ok && i < signature->params.size()) {
                         check_call_arg(*node.args[i], signature->params[i]);
@@ -2357,6 +2360,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                             error(expr_loc(*node.args[i]), "not supported yet");
                         }
                     }
+                }
+                // `last(3e9)` with `comptime n i32` is a type mismatch. The call is not run with that value.
+                if (diags_.size() != args_mark || !count_ok) {
+                    node.comptime_failed = true;
                 }
                 if (node.callee != nullptr) {
                     const FunctionDecl *ordinary = nullptr;
