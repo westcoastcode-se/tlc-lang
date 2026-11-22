@@ -1,0 +1,7 @@
+compile-error: main.tlc:18:5: error: global initializer is not a constant
+stderr:
+main.tlc:18:5: error: global initializer is not a constant
+main.tlc:19:5: error: global initializer is not a constant
+main.tlc:20:7: error: global initializer is not a constant
+main.tlc:25:12: error: set at start, not at compile time
+main.tlc:29:12: error: set at start, not at compile time

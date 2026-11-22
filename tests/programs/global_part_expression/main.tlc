@@ -1,0 +1,64 @@
+// A file-scope value computed from parts of other globals is a constant. Each part is the value its
+// global starts with: a field, an element, a float, or a part with a part as its index.
+type W struct {
+    n i32;
+    x i32;
+    ok bool;
+    big i64;
+    u u32;
+    b u8;
+    f f64;
+}
+
+var w = W{.n = 4, .x = 1, .ok = true, .big = 5000000000, .u = 3000000000, .b = 200, .f = 2.5};
+var row = [_]i32{3, 9};
+var frow = [_]f64{1.5, 7.25};
+var at = 1;
+var fl = 2.5;
+
+var plus = w.n + 1;
+var negated = -w.n;
+var element = row[1] + 1;
+var scaled = i64(w.n) * 2;
+var wide = w.big + 1;
+var both = w.ok && true;
+var widened i64 = w.n;
+var narrowed u8 = w.n;
+var unsigned_div = w.u / 1000000000;
+var unsigned_cmp = w.u > 2000000000;
+var byte = i32(w.b) + 1;
+var by_var = row[at] + 1;
+var by_part = row[w.x - 1] * 2;
+var mixed = w.n + w.x * row[0];
+var float_cmp = w.f > 1.0;
+var float_name = i32(fl * 4.0) + 1;
+var float_element = i32(frow[1] * 4.0);
+const folded = w.n + 1;
+var chained = plus * 2;
+
+func main() i32 {
+    if (plus != 5 || negated != -4 || element != 10 || scaled != 8) {
+        return 1;
+    }
+    if (wide != 5000000001 || !both || widened != 4 || narrowed != 4) {
+        return 2;
+    }
+    if (unsigned_div != 3 || !unsigned_cmp || byte != 201) {
+        return 3;
+    }
+    if (by_var != 10 || by_part != 6 || mixed != 7) {
+        return 4;
+    }
+    if (!float_cmp || float_name != 11 || float_element != 29) {
+        return 5;
+    }
+    if (folded != 5 || chained != 10) {
+        return 6;
+    }
+    // The parts are read at start. A later store does not change them.
+    w.n = 100;
+    if (plus != 5) {
+        return 7;
+    }
+    return 42;
+}

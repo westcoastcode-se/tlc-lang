@@ -565,6 +565,10 @@ class Checker {
     bool comptime_body_broken(const FunctionDecl &fn);
     // `expr` names a global of `unit` whose value is set at start, `var h = make()`.
     bool copies_startup_global(const Expr &expr, const TranslationUnit &unit) const;
+    // `h + 1` and `row[h]` read such a global in a part of the value. The value is set at start too.
+    bool reads_startup_global(const Expr &expr, const TranslationUnit &unit) const;
+    // `1 + give()` holds a call that does not fold. Only a call that is the whole initializer runs at start.
+    bool nested_startup_call(const Expr &expr);
     // `&p` or `*q` in a file-scope initializer, outside a call. Such a `var` is not a constant.
     bool reads_through_pointer(const Expr &expr) const;
     // `var h = make()`, or a copy of one: the value exists only once the program has started.

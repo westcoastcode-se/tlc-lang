@@ -4,6 +4,8 @@
 
 #include "gen/detail.hpp"
 
+#include <algorithm>
+
 namespace tlc {
 
 llvm::Constant *CodeGen::const_default_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags) {
@@ -1090,6 +1092,203 @@ llvm::Constant *CodeGen::const_place(const Expr &expr, int &struct_id) {
     Binding scalar = binding;
     scalar.value = nullptr;
     return const_initializer(expr, scalar);
+}
+
+std::optional<CodeGen::WideInt> CodeGen::part_value(const Expr &place) {
+    int struct_id = -1;
+    auto *constant = llvm::dyn_cast_or_null<llvm::ConstantInt>(const_place(place, struct_id));
+    if (constant == nullptr) {
+        return std::nullopt;
+    }
+    const unsigned width = constant->getBitWidth();
+    if (width == 1) {
+        return WideInt{constant->getZExtValue(), 32, false};
+    }
+    if (width != 8 && width != 16 && width != 32 && width != 64) {
+        return std::nullopt;
+    }
+    // The constant has no sign. The field, or the element of the array, gives it.
+    const auto field_unsigned = [&](const Expr::Selector &selector) -> std::optional<bool> {
+        int base_id = -1;
+        llvm::Constant *base = selector.base == nullptr ? nullptr : const_place(*selector.base, base_id);
+        int index = -1;
+        const FieldLayout *field = base == nullptr || base_id < 0 ? nullptr : find_field(base_id, selector.field, index);
+        if (field == nullptr) {
+            return std::nullopt;
+        }
+        return field->elem_unsigned;
+    };
+    std::optional<bool> is_unsigned;
+    if (const auto *selector = std::get_if<Expr::Selector>(&place.data)) {
+        is_unsigned = field_unsigned(*selector);
+    } else if (const auto *index = std::get_if<Expr::Index>(&place.data)) {
+        const Expr *cursor = index->base.get();
+        while (cursor != nullptr) {
+            const auto *inner = std::get_if<Expr::Index>(&cursor->data);
+            if (inner == nullptr) {
+                break;
+            }
+            cursor = inner->base.get();
+        }
+        if (cursor != nullptr) {
+            if (const auto *selector = std::get_if<Expr::Selector>(&cursor->data)) {
+                is_unsigned = field_unsigned(*selector);
+            } else if (const auto *named = std::get_if<Expr::Name>(&cursor->data)) {
+                if (const auto file = files_.find(current_file_); file != files_.end()) {
+                    if (const auto found = file->second.globals.find(named->text);
+                        found != file->second.globals.end()) {
+                        is_unsigned = found->second.elem_unsigned;
+                    }
+                }
+            }
+        }
+    }
+    if (!is_unsigned) {
+        return std::nullopt;
+    }
+    return WideInt{constant->getZExtValue(), static_cast<int>(width), *is_unsigned};
+}
+
+std::optional<CodeGen::FoldedNumber> CodeGen::part_number(const Expr &expr) {
+    const llvm::Constant *constant = nullptr;
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        const auto file = files_.find(current_file_);
+        if (file == files_.end() || !file->second.folded.contains(named->text)) {
+            return std::nullopt;
+        }
+        const auto found = file->second.globals.find(named->text);
+        const auto *global = found == file->second.globals.end()
+                                 ? nullptr
+                                 : llvm::dyn_cast_or_null<llvm::GlobalVariable>(found->second.value);
+        if (global == nullptr || !found->second.elem_float || found->second.depth != 0 || found->second.is_array ||
+            !global->hasInitializer() || start_written_.contains(global)) {
+            return std::nullopt;
+        }
+        constant = global->getInitializer();
+    } else {
+        int struct_id = -1;
+        constant = const_place(expr, struct_id);
+    }
+    const auto *real = llvm::dyn_cast_or_null<llvm::ConstantFP>(constant);
+    if (real == nullptr) {
+        return std::nullopt;
+    }
+    const bool wide = real->getType()->isDoubleTy();
+    if (!wide && !real->getType()->isFloatTy()) {
+        return std::nullopt;
+    }
+    return FoldedNumber{wide ? real->getValueAPF().convertToDouble() : real->getValueAPF().convertToFloat(), true, wide};
+}
+
+bool CodeGen::collect_part_values(const Expr &expr, std::vector<const llvm::GlobalVariable *> *heavy) {
+    const bool place = std::holds_alternative<Expr::Selector>(expr.data) || std::holds_alternative<Expr::Index>(expr.data);
+    if (place || std::holds_alternative<Expr::Name>(expr.data)) {
+        // `w.n` when `w` is written at start, and `n` after `var n = w.n`, hold zero until then.
+        if (const llvm::GlobalVariable *root = heavy_root(expr)) {
+            if (heavy != nullptr) {
+                if (std::find(heavy->begin(), heavy->end(), root) == heavy->end()) {
+                    heavy->push_back(root);
+                }
+                return true;
+            }
+            // A constant builds the value from what the global was written as. `const k = c + 1` after
+            // `var c = w.n` is `w.n + 1`.
+            if (!place) {
+                const auto *named = std::get_if<Expr::Name>(&expr.data);
+                const VarDecl *written = global_decl(named->text);
+                if (written == nullptr || written->init == nullptr || written->runtime_init ||
+                    !root->getValueType()->isIntegerTy() || !const_names_.insert(named->text).second) {
+                    return false;
+                }
+                llvm::Constant *value = collect_part_values(*written->init, nullptr)
+                                            ? folded_scalar(*written->init, root->getValueType())
+                                            : nullptr;
+                const_names_.erase(named->text);
+                auto *constant = llvm::dyn_cast_or_null<llvm::ConstantInt>(value);
+                if (constant == nullptr) {
+                    return false;
+                }
+                bool is_unsigned = false;
+                if (const auto file = files_.find(current_file_); file != files_.end()) {
+                    if (const auto binding = file->second.globals.find(named->text);
+                        binding != file->second.globals.end()) {
+                        is_unsigned = binding->second.elem_unsigned;
+                    }
+                }
+                const unsigned width = constant->getBitWidth();
+                part_values_[&expr] = width == 1 ? WideInt{constant->getZExtValue(), 32, false}
+                                                 : WideInt{constant->getZExtValue(), static_cast<int>(width), is_unsigned};
+                return true;
+            }
+        }
+        if (fold(expr) || fold_wide(expr)) {
+            return true;
+        }
+        if (!place) {
+            if (const std::optional<FoldedNumber> number = part_number(expr)) {
+                part_numbers_[&expr] = *number;
+            }
+            return true;
+        }
+        // `row[w.n]` needs the index first.
+        for (const Expr *cursor = &expr; cursor != nullptr;) {
+            if (const auto *selector = std::get_if<Expr::Selector>(&cursor->data)) {
+                cursor = selector->base.get();
+            } else if (const auto *index = std::get_if<Expr::Index>(&cursor->data)) {
+                if (index->index != nullptr && !collect_part_values(*index->index, heavy)) {
+                    return false;
+                }
+                cursor = index->base.get();
+            } else {
+                break;
+            }
+        }
+        if (heavy != nullptr && !heavy->empty()) {
+            return true;
+        }
+        if (const std::optional<FoldedNumber> number = part_number(expr)) {
+            part_numbers_[&expr] = *number;
+            return true;
+        }
+        const std::optional<WideInt> value = part_value(expr);
+        if (!value) {
+            return false;
+        }
+        part_values_[&expr] = *value;
+        return true;
+    }
+    if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
+        return unary->expr == nullptr || collect_part_values(*unary->expr, heavy);
+    }
+    if (const auto *binary = std::get_if<Expr::Binary>(&expr.data)) {
+        return (binary->lhs == nullptr || collect_part_values(*binary->lhs, heavy)) &&
+               (binary->rhs == nullptr || collect_part_values(*binary->rhs, heavy));
+    }
+    if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
+        return cast->expr == nullptr || collect_part_values(*cast->expr, heavy);
+    }
+    return true;
+}
+
+llvm::Constant *CodeGen::folded_scalar(const Expr &expr, llvm::Type *ty) {
+    auto *int_ty = llvm::dyn_cast_or_null<llvm::IntegerType>(ty);
+    if (int_ty == nullptr) {
+        return nullptr;
+    }
+    if (const std::optional<int32_t> value = fold(expr)) {
+        if (int_ty->getBitWidth() == 1) {
+            return llvm::ConstantInt::get(int_ty, *value != 0 ? 1 : 0, false);
+        }
+        return wide_constant(WideInt{static_cast<uint32_t>(*value), 32, false}, ty);
+    }
+    if (const std::optional<WideInt> wide = fold_wide(expr)) {
+        if (int_ty->getBitWidth() == 1) {
+            const uint64_t bits = wide->bits >= 64 ? wide->value : wide->value & ((uint64_t{1} << wide->bits) - 1);
+            return llvm::ConstantInt::get(int_ty, bits != 0 ? 1 : 0, false);
+        }
+        return wide_constant(*wide, ty);
+    }
+    return nullptr;
 }
 
 llvm::Constant *CodeGen::const_struct_base(const Expr &expr, int struct_id) {
@@ -2407,6 +2606,13 @@ void CodeGen::apply_initializer(const VarDecl &var) {
             return;
         }
         llvm::Constant *value = var.init == nullptr || global == nullptr ? nullptr : const_initializer(*var.init, found->second);
+        // `const k = w.n + 1` folds with the value each part starts with.
+        if (value == nullptr && global != nullptr && global->getValueType()->isIntegerTy() &&
+            collect_part_values(*var.init, nullptr)) {
+            value = folded_scalar(*var.init, global->getValueType());
+        }
+        part_values_.clear();
+        part_numbers_.clear();
         // A compact array is accepted. It waits for the global of its own type.
         if (value == nullptr || !set_global_initializer(global, value)) {
             error(var.loc, "global initializer is not a constant");
@@ -2602,12 +2808,15 @@ void CodeGen::apply_initializer(const VarDecl &var) {
             !same_layout(part->getType(), global->getValueType())) {
             part = nullptr;
         }
-        if (part == nullptr || !set_global_initializer(global, part)) {
+        if (part != nullptr && set_global_initializer(global, part)) {
+            file.folded.insert(key);
+            return;
+        }
+        // `var n i64 = w.n` converts that integer. It folds below.
+        if (global == nullptr || !global->getValueType()->isIntegerTy()) {
             error(var.loc, "global initializer is not a constant");
             return;
         }
-        file.folded.insert(key);
-        return;
     }
     // `var copy = h` copies that struct's constant. The source is built again from what it was written as.
     if (found_early != file.globals.end() && found_early->second.struct_id >= 0 && found_early->second.depth == 0 &&
@@ -2621,6 +2830,41 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         }
         file.folded.insert(key);
         return;
+    }
+    // `var n = w.n + 1` and `var m = row[1] * 2` fold with the value each part of a global starts with.
+    // When that global is written at start, `w` with a large array of defaulted structs, the value is
+    // written at start too, after `w`. So is `var m = n + 1` after `var n = w.n`.
+    struct ClearParts {
+        std::unordered_map<const Expr *, WideInt> &values;
+        std::unordered_map<const Expr *, FoldedNumber> &numbers;
+        ~ClearParts() {
+            values.clear();
+            numbers.clear();
+        }
+    } clear_parts{part_values_, part_numbers_};
+    if (found_early != file.globals.end() && found_early->second.depth == 0 && !found_early->second.is_array &&
+        !found_early->second.is_slice && found_early->second.struct_id < 0) {
+        auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found_early->second.value);
+        if (global != nullptr && global->getValueType()->isIntegerTy()) {
+            std::vector<const llvm::GlobalVariable *> heavy;
+            const bool valued = collect_part_values(*var.init, &heavy);
+            if (!heavy.empty()) {
+                StartWrite write;
+                write.type = global->getValueType();
+                write.source = var.init.get();
+                write.root = heavy.front();
+                write.roots = heavy;
+                std::vector<StartWrite> writes{write};
+                set_global_initializer(global, llvm::Constant::getNullValue(global->getValueType()));
+                commit_start_writes(writes, global, var);
+                file.folded.insert(key);
+                return;
+            }
+            if (!valued) {
+                error(var.loc, "global initializer is not a constant");
+                return;
+            }
+        }
     }
     const auto value = fold(*var.init);
     const auto found = file.globals.find(key);

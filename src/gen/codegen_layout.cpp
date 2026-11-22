@@ -2235,8 +2235,9 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                         if (fold(node)) {
                             return as_int(32, false);
                         }
-                        // `var g = row[2]` reads that element of a global array.
-                        if (item.base != nullptr && item.index != nullptr && fold(*item.index)) {
+                        // `var g = row[2]` reads that element of a global array. `row[a]` with `a` a `var`
+                        // is that element type too. The index folds once `a` has its value.
+                        if (item.base != nullptr && item.index != nullptr) {
                             if (const auto base = raw(*item.base)) {
                                 return element_lowered(*base);
                             }

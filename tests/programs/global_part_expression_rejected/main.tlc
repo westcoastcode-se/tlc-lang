@@ -1,0 +1,36 @@
+// A call runs before `main` only when it is the whole initializer. A `const` is a constant, so it does
+// not read a global set at start. A comptime call does not read one either.
+type W struct {
+    n i32;
+}
+
+func make() W {
+    return W{.n = 4};
+}
+
+func give() i32 {
+    return 6;
+}
+
+var g = make();
+var h = give();
+
+var plus_call = 1 + give();
+var call_part = make().n;
+const from_start = h + 1;
+var part = g.n * 2;
+var name = h + 1;
+
+comptime func read_part() i32 {
+    return part;
+}
+
+comptime func read_name() i32 {
+    return name;
+}
+
+func main() i32 {
+    comptime const a = read_part();
+    comptime const b = read_name();
+    return a + b;
+}

@@ -1,0 +1,38 @@
+// A value computed from a part of a global that holds a large array of defaulted structs is written at
+// start, after that global. So is a value computed from such a copy. The binary holds no copy of the array.
+type Point struct {
+    x i32 = 1;
+    y i32 = 2;
+}
+
+type World struct {
+    n i32 = 3;
+    pts [1000000]Point;
+    u u32 = 7;
+}
+
+var w = World{.n = 5};
+var other World;
+
+var plus = w.n + 1;
+var deep = w.pts[999999].y * 10 + w.n;
+var copy = w.n;
+var from_copy = copy + 1;
+var mixed = copy + w.u;
+var flag = w.n > 4;
+var two_roots = w.n + other.n;
+
+comptime func doubled() i32 {
+    return plus * 2;
+}
+
+func main() i32 {
+    comptime const k = doubled();
+    if (plus != 6 || deep != 25 || from_copy != 6 || mixed != 12) {
+        return 1;
+    }
+    if (!flag || two_roots != 8 || k != 12) {
+        return 2;
+    }
+    return 42;
+}

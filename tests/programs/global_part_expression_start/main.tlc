@@ -1,0 +1,34 @@
+// A value computed from a global set at start, `var h = give()`, runs at start too, after that global.
+type W struct {
+    n i32;
+    x i32;
+}
+
+func make() W {
+    return W{.n = 4, .x = 1};
+}
+
+func give() i32 {
+    return 6;
+}
+
+var g = make();
+var h = give();
+var row = [_]i32{3, 9};
+
+var part = g.n + 1;
+var name = h + 1;
+var negated = -h;
+var element = row[h - 5];
+var chained = name * 2;
+var widened = i64(h) * 2;
+
+func main() i32 {
+    if (part != 5 || name != 7 || negated != -6) {
+        return 1;
+    }
+    if (element != 9 || chained != 14 || widened != 12) {
+        return 2;
+    }
+    return 42;
+}

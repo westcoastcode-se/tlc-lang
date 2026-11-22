@@ -1869,6 +1869,8 @@ class CodeGen {
         llvm::Constant *image = nullptr;
         const Expr *source = nullptr;
         const llvm::GlobalVariable *root = nullptr;
+        // Every global a computed value reads, `var n = w.n + v.n`. The copy runs after the copies into each.
+        std::vector<const llvm::GlobalVariable *> roots;
         uint32_t file_id = 0;
         SourceLoc loc;
         std::string name;
@@ -2049,6 +2051,17 @@ class CodeGen {
     std::optional<WideInt> fold_global_wide(uint32_t file, const std::string &name, bool allow_local_static) const;
     // That value converted to the integer type `ty`: sign-extended from a signed width, then truncated.
     llvm::Constant *wide_constant(const WideInt &wide, llvm::Type *ty) const;
+    // Each part of a global in the file-scope initializer that folds now, `w.n` in `var n = w.n + 1`, and the
+    // value it starts with. `fold` and `fold_wide` read it. It is empty outside that initializer.
+    std::unordered_map<const Expr *, WideInt> part_values_;
+    // Records each part of `expr` in `part_values_`. A part of a global written at start, `w.n` when `w`
+    // holds a large array of defaulted structs, is not a constant here: its global goes in `heavy`. With
+    // no `heavy`, that part is built as a constant too. False when a part has no integer value.
+    bool collect_part_values(const Expr &expr, std::vector<const llvm::GlobalVariable *> *heavy);
+    // The integer value of a part, `w.n` or `row[1]`, from the constant its global starts with.
+    std::optional<WideInt> part_value(const Expr &place);
+    // `expr` folded to the integer or bool type `ty`. Null when it does not fold.
+    llvm::Constant *folded_scalar(const Expr &expr, llvm::Type *ty);
     // What a comptime pointer expression points at. Null when it is not one.
     const Expr *comptime_pointee(const Expr &pointer, std::unordered_set<std::string> &seen) const;
     // A bare local `const` recorded while this function is emitted. `fold` does not see it.
@@ -2087,6 +2100,11 @@ class CodeGen {
         bool is_float = false;
         bool wide = false;
     };
+    // Each float global or float part in the file-scope initializer that folds now, `fl` and `w.f` in
+    // `var b = w.f > fl`, and the value it starts with. `fold_number` reads it.
+    std::unordered_map<const Expr *, FoldedNumber> part_numbers_;
+    // That value from the constant the global starts with. Empty when it is not a float.
+    std::optional<FoldedNumber> part_number(const Expr &expr);
     std::optional<FoldedNumber> fold_number(const Expr &expr) const;
     std::optional<FoldedNumber> fold_number(const Expr &expr, std::unordered_set<std::string> &seen) const;
     void emit_function(const FunctionDecl &fn);

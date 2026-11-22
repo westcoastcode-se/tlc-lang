@@ -334,7 +334,8 @@ std::optional<int32_t> CodeGen::fold_global(uint32_t file, const std::string &na
             continue;
         }
         const auto *variable = llvm::dyn_cast<llvm::GlobalVariable>(global->second.value);
-        if (variable == nullptr || !variable->hasInitializer()) {
+        // `var c = w.n` when `w` is written at start holds zero until then. Zero is not its value.
+        if (variable == nullptr || !variable->hasInitializer() || start_written_.contains(variable)) {
             continue;
         }
         if (const auto *constant = llvm::dyn_cast<llvm::ConstantInt>(variable->getInitializer())) {
@@ -373,7 +374,7 @@ std::optional<CodeGen::WideInt> CodeGen::fold_global_wide(uint32_t file, const s
         }
         const auto *variable = llvm::dyn_cast_or_null<llvm::GlobalVariable>(global->second.value);
         if (variable == nullptr || !variable->hasInitializer() || global->second.elem_bool ||
-            global->second.depth != 0) {
+            global->second.depth != 0 || start_written_.contains(variable)) {
             continue;
         }
         const auto *constant = llvm::dyn_cast<llvm::ConstantInt>(variable->getInitializer());
@@ -397,6 +398,12 @@ std::optional<CodeGen::FoldedNumber> CodeGen::fold_number(const Expr &expr, std:
     const auto from_int = [](int32_t value) {
         return FoldedNumber{static_cast<double>(value), false, false};
     };
+    // `fl` and `w.f` in `var b = w.f > 1.0` are the values they start with.
+    if (!part_numbers_.empty()) {
+        if (const auto part = part_numbers_.find(&expr); part != part_numbers_.end()) {
+            return part->second;
+        }
+    }
     if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
         if (cast->indirections != 0 || cast->is_fn_ptr || cast->expr == nullptr) {
             return std::nullopt;
@@ -794,6 +801,12 @@ bool CodeGen::wide_operand(const Expr &expr, int depth) const {
     const auto wide_name = [&](const std::string &type_name) {
         return type_name == "u32" || type_name == "u64" || type_name == "i64";
     };
+    // `w.u` of a `u32` field folds at that width, like a `u32` global.
+    if (!part_values_.empty()) {
+        if (const auto part = part_values_.find(&expr); part != part_values_.end()) {
+            return wide_bits(part->second.bits, part->second.is_unsigned);
+        }
+    }
     return std::visit(
         [&](const auto &node) -> bool {
             using T = std::decay_t<decltype(node)>;
@@ -880,6 +893,24 @@ std::optional<int32_t> CodeGen::wide_as_i32(const Expr &expr, TokenKind op, int3
 
 std::optional<int32_t> CodeGen::fold(const Expr &expr) const {
     auto wrap = [](int64_t value) { return static_cast<int32_t>(static_cast<uint32_t>(value)); };
+    // `w.n` in `var n = w.n + 1` is the value that part starts with. A value past `i32` folds in `fold_wide`.
+    if (!part_values_.empty()) {
+        if (const auto part = part_values_.find(&expr); part != part_values_.end()) {
+            const WideInt &wide = part->second;
+            const uint64_t bits = wide.value & wide_mask(wide.bits);
+            if (wide.is_unsigned) {
+                return bits > 2147483647ULL ? std::nullopt : std::optional<int32_t>(static_cast<int32_t>(bits));
+            }
+            int64_t value = static_cast<int64_t>(bits);
+            if (wide.bits < 64 && (bits & (uint64_t{1} << static_cast<unsigned>(wide.bits - 1))) != 0) {
+                value = static_cast<int64_t>(bits | ~wide_mask(wide.bits));
+            }
+            if (value < -2147483647LL - 1 || value > 2147483647LL) {
+                return std::nullopt;
+            }
+            return static_cast<int32_t>(value);
+        }
+    }
     return std::visit(
         [&](const auto &node) -> std::optional<int32_t> {
             using T = std::decay_t<decltype(node)>;
@@ -1289,6 +1320,11 @@ std::optional<CodeGen::WideInt> CodeGen::fold_wide(const Expr &expr) const {
                           std::unordered_set<std::string> &seen) -> std::optional<WideInt> {
         if (depth > 32) {
             return std::nullopt;
+        }
+        if (!part_values_.empty()) {
+            if (const auto part = part_values_.find(&node); part != part_values_.end()) {
+                return part->second;
+            }
         }
         return std::visit(
             [&](const auto &item) -> std::optional<WideInt> {

@@ -14,6 +14,8 @@
 
 #include "gen/gen.hpp"
 
+#include <algorithm>
+
 namespace tlc {
 
 bool CodeGen::same_layout(llvm::Type *got, llvm::Type *want) const {
@@ -459,7 +461,12 @@ void CodeGen::emit_start_copies() {
     std::vector<char> done(waiting.size(), 0);
     auto ready = [&](std::size_t index) {
         for (std::size_t other = 0; other < waiting.size(); ++other) {
-            if (other != index && done[other] == 0 && waiting[other]->global == waiting[index]->root) {
+            if (other == index || done[other] != 0) {
+                continue;
+            }
+            const StartWrite &write = *waiting[index];
+            if (waiting[other]->global == write.root ||
+                std::find(write.roots.begin(), write.roots.end(), waiting[other]->global) != write.roots.end()) {
                 return false;
             }
         }

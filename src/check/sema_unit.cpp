@@ -1509,15 +1509,38 @@ bool Checker::set_at_start(const VarDecl &var, const TranslationUnit &unit, int 
         }
         return true;
     }
-    if (const auto *named = std::get_if<Expr::Name>(&var.init->data)) {
-        for (const TopDecl &decl : unit.decls) {
-            if (const auto *source = std::get_if<VarDecl>(&decl.data);
-                source != nullptr && source != &var && source->name == named->text && source->owner.empty()) {
-                return set_at_start(*source, unit, depth + 1);
+    // `var n = h`, `var n = g.n`, `var n = h + 1`, and `var n = row[h]` read such a global.
+    const auto reads = [&](const auto &self, const Expr &expr) -> bool {
+        if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+            for (const TopDecl &decl : unit.decls) {
+                if (const auto *source = std::get_if<VarDecl>(&decl.data);
+                    source != nullptr && source != &var && source->name == named->text && source->owner.empty()) {
+                    return set_at_start(*source, unit, depth + 1);
+                }
             }
+            return false;
         }
-    }
-    return false;
+        if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+            return selector->base != nullptr && self(self, *selector->base);
+        }
+        if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+            return (index->base != nullptr && self(self, *index->base)) ||
+                   (index->index != nullptr && self(self, *index->index));
+        }
+        if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
+            // `&h` is the address, which is fixed.
+            return unary->op != TokenKind::Amp && unary->expr != nullptr && self(self, *unary->expr);
+        }
+        if (const auto *binary = std::get_if<Expr::Binary>(&expr.data)) {
+            return (binary->lhs != nullptr && self(self, *binary->lhs)) ||
+                   (binary->rhs != nullptr && self(self, *binary->rhs));
+        }
+        if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
+            return cast->expr != nullptr && self(self, *cast->expr);
+        }
+        return false;
+    };
+    return reads(reads, *var.init);
 }
 
 bool Checker::copies_startup_global(const Expr &expr, const TranslationUnit &unit) const {
@@ -1544,6 +1567,66 @@ bool Checker::copies_startup_global(const Expr &expr, const TranslationUnit &uni
             var != nullptr && var->name == named->text && var->owner.empty() && var->runtime_init) {
             return true;
         }
+    }
+    return false;
+}
+
+bool Checker::reads_startup_global(const Expr &expr, const TranslationUnit &unit) const {
+    if (copies_startup_global(expr, unit)) {
+        return true;
+    }
+    if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
+        // `&h` is the address, which is fixed.
+        return unary->op != TokenKind::Amp && unary->expr != nullptr && reads_startup_global(*unary->expr, unit);
+    }
+    if (const auto *binary = std::get_if<Expr::Binary>(&expr.data)) {
+        return (binary->lhs != nullptr && reads_startup_global(*binary->lhs, unit)) ||
+               (binary->rhs != nullptr && reads_startup_global(*binary->rhs, unit));
+    }
+    if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
+        return cast->expr != nullptr && reads_startup_global(*cast->expr, unit);
+    }
+    // `row[h]` reads `h`. The root of `h.rows[1]` was tested above.
+    const Expr *cursor = &expr;
+    while (cursor != nullptr) {
+        if (const auto *selector = std::get_if<Expr::Selector>(&cursor->data)) {
+            cursor = selector->base.get();
+        } else if (const auto *index = std::get_if<Expr::Index>(&cursor->data)) {
+            if ((index->index != nullptr && reads_startup_global(*index->index, unit)) ||
+                (index->end != nullptr && reads_startup_global(*index->end, unit))) {
+                return true;
+            }
+            cursor = index->base.get();
+        } else {
+            break;
+        }
+    }
+    return false;
+}
+
+bool Checker::nested_startup_call(const Expr &expr) {
+    if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
+        // A `comptime func`, `row.len()`, and a folded `mem.memeql` are constants.
+        return !fold_int(expr) && !fold_wide_int(expr) && call->comptime_struct == nullptr && !call->comptime_text &&
+               !call->comptime_failed && !fold_mem_compare(*call);
+    }
+    if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
+        return unary->expr != nullptr && nested_startup_call(*unary->expr);
+    }
+    if (const auto *binary = std::get_if<Expr::Binary>(&expr.data)) {
+        return (binary->lhs != nullptr && nested_startup_call(*binary->lhs)) ||
+               (binary->rhs != nullptr && nested_startup_call(*binary->rhs));
+    }
+    if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
+        return cast->expr != nullptr && nested_startup_call(*cast->expr);
+    }
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        return selector->base != nullptr && nested_startup_call(*selector->base);
+    }
+    if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+        return (index->base != nullptr && nested_startup_call(*index->base)) ||
+               (index->index != nullptr && nested_startup_call(*index->index)) ||
+               (index->end != nullptr && nested_startup_call(*index->end));
     }
     return false;
 }
@@ -2144,6 +2227,18 @@ void Checker::check_globals(const TranslationUnit &unit) {
                                (runs_at_startup(*var->init) || want.kind == TypeKind::Tuple ||
                                 startup_value(startup_value, *var->init))) {
                         const_cast<VarDecl *>(var)->runtime_init = true;
+                    } else if (!var->is_extern && !(var->is_const_decl && var->is_comptime) &&
+                               nested_startup_call(*var->init)) {
+                        // `var n = 1 + give()` would run `give` before `main`. Only a whole call runs then.
+                        error(var->loc, "global initializer is not a constant");
+                    } else if (!var->is_extern && !(var->is_const_decl && var->is_comptime) &&
+                               reads_startup_global(*var->init, unit)) {
+                        // `var n = h + 1` after `var h = give()` runs at start, after `h`. A `const` does not.
+                        if (var->is_const_decl) {
+                            error(var->loc, "global initializer is not a constant");
+                        } else {
+                            const_cast<VarDecl *>(var)->runtime_init = true;
+                        }
                     } else if (var->is_const_decl && !var->is_comptime && unfolded_call(unfolded_call, *var->init)) {
                         // `const pt Point = {.x = give()}` would run `give` before `main`. A `const` does not.
                         error(var->loc, "global initializer is not a constant");
