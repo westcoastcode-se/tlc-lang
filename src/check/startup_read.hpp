@@ -84,17 +84,20 @@ bool Checker::startup_read_fault(const FunctionDecl &fn) {
             locals.insert(param.name);
         }
         startup_detail::collect_locals(*current.body, locals);
-        const auto global_set_at_start = [&](const std::string &name) {
-            if (locals.contains(name)) {
+        const uint32_t file = comptime_decl_file(current);
+        // `h`, a package sibling's `h`, and `st.h` of an imported package.
+        const auto global_set_at_start = [&](const Expr &root) {
+            const auto *named = std::get_if<Expr::Name>(&root.data);
+            const auto *selector = std::get_if<Expr::Selector>(&root.data);
+            const auto *base = selector == nullptr || selector->base == nullptr
+                                   ? nullptr
+                                   : std::get_if<Expr::Name>(&selector->base->data);
+            if ((named != nullptr && locals.contains(named->text)) || (base != nullptr && locals.contains(base->text))) {
                 return false;
             }
-            for (const TopDecl &decl : unit->decls) {
-                if (const auto *var = std::get_if<VarDecl>(&decl.data);
-                    var != nullptr && var->name == name && var->owner.empty()) {
-                    return set_at_start(*var, *unit);
-                }
-            }
-            return false;
+            uint32_t owner = 0;
+            const VarDecl *var = file_scope_var(root, file, owner);
+            return var != nullptr && set_at_start(*var, owner);
         };
         const auto comptime_callee_of = [&](const Expr::Call &call) -> const FunctionDecl * {
             const auto *named = call.callee == nullptr ? nullptr : std::get_if<Expr::Name>(&call.callee->data);
@@ -117,7 +120,7 @@ bool Checker::startup_read_fault(const FunctionDecl &fn) {
                         return item != nullptr && self(self, *item);
                     };
                     if constexpr (std::is_same_v<T, Expr::Name>) {
-                        if (global_set_at_start(node.text)) {
+                        if (global_set_at_start(expr)) {
                             report_comptime_fault(node.loc, "set at start, not at compile time", current.name);
                             return true;
                         }
@@ -147,6 +150,10 @@ bool Checker::startup_read_fault(const FunctionDecl &fn) {
                         }
                         return false;
                     } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                        if (global_set_at_start(expr)) {
+                            report_comptime_fault(node.loc, "set at start, not at compile time", current.name);
+                            return true;
+                        }
                         return sub(node.base);
                     } else if constexpr (std::is_same_v<T, Expr::Index>) {
                         return sub(node.base) || sub(node.index) || sub(node.end);

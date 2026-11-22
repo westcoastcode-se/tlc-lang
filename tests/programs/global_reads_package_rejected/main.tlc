@@ -1,0 +1,20 @@
+// A global of an imported package set at start is not a constant. A `const` does not read it, and
+// neither does a comptime call, directly or through a copy.
+import "conf";
+
+const from_start = conf.h + 1;
+var copy = conf.h * 2;
+
+comptime func direct() i32 {
+    return conf.h;
+}
+
+comptime func through() i32 {
+    return copy + conf.h_next;
+}
+
+func main() i32 {
+    comptime const a = direct();
+    comptime const b = through();
+    return a + b;
+}

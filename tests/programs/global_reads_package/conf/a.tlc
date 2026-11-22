@@ -1,0 +1,18 @@
+package conf;
+
+export type W struct {
+    export n i32;
+    export x i32;
+}
+
+export type G struct {
+    export cells [2]i32;
+}
+
+export var w = W{.n = 4, .x = 1};
+export const level = 7;
+export var lv = 7;
+export var row = [_]i32{3, 9};
+export const crow = [_]i32{5, 6};
+export var grid = G{.cells = {1, 2}};
+export var fl = 2.5;

@@ -1417,11 +1417,37 @@ void Checker::bind_file_const(VarDecl &written) {
 }
 
 bool Checker::constant_array_source(const Expr &expr, std::unordered_set<std::string> &seen) {
-    // `b.row` and `rows[1].cells` are that field of a global of this file. Its start value is in the binary
-    // unless it runs at start.
+    // `conf.row` is the global of an imported package. That package starts before this file, and its own
+    // file checked the initializer.
+    const auto package_member = [&](const Expr &place) -> const Symbol * {
+        const auto *selector = std::get_if<Expr::Selector>(&place.data);
+        const auto *base = selector == nullptr || selector->base == nullptr
+                               ? nullptr
+                               : std::get_if<Expr::Name>(&selector->base->data);
+        const Symbol *package = base == nullptr ? nullptr : lookup(base->text);
+        return package == nullptr || !package->is_package ? nullptr
+                                                          : find_export(package->package_file, selector->field);
+    };
+    const auto sized_array = [&](const Type &type) {
+        return type.kind == TypeKind::Array && type.element != nullptr && !is_slice(type);
+    };
+    if (const Symbol *member = package_member(expr)) {
+        uint32_t owner = 0;
+        const VarDecl *var = file_scope_var(expr, file_id_, owner);
+        return var != nullptr && sized_array(member->type) && !set_at_start(*var, owner);
+    }
+    // `b.row` and `rows[1].cells` are that field of a global. Its start value is in the binary unless it
+    // runs at start.
     if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
         const Expr *root = selector->base.get();
         while (root != nullptr) {
+            if (const Symbol *member = package_member(*root)) {
+                // `conf.w.cells` and `conf.rows[1].cells`.
+                uint32_t owner = 0;
+                const VarDecl *var = file_scope_var(*root, file_id_, owner);
+                return var != nullptr && !set_at_start(*var, owner) &&
+                       (member->type.kind == TypeKind::Struct || sized_array(member->type));
+            }
             if (const auto *inner = std::get_if<Expr::Selector>(&root->data)) {
                 root = inner->base.get();
             } else if (const auto *index = std::get_if<Expr::Index>(&root->data)) {
@@ -1435,10 +1461,12 @@ bool Checker::constant_array_source(const Expr &expr, std::unordered_set<std::st
         }
         const auto *named = root == nullptr ? nullptr : std::get_if<Expr::Name>(&root->data);
         const Symbol *symbol = named == nullptr ? nullptr : lookup(named->text);
-        const VarDecl *var = named == nullptr ? nullptr : global_var(named->text);
-        return symbol != nullptr && !symbol->is_package && !symbol->is_type && var != nullptr && !var->runtime_init &&
-               (symbol->type.kind == TypeKind::Struct ||
-                (symbol->type.kind == TypeKind::Array && symbol->type.element != nullptr && !is_slice(symbol->type)));
+        uint32_t owner = 0;
+        const VarDecl *var = named == nullptr ? nullptr : file_scope_var(*root, file_id_, owner);
+        // A global of a package sibling earlier in path order starts before this file.
+        const bool started = var != nullptr && (owner == file_id_ ? var->runtime_init : set_at_start(*var, owner));
+        return symbol != nullptr && !symbol->is_package && !symbol->is_type && var != nullptr && !started &&
+               (symbol->type.kind == TypeKind::Struct || sized_array(symbol->type));
     }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
         // `grid[1]` is that row. A range is a slice, and a runtime index is not in the binary.
@@ -1457,12 +1485,18 @@ bool Checker::constant_array_source(const Expr &expr, std::unordered_set<std::st
         seen.erase(named->text);
         return false;
     }
-    // A `const` array was checked when it was declared. The initializer has to be in this file.
-    // A `var` follows its initializer. A name from another file is not this constant.
+    // A `const` array was checked when it was declared. A `var` follows its initializer. A global of a
+    // package sibling, or one a selective import brings in, was checked in its own file.
     const VarDecl *var = global_var(named->text);
+    if (var == nullptr) {
+        uint32_t owner = 0;
+        const VarDecl *other = file_scope_var(expr, file_id_, owner);
+        seen.erase(named->text);
+        return other != nullptr && (symbol->is_constant || !set_at_start(*other, owner));
+    }
     if (symbol->is_constant) {
         seen.erase(named->text);
-        return var != nullptr;
+        return true;
     }
     if (var == nullptr || var->runtime_init) {
         seen.erase(named->text);
@@ -1482,7 +1516,82 @@ bool Checker::constant_array_source(const Expr &expr, std::unordered_set<std::st
     return ok;
 }
 
-bool Checker::set_at_start(const VarDecl &var, const TranslationUnit &unit, int depth) const {
+const VarDecl *Checker::file_scope_var(const Expr &root, uint32_t from, uint32_t &owner) const {
+    const auto unit_of = [&](uint32_t id) -> const TranslationUnit * {
+        if (const PackageNode *node = find_node(id)) {
+            return &node->unit;
+        }
+        return id == file_id_ ? primary_unit_ : nullptr;
+    };
+    // A `static` global is seen only in its own file.
+    const auto declared = [&](uint32_t id, const std::string &name) -> const VarDecl * {
+        const TranslationUnit *unit = unit_of(id);
+        if (unit == nullptr) {
+            return nullptr;
+        }
+        for (const TopDecl &decl : unit->decls) {
+            if (const auto *var = std::get_if<VarDecl>(&decl.data);
+                var != nullptr && var->owner.empty() && var->name == name && (id == from || !var->is_static)) {
+                return var;
+            }
+        }
+        return nullptr;
+    };
+    const auto in_package = [&](uint32_t id, const std::string &name) -> const VarDecl * {
+        for (const uint32_t file : files_in_package(id)) {
+            if (const VarDecl *var = declared(file, name)) {
+                owner = file;
+                return var;
+            }
+        }
+        return nullptr;
+    };
+    const PackageNode *node = find_node(from);
+    if (const auto *named = std::get_if<Expr::Name>(&root.data)) {
+        if (const VarDecl *own = declared(from, named->text)) {
+            owner = from;
+            return own;
+        }
+        if (const VarDecl *sibling = in_package(from, named->text)) {
+            return sibling;
+        }
+        // `import { h } from "st"` brings that global in.
+        for (const ImportDecl &import : node == nullptr ? std::vector<ImportDecl>{} : node->unit.imports) {
+            if (!import_selects(import, named->text)) {
+                continue;
+            }
+            if (const PackageNode *target = target_of(*node, import)) {
+                if (const VarDecl *imported = in_package(target->file_id, named->text)) {
+                    return imported;
+                }
+            }
+        }
+        return nullptr;
+    }
+    // `st.h` is the global `h` of the package `st` imports.
+    const auto *selector = std::get_if<Expr::Selector>(&root.data);
+    const auto *base = selector == nullptr || selector->base == nullptr ? nullptr
+                                                                         : std::get_if<Expr::Name>(&selector->base->data);
+    if (base == nullptr || node == nullptr || declared(from, base->text) != nullptr) {
+        return nullptr;
+    }
+    for (const ImportDecl &import : node->unit.imports) {
+        if (import.form == ImportDecl::Form::Selective) {
+            continue;
+        }
+        const PackageNode *target = target_of(*node, import);
+        if (target == nullptr) {
+            continue;
+        }
+        const std::string &spelled = import.form == ImportDecl::Form::Alias ? import.alias : target->qualifier;
+        if (spelled == base->text) {
+            return in_package(target->file_id, selector->field);
+        }
+    }
+    return nullptr;
+}
+
+bool Checker::set_at_start(const VarDecl &var, uint32_t file, int depth) const {
     if (var.runtime_init) {
         return true;
     }
@@ -1499,8 +1608,10 @@ bool Checker::set_at_start(const VarDecl &var, const TranslationUnit &unit, int 
         const auto *callee = call == nullptr || call->callee == nullptr ? nullptr
                                                                          : std::get_if<Expr::Name>(&call->callee->data);
         // A `comptime func` call is folded. It is no start-time value.
-        if (callee != nullptr) {
-            for (const TopDecl &decl : unit.decls) {
+        const PackageNode *node = find_node(file);
+        const TranslationUnit *unit = node != nullptr ? &node->unit : (file == file_id_ ? primary_unit_ : nullptr);
+        if (callee != nullptr && unit != nullptr) {
+            for (const TopDecl &decl : unit->decls) {
                 if (const auto *fn = std::get_if<FunctionDecl>(&decl.data);
                     fn != nullptr && fn->name == callee->text && fn->method_struct.empty() && fn->is_comptime) {
                     return false;
@@ -1509,16 +1620,13 @@ bool Checker::set_at_start(const VarDecl &var, const TranslationUnit &unit, int 
         }
         return true;
     }
-    // `var n = h`, `var n = g.n`, `var n = h + 1`, and `var n = row[h]` read such a global.
+    // `var n = h`, `var n = g.n`, `var n = h + 1`, `var n = row[h]`, and `var n = st.h` read such a global.
     const auto reads = [&](const auto &self, const Expr &expr) -> bool {
-        if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
-            for (const TopDecl &decl : unit.decls) {
-                if (const auto *source = std::get_if<VarDecl>(&decl.data);
-                    source != nullptr && source != &var && source->name == named->text && source->owner.empty()) {
-                    return set_at_start(*source, unit, depth + 1);
-                }
+        if (std::holds_alternative<Expr::Name>(expr.data) || std::holds_alternative<Expr::Selector>(expr.data)) {
+            uint32_t owner = 0;
+            if (const VarDecl *source = file_scope_var(expr, file, owner); source != nullptr && source != &var) {
+                return set_at_start(*source, owner, depth + 1);
             }
-            return false;
         }
         if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
             return selector->base != nullptr && self(self, *selector->base);
@@ -1533,6 +1641,7 @@ bool Checker::set_at_start(const VarDecl &var, const TranslationUnit &unit, int 
         }
         if (const auto *binary = std::get_if<Expr::Binary>(&expr.data)) {
             return (binary->lhs != nullptr && self(self, *binary->lhs)) ||
+                   (binary->mid != nullptr && self(self, *binary->mid)) ||
                    (binary->rhs != nullptr && self(self, *binary->rhs));
         }
         if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
@@ -1543,11 +1652,16 @@ bool Checker::set_at_start(const VarDecl &var, const TranslationUnit &unit, int 
     return reads(reads, *var.init);
 }
 
-bool Checker::copies_startup_global(const Expr &expr, const TranslationUnit &unit) const {
-    // `var g = h.x` and `var g = h.rows[1]` read part of that global. The root decides.
+bool Checker::copies_startup_global(const Expr &expr, uint32_t file) const {
+    // `var g = h.x`, `var g = h.rows[1]`, and `var g = st.h.x` read part of that global. The root decides.
     const Expr *root = &expr;
+    uint32_t owner = 0;
+    const VarDecl *var = nullptr;
     while (true) {
         if (const auto *selector = std::get_if<Expr::Selector>(&root->data); selector != nullptr && selector->base) {
+            if ((var = file_scope_var(*root, file, owner)) != nullptr) {
+                break;
+            }
             root = selector->base.get();
         } else if (const auto *index = std::get_if<Expr::Index>(&root->data);
                    index != nullptr && index->base && !index->is_range) {
@@ -1556,35 +1670,33 @@ bool Checker::copies_startup_global(const Expr &expr, const TranslationUnit &uni
             break;
         }
     }
-    const auto *named = std::get_if<Expr::Name>(&root->data);
-    if (named == nullptr) {
+    if (var == nullptr && std::holds_alternative<Expr::Name>(root->data)) {
+        var = file_scope_var(*root, file, owner);
+    }
+    if (var == nullptr) {
         return false;
     }
-    // Only a global of this file. Files of one package start in path order, so another file's global may
-    // not be set yet. A global declared later is already `undeclared identifier`.
-    for (const TopDecl &decl : unit.decls) {
-        if (const auto *var = std::get_if<VarDecl>(&decl.data);
-            var != nullptr && var->name == named->text && var->owner.empty() && var->runtime_init) {
-            return true;
-        }
-    }
-    return false;
+    // A global of this file is set at start once its call is seen. A global declared later is already
+    // `undeclared identifier`. A package sibling earlier in path order, and an imported package, start
+    // before this file.
+    return owner == file ? var->runtime_init : set_at_start(*var, owner);
 }
 
-bool Checker::reads_startup_global(const Expr &expr, const TranslationUnit &unit) const {
-    if (copies_startup_global(expr, unit)) {
+bool Checker::reads_startup_global(const Expr &expr, uint32_t file) const {
+    if (copies_startup_global(expr, file)) {
         return true;
     }
     if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
         // `&h` is the address, which is fixed.
-        return unary->op != TokenKind::Amp && unary->expr != nullptr && reads_startup_global(*unary->expr, unit);
+        return unary->op != TokenKind::Amp && unary->expr != nullptr && reads_startup_global(*unary->expr, file);
     }
     if (const auto *binary = std::get_if<Expr::Binary>(&expr.data)) {
-        return (binary->lhs != nullptr && reads_startup_global(*binary->lhs, unit)) ||
-               (binary->rhs != nullptr && reads_startup_global(*binary->rhs, unit));
+        return (binary->lhs != nullptr && reads_startup_global(*binary->lhs, file)) ||
+               (binary->mid != nullptr && reads_startup_global(*binary->mid, file)) ||
+               (binary->rhs != nullptr && reads_startup_global(*binary->rhs, file));
     }
     if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
-        return cast->expr != nullptr && reads_startup_global(*cast->expr, unit);
+        return cast->expr != nullptr && reads_startup_global(*cast->expr, file);
     }
     // `row[h]` reads `h`. The root of `h.rows[1]` was tested above.
     const Expr *cursor = &expr;
@@ -1592,8 +1704,8 @@ bool Checker::reads_startup_global(const Expr &expr, const TranslationUnit &unit
         if (const auto *selector = std::get_if<Expr::Selector>(&cursor->data)) {
             cursor = selector->base.get();
         } else if (const auto *index = std::get_if<Expr::Index>(&cursor->data)) {
-            if ((index->index != nullptr && reads_startup_global(*index->index, unit)) ||
-                (index->end != nullptr && reads_startup_global(*index->end, unit))) {
+            if ((index->index != nullptr && reads_startup_global(*index->index, file)) ||
+                (index->end != nullptr && reads_startup_global(*index->end, file))) {
                 return true;
             }
             cursor = index->base.get();
@@ -1615,6 +1727,7 @@ bool Checker::nested_startup_call(const Expr &expr) {
     }
     if (const auto *binary = std::get_if<Expr::Binary>(&expr.data)) {
         return (binary->lhs != nullptr && nested_startup_call(*binary->lhs)) ||
+               (binary->mid != nullptr && nested_startup_call(*binary->mid)) ||
                (binary->rhs != nullptr && nested_startup_call(*binary->rhs));
     }
     if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
@@ -1665,7 +1778,7 @@ bool Checker::accept_array_copy(VarDecl &var) {
     // `var copy = g` after `var g = give()` in the same file runs then too.
     if (!var.is_const_decl && !var.is_extern &&
         (startup_call(*var.init) ||
-         (find_node(file_id_) != nullptr && copies_startup_global(*var.init, find_node(file_id_)->unit)))) {
+         copies_startup_global(*var.init, file_id_))) {
         var.runtime_init = true;
         return true;
     }
@@ -1930,7 +2043,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
     // A folded `mem.memeql` or `mem.memcmp` is the value stored in the global.
     auto runs_at_startup = [&](const Expr &expr) {
         // `var copy = h` after `var h = make()` in this file runs at start too, after `h`.
-        if (copies_startup_global(expr, unit)) {
+        if (copies_startup_global(expr, file_id_)) {
             return true;
         }
         if (!startup_call(expr)) {
@@ -2232,7 +2345,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
                         // `var n = 1 + give()` would run `give` before `main`. Only a whole call runs then.
                         error(var->loc, "global initializer is not a constant");
                     } else if (!var->is_extern && !(var->is_const_decl && var->is_comptime) &&
-                               reads_startup_global(*var->init, unit)) {
+                               reads_startup_global(*var->init, file_id_)) {
                         // `var n = h + 1` after `var h = give()` runs at start, after `h`. A `const` does not.
                         if (var->is_const_decl) {
                             error(var->loc, "global initializer is not a constant");

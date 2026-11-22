@@ -1,0 +1,48 @@
+// A file-scope value may read a global of an imported package or of a package sibling. The package
+// starts before the file that imports it, so each value is that global's start value.
+import "conf";
+import "heavy" as hv;
+import { base, begun } from "sel";
+
+var lv_copy = conf.lv;
+var level_next = conf.level + 1;
+var typed i32 = conf.lv + 1;
+var part_next = conf.w.n + 1;
+var product = conf.row[1] * conf.w.x;
+var whole = conf.w;
+var row = conf.row;
+var cells = conf.grid.cells;
+var crow = conf.crow;
+var ok = conf.fl > 2.0;
+const folded = conf.lv + 1;
+var started = conf.h + 1;
+var heavy_next = hv.w.n + 1;
+var heavy_deep = hv.w.pts[999999].y + hv.n;
+var heavy_copy = hv.w;
+var selected = base * 2;
+var selected_start = begun + 1;
+
+func main() i32 {
+    if (lv_copy != 7 || level_next != 8 || typed != 8 || part_next != 5 || product != 9) {
+        return 1;
+    }
+    if (whole.n != 4 || row[0] != 3 || cells[1] != 2 || crow[0] != 5 || !ok || folded != 8) {
+        return 2;
+    }
+    if (conf.plus != 5 || conf.doubled != 14 || conf.part != 4 || conf.element != 9) {
+        return 3;
+    }
+    if (conf.copy.n != 4 || conf.row_copy[1] != 9 || conf.const_copy[1] != 6 || conf.by_part != 16) {
+        return 4;
+    }
+    if (started != 7 || conf.h_plus != 7 || conf.h_copy != 6 || conf.h_next != 7) {
+        return 5;
+    }
+    if (heavy_next != 6 || heavy_deep != 7 || heavy_copy.n != 5 || heavy_copy.pts[5].y != 2) {
+        return 6;
+    }
+    if (selected != 40 || selected_start != 11) {
+        return 7;
+    }
+    return 42;
+}

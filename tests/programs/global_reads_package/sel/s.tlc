@@ -1,0 +1,8 @@
+package sel;
+
+func start() i32 {
+    return 10;
+}
+
+export var base = 20;
+export var begun = start();

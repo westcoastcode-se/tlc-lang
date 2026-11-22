@@ -1,0 +1,14 @@
+package heavy;
+
+export type P struct {
+    export x i32 = 1;
+    export y i32 = 2;
+}
+
+export type World struct {
+    export n i32 = 3;
+    export pts [1000000]P;
+}
+
+export var w = World{.n = 5};
+export var n = w.n;

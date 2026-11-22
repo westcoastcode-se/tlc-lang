@@ -564,15 +564,18 @@ class Checker {
     // The body has errors of its own, so a comptime call does not run it.
     bool comptime_body_broken(const FunctionDecl &fn);
     // `expr` names a global of `unit` whose value is set at start, `var h = make()`.
-    bool copies_startup_global(const Expr &expr, const TranslationUnit &unit) const;
+    bool copies_startup_global(const Expr &expr, uint32_t file) const;
+    // The file-scope `var` that `root` names from file `from`: its own `h`, a package sibling's, one a
+    // selective import brings in, or `st.h` of an imported package. `owner` is the file that declares it.
+    const VarDecl *file_scope_var(const Expr &root, uint32_t from, uint32_t &owner) const;
     // `h + 1` and `row[h]` read such a global in a part of the value. The value is set at start too.
-    bool reads_startup_global(const Expr &expr, const TranslationUnit &unit) const;
+    bool reads_startup_global(const Expr &expr, uint32_t file) const;
     // `1 + give()` holds a call that does not fold. Only a call that is the whole initializer runs at start.
     bool nested_startup_call(const Expr &expr);
     // `&p` or `*q` in a file-scope initializer, outside a call. Such a `var` is not a constant.
     bool reads_through_pointer(const Expr &expr) const;
     // `var h = make()`, or a copy of one: the value exists only once the program has started.
-    bool set_at_start(const VarDecl &var, const TranslationUnit &unit, int depth = 0) const;
+    bool set_at_start(const VarDecl &var, uint32_t file, int depth = 0) const;
     // A read of such a global in `fn` or a comptime func it calls is `set at start, not at compile time`,
     // with the call chain. True when it reported one.
     bool startup_read_fault(const FunctionDecl &fn);

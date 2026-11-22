@@ -245,8 +245,13 @@ bool CodeGen::collect_list_fills(const Expr::Init &list, llvm::ArrayType *array,
 
 llvm::GlobalVariable *CodeGen::heavy_root(const Expr &place) {
     const Expr *cursor = &place;
+    const Binding *binding = nullptr;
     for (int depth = 0; depth < 256; ++depth) {
         if (const auto *selector = std::get_if<Expr::Selector>(&cursor->data)) {
+            // `conf.w` is the root, a global of that package.
+            if ((binding = package_global(current_file_, *selector)) != nullptr) {
+                break;
+            }
             if (selector->base == nullptr) {
                 return nullptr;
             }
@@ -266,21 +271,18 @@ llvm::GlobalVariable *CodeGen::heavy_root(const Expr &place) {
         }
         break;
     }
-    const auto *named = std::get_if<Expr::Name>(&cursor->data);
-    const auto file = files_.find(current_file_);
-    if (named == nullptr || file == files_.end()) {
+    if (binding == nullptr) {
+        const auto *named = std::get_if<Expr::Name>(&cursor->data);
+        binding = named == nullptr ? nullptr : global_named(current_file_, named->text);
+    }
+    if (binding == nullptr || binding->is_slice || binding->depth != 0) {
         return nullptr;
     }
-    const auto found = file->second.globals.find(named->text);
-    if (found == file->second.globals.end() || found->second.is_slice || found->second.depth != 0) {
-        return nullptr;
-    }
-    auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found->second.value);
+    auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(binding->value);
     if (global == nullptr) {
         return nullptr;
     }
-    if (start_written_.contains(global) ||
-        heavy_value(found->second.struct_id, found->second.is_array, global->getValueType())) {
+    if (start_written_.contains(global) || heavy_value(binding->struct_id, binding->is_array, global->getValueType())) {
         return global;
     }
     return nullptr;

@@ -79,6 +79,80 @@ const Binding *CodeGen::visible(uint32_t file, const std::string &name, bool fun
     return nullptr;
 }
 
+const Binding *CodeGen::global_named(uint32_t file, const std::string &name, uint32_t *owner) const {
+    const auto own = files_.find(file);
+    if (own != files_.end()) {
+        if (const auto it = own->second.globals.find(name); it != own->second.globals.end()) {
+            if (owner != nullptr) {
+                *owner = file;
+            }
+            return &it->second;
+        }
+    }
+    const auto search = [&](uint32_t from) -> const Binding * {
+        for (const uint32_t id : package_files(from)) {
+            const auto found = files_.find(id);
+            if (found == files_.end()) {
+                continue;
+            }
+            const auto it = found->second.globals.find(name);
+            if (it == found->second.globals.end() || it->second.is_static) {
+                continue;
+            }
+            if (owner != nullptr) {
+                *owner = id;
+            }
+            return &it->second;
+        }
+        return nullptr;
+    };
+    if (const Binding *sibling = search(file)) {
+        return sibling;
+    }
+    const PackageNode *node = find_node(file);
+    if (node == nullptr || graph_ == nullptr) {
+        return nullptr;
+    }
+    for (const ImportDecl &import : node->unit.imports) {
+        if (!import_selects(import, name)) {
+            continue;
+        }
+        if (const PackageNode *target = import_target(graph_, file, import)) {
+            if (const Binding *imported = search(target->file_id)) {
+                return imported;
+            }
+        }
+    }
+    return nullptr;
+}
+
+const Binding *CodeGen::package_global(uint32_t file, const Expr::Selector &selector, uint32_t *owner) const {
+    const auto *base = selector.base == nullptr ? nullptr : std::get_if<Expr::Name>(&selector.base->data);
+    // A global of that name hides the package.
+    if (base == nullptr || global_named(file, base->text) != nullptr) {
+        return nullptr;
+    }
+    const uint32_t target = package_file(file, base->text);
+    if (target == 0) {
+        return nullptr;
+    }
+    for (const uint32_t id : package_files(target)) {
+        const auto found = files_.find(id);
+        if (found == files_.end()) {
+            continue;
+        }
+        const auto it = found->second.globals.find(selector.field);
+        if (it == found->second.globals.end() || it->second.is_static) {
+            continue;
+        }
+        if (owner != nullptr) {
+            *owner = id;
+        }
+        return &it->second;
+    }
+    return nullptr;
+}
+
 void CodeGen::bind_package_globals() {
     for (const uint32_t id : package_files(current_file_)) {
         if (id == current_file_) {

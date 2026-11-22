@@ -1,0 +1,11 @@
+package conf;
+
+// Each value reads a global of `a.tlc`, a sibling of this file.
+export var plus = w.n + 1;
+export var doubled = lv * 2;
+export var part = w.n;
+export var element = row[1];
+export var copy = w;
+export var row_copy = row;
+export var const_copy = crow;
+export var by_part = row[w.x] + lv;

@@ -742,6 +742,41 @@ void CodeGen::emit_dynamic_inits() {
     packages_.clear();
 }
 
+std::vector<const PackageNode *> CodeGen::global_order() const {
+    std::vector<const PackageNode *> order;
+    if (graph_ == nullptr) {
+        return order;
+    }
+    order.reserve(graph_->nodes.size());
+    std::unordered_map<std::string, int> state;
+    const auto visit = [&](const auto &self, const std::string &key) -> void {
+        int &mark = state[key];
+        if (mark != 0) {
+            return;
+        }
+        mark = 1;
+        for (const PackageNode &node : graph_->nodes) {
+            if (node.package_key != key) {
+                continue;
+            }
+            for (const ImportDecl &import : node.unit.imports) {
+                if (const PackageNode *target = import_target(graph_, node.file_id, import)) {
+                    self(self, target->package_key);
+                }
+            }
+        }
+        for (const PackageNode &node : graph_->nodes) {
+            if (node.package_key == key) {
+                order.push_back(&node);
+            }
+        }
+    };
+    for (const PackageNode &node : graph_->nodes) {
+        visit(visit, node.package_key);
+    }
+    return order;
+}
+
 void CodeGen::emit(const PackageGraph &graph) {
     if (graph.nodes.empty()) {
         return;
@@ -757,13 +792,15 @@ void CodeGen::emit(const PackageGraph &graph) {
     for (const PackageNode &node : graph.nodes) {
         declare_functions(node);
     }
-    for (const PackageNode &node : graph.nodes) {
-        declare_globals(node);
+    // `var here = conf.lv` reads the global of an imported package. That package is declared and set first.
+    const std::vector<const PackageNode *> order = global_order();
+    for (const PackageNode *node : order) {
+        declare_globals(*node);
     }
     prepare_default_allocator();
-    for (const PackageNode &node : graph.nodes) {
-        current_file_ = node.file_id;
-        for (const TopDecl &decl : node.unit.decls) {
+    for (const PackageNode *node : order) {
+        current_file_ = node->file_id;
+        for (const TopDecl &decl : node->unit.decls) {
             if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
                 apply_initializer(*var);
             }

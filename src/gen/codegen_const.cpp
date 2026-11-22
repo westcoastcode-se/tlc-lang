@@ -8,6 +8,20 @@
 
 namespace tlc {
 
+namespace {
+
+// Builds a global's constant in the file that declares it, where its initializer's names are written.
+struct AtFile {
+    uint32_t &file;
+    uint32_t saved;
+    AtFile(uint32_t &current, uint32_t owner) : file(current), saved(current) { current = owner; }
+    ~AtFile() { file = saved; }
+    AtFile(const AtFile &) = delete;
+    AtFile &operator=(const AtFile &) = delete;
+};
+
+} // namespace
+
 llvm::Constant *CodeGen::const_default_array(const Expr::Init &init, llvm::ArrayType *array_ty, const Binding &flags) {
     ++default_array_depth_;
     struct Leave {
@@ -1012,14 +1026,18 @@ llvm::Constant *CodeGen::const_array_base(const Expr &expr) {
     if (named == nullptr) {
         return nullptr;
     }
+    uint32_t owner = 0;
+    const Binding *binding = global_named(current_file_, named->text, &owner);
+    if (binding == nullptr || !binding->is_array) {
+        return nullptr;
+    }
+    // `row` of a package sibling.
+    if (owner != current_file_) {
+        const AtFile at(current_file_, owner);
+        return const_array_base(expr);
+    }
     const auto file = files_.find(current_file_);
-    if (file == files_.end()) {
-        return nullptr;
-    }
     const auto found = file->second.globals.find(named->text);
-    if (found == file->second.globals.end() || !found->second.is_array) {
-        return nullptr;
-    }
     if (!const_names_.insert(named->text).second) {
         return nullptr;
     }
@@ -1048,6 +1066,17 @@ llvm::Constant *CodeGen::const_array_base(const Expr &expr) {
 llvm::Constant *CodeGen::const_place(const Expr &expr, int &struct_id) {
     struct_id = -1;
     if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        // `conf.w` is the global `w` of that package.
+        uint32_t owner = 0;
+        if (package_global(current_file_, *selector, &owner) != nullptr) {
+            Expr root;
+            Expr::Name name;
+            name.loc = selector->loc;
+            name.text = selector->field;
+            root.data = std::move(name);
+            const AtFile at(current_file_, owner);
+            return const_place(root, struct_id);
+        }
         int base_id = -1;
         llvm::Constant *base = selector->base == nullptr ? nullptr : const_place(*selector->base, base_id);
         int index = -1;
@@ -1072,15 +1101,17 @@ llvm::Constant *CodeGen::const_place(const Expr &expr, int &struct_id) {
         return array_element(base, static_cast<uint64_t>(*at));
     }
     const auto *named = std::get_if<Expr::Name>(&expr.data);
-    const auto file = files_.find(current_file_);
-    if (named == nullptr || file == files_.end()) {
+    uint32_t owner = 0;
+    const Binding *found = named == nullptr ? nullptr : global_named(current_file_, named->text, &owner);
+    if (found == nullptr || found->is_slice || found->depth != 0) {
         return nullptr;
     }
-    const auto found = file->second.globals.find(named->text);
-    if (found == file->second.globals.end() || found->second.is_slice || found->second.depth != 0) {
-        return nullptr;
+    // `w` of a package sibling.
+    if (owner != current_file_) {
+        const AtFile at(current_file_, owner);
+        return const_place(expr, struct_id);
     }
-    const Binding &binding = found->second;
+    const Binding &binding = *found;
     if (binding.is_array) {
         struct_id = binding.struct_id;
         return const_array_base(expr);
@@ -1132,13 +1163,15 @@ std::optional<CodeGen::WideInt> CodeGen::part_value(const Expr &place) {
         }
         if (cursor != nullptr) {
             if (const auto *selector = std::get_if<Expr::Selector>(&cursor->data)) {
-                is_unsigned = field_unsigned(*selector);
+                // `conf.row[1]` is an element of that package's global.
+                if (const Binding *imported = package_global(current_file_, *selector)) {
+                    is_unsigned = imported->elem_unsigned;
+                } else {
+                    is_unsigned = field_unsigned(*selector);
+                }
             } else if (const auto *named = std::get_if<Expr::Name>(&cursor->data)) {
-                if (const auto file = files_.find(current_file_); file != files_.end()) {
-                    if (const auto found = file->second.globals.find(named->text);
-                        found != file->second.globals.end()) {
-                        is_unsigned = found->second.elem_unsigned;
-                    }
+                if (const Binding *binding = global_named(current_file_, named->text)) {
+                    is_unsigned = binding->elem_unsigned;
                 }
             }
         }
@@ -1152,15 +1185,14 @@ std::optional<CodeGen::WideInt> CodeGen::part_value(const Expr &place) {
 std::optional<CodeGen::FoldedNumber> CodeGen::part_number(const Expr &expr) {
     const llvm::Constant *constant = nullptr;
     if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
-        const auto file = files_.find(current_file_);
-        if (file == files_.end() || !file->second.folded.contains(named->text)) {
+        uint32_t owner = 0;
+        const Binding *binding = global_named(current_file_, named->text, &owner);
+        const auto file = files_.find(owner);
+        if (binding == nullptr || file == files_.end() || !file->second.folded.contains(named->text)) {
             return std::nullopt;
         }
-        const auto found = file->second.globals.find(named->text);
-        const auto *global = found == file->second.globals.end()
-                                 ? nullptr
-                                 : llvm::dyn_cast_or_null<llvm::GlobalVariable>(found->second.value);
-        if (global == nullptr || !found->second.elem_float || found->second.depth != 0 || found->second.is_array ||
+        const auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(binding->value);
+        if (global == nullptr || !binding->elem_float || binding->depth != 0 || binding->is_array ||
             !global->hasInitializer() || start_written_.contains(global)) {
             return std::nullopt;
         }
@@ -1302,15 +1334,19 @@ llvm::Constant *CodeGen::const_struct_base(const Expr &expr, int struct_id) {
     if (named == nullptr) {
         return nullptr;
     }
+    uint32_t owner = 0;
+    const Binding *binding = global_named(current_file_, named->text, &owner);
+    if (binding == nullptr || binding->struct_id != struct_id || binding->depth != 0 || binding->is_array ||
+        binding->is_slice) {
+        return nullptr;
+    }
+    // `h` of a package sibling.
+    if (owner != current_file_) {
+        const AtFile at(current_file_, owner);
+        return const_struct_base(expr, struct_id);
+    }
     const auto file = files_.find(current_file_);
-    if (file == files_.end()) {
-        return nullptr;
-    }
     const auto found = file->second.globals.find(named->text);
-    if (found == file->second.globals.end() || found->second.struct_id != struct_id || found->second.depth != 0 ||
-        found->second.is_array || found->second.is_slice) {
-        return nullptr;
-    }
     // `var a = b` and `var b = a` are no constant.
     if (!const_names_.insert(named->text).second) {
         return nullptr;

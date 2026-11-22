@@ -1,0 +1,5 @@
+package conf;
+
+// `h` is set at start in `c.tlc`, which starts before this file. These run at start after it.
+export var h_copy = h;
+export var h_next = h + 1;

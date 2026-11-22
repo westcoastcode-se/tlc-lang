@@ -315,13 +315,15 @@ A file-scope `var copy = h` and `const frozen = h` copy that struct the same way
 
 A part of a global is copied the same way: a field `var x = p.x`, a nested field `var r = b.row`, an element with a constant index `var e = row[2]` and `var y = w.pts[4999].y`, a field of an element `var cells = rows[1].cells`, and the size `var n = sizeof(w)`. The value is the global's start value. A source with no initializer is its defaults. An index that does not fold is `global initializer is not a constant`.
 
+The global may be in another file. `var lv = conf.lv`, `var n = conf.w.n + 1`, `var row = conf.row`, and `var cells = conf.grid.cells` read a global of the imported package `conf`. `var n = w.n` reads `w` of a package sibling, and `import { base } from "sel"` then `var twice = base * 2` reads `base`. Each is that global's start value.
+
 A value computed from such parts is a constant too: `var n = w.n + 1`, `var m = row[1] * 2`, `var wide i64 = w.n`, `var low u8 = w.n`, `var ok = w.f > 1.0`, `var at_var = row[at]` with `at` a file-scope `var`, `var at_part = row[w.x]`, and `const k = w.n + 1`. Each part is the value its global starts with, so a later store into `w` does not change `n`. A `u32` or 64-bit part folds at its width.
 
 A global that holds a large array of defaulted structs, as described in [array](../types/array.md), is not built as a constant. A copy of it, or of a part of it, is written when the program starts, before any initializer that runs before `main`. The value is the same. So is a value computed from such a part or such a copy, `var n = w.n + 1` and `var m = copy + 1` after `var copy = w.n`, after `w` and after `copy`.
 
 An address is not that constant for a `var`. `var at *Point = &p`, `var at = &row[1]`, and `var y = *q` are `global initializer is not a constant`, and `--check` reports them. A `const at *i32 = &n` is a constant.
 
-When the source's value comes from a call, `var h = make()`, the copy `var copy = h` runs before `main` too, after `h`. That holds for a struct, an array, and a scalar, for a copy of that copy, for a part of it, `var x = h.p.x`, and for a value computed from it, `var n = h + 1`, `var m = g.n * 2`, and `var e = row[h]`. A `comptime func` that reads such a copy or value is `set at start, not at compile time`. The source must be in the same file. A `const frozen = h` and a `const k = h + 1` are `global initializer is not a constant`, since a `const` is a constant.
+When the source's value comes from a call, `var h = make()`, the copy `var copy = h` runs before `main` too, after `h`. That holds for a struct, an array, and a scalar, for a copy of that copy, for a part of it, `var x = h.p.x`, and for a value computed from it, `var n = h + 1`, `var m = g.n * 2`, and `var e = row[h]`. A `comptime func` that reads such a copy or value is `set at start, not at compile time`. The source may be in this file, in a package sibling earlier in path order, or in an imported package, `var x = st.h + 1`, since each of those starts first. A `const frozen = h` and a `const k = h + 1` are `global initializer is not a constant`, since a `const` is a constant.
 
 ## A length written as `_`
 

@@ -1570,6 +1570,11 @@ class CodeGen {
     const PackageNode *find_node(uint32_t file_id) const;
     std::vector<uint32_t> package_files(uint32_t file) const;
     const Binding *visible(uint32_t file, const std::string &name, bool function) const;
+    // The global `name` as `file` sees it at file scope: its own, a package sibling's, or one a selective
+    // import brings in. `owner` is the file that declares it.
+    const Binding *global_named(uint32_t file, const std::string &name, uint32_t *owner = nullptr) const;
+    // `conf.w` when `conf` is a package `file` imports and `w` is a global there. Null for any other selector.
+    const Binding *package_global(uint32_t file, const Expr::Selector &selector, uint32_t *owner = nullptr) const;
     const Binding *binding_for_decl(const FunctionDecl *decl) const;
     void bind_package_globals();
     int tag_id(uint32_t file, const std::string &name) const;
@@ -1711,6 +1716,9 @@ class CodeGen {
         const std::vector<std::pair<uint32_t, const FunctionDecl *>> &specs) const;
     void declare_globals(const PackageNode &node);
     void emit_dynamic_inits();
+    // The files with an imported package's files before the files that import it. A package keeps its
+    // files together, in graph order. A cycle keeps the order it is reached in.
+    std::vector<const PackageNode *> global_order() const;
     std::optional<int32_t> fold_global(uint32_t file, const std::string &name, bool allow_local_static = true) const;
     void bind_imports(const PackageNode &node);
     void emit_bodies(const PackageNode &node);

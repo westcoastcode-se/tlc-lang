@@ -1,0 +1,8 @@
+package conf;
+
+func give() i32 {
+    return 6;
+}
+
+export var h = give();
+export var h_plus = h + 1;
