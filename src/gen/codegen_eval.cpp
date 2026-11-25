@@ -120,12 +120,14 @@ bool CodeGen::define_comptime(const PackageGraph &graph, const FunctionDecl &fn,
     for (const PackageNode &node : held_specs) {
         declare_functions(node);
     }
-    for (const PackageNode &node : graph.nodes) {
-        declare_globals(node);
+    // An imported package's globals are declared and set first, as `emit` does.
+    const std::vector<const PackageNode *> order = global_order();
+    for (const PackageNode *node : order) {
+        declare_globals(*node);
     }
-    for (const PackageNode &node : graph.nodes) {
-        current_file_ = node.file_id;
-        for (const TopDecl &decl : node.unit.decls) {
+    for (const PackageNode *node : order) {
+        current_file_ = node->file_id;
+        for (const TopDecl &decl : node->unit.decls) {
             if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
                 apply_initializer(*var);
             }
@@ -265,12 +267,14 @@ bool CodeGen::define_comptime_string(const PackageGraph &graph, const FunctionDe
     for (const PackageNode &node : held_specs) {
         declare_functions(node);
     }
-    for (const PackageNode &node : graph.nodes) {
-        declare_globals(node);
+    // An imported package's globals are declared and set first, as `emit` does.
+    const std::vector<const PackageNode *> order = global_order();
+    for (const PackageNode *node : order) {
+        declare_globals(*node);
     }
-    for (const PackageNode &node : graph.nodes) {
-        current_file_ = node.file_id;
-        for (const TopDecl &decl : node.unit.decls) {
+    for (const PackageNode *node : order) {
+        current_file_ = node->file_id;
+        for (const TopDecl &decl : node->unit.decls) {
             if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
                 apply_initializer(*var);
             }
@@ -1533,12 +1537,14 @@ bool CodeGen::define_comptime_struct(const PackageGraph &graph, const FunctionDe
     for (const PackageNode &node : held_specs) {
         declare_functions(node);
     }
-    for (const PackageNode &node : graph.nodes) {
-        declare_globals(node);
+    // An imported package's globals are declared and set first, as `emit` does.
+    const std::vector<const PackageNode *> order = global_order();
+    for (const PackageNode *node : order) {
+        declare_globals(*node);
     }
-    for (const PackageNode &node : graph.nodes) {
-        current_file_ = node.file_id;
-        for (const TopDecl &decl : node.unit.decls) {
+    for (const PackageNode *node : order) {
+        current_file_ = node->file_id;
+        for (const TopDecl &decl : node->unit.decls) {
             if (const auto *var = std::get_if<VarDecl>(&decl.data)) {
                 apply_initializer(*var);
             }

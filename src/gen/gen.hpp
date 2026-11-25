@@ -1575,6 +1575,15 @@ class CodeGen {
     const Binding *global_named(uint32_t file, const std::string &name, uint32_t *owner = nullptr) const;
     // `conf.w` when `conf` is a package `file` imports and `w` is a global there. Null for any other selector.
     const Binding *package_global(uint32_t file, const Expr::Selector &selector, uint32_t *owner = nullptr) const;
+    // `pkg.add` names that package's function. Null when it is not one.
+    const Binding *package_function(uint32_t file, const Expr &expr) const;
+    // A function a file-scope value names here or in an imported package.
+    const Binding *constant_function(const Expr &expr) const {
+        if (const Binding *fn = function_designator(current_file_, expr)) {
+            return fn;
+        }
+        return package_function(current_file_, expr);
+    }
     const Binding *binding_for_decl(const FunctionDecl *decl) const;
     void bind_package_globals();
     int tag_id(uint32_t file, const std::string &name) const;
@@ -2030,6 +2039,31 @@ class CodeGen {
         CompactScope(const CompactScope &) = delete;
         CompactScope &operator=(const CompactScope &) = delete;
     };
+    // Set while one part of a global is read, `const k = w.n + 1`. A defaulted array of more than one
+    // element is then its first element and a zero tail of the same layout, named in `splats_`, and
+    // `array_element` reads that element at every index. The whole value is never built, so a global of
+    // `[100000000]Point` costs one `Point`. Such a value is never stored.
+    bool splat_defaults_ = false;
+    std::unordered_set<const llvm::Constant *> splats_;
+    struct SplatScope {
+        CodeGen &gen;
+        bool saved_splat;
+        bool saved_compact;
+        explicit SplatScope(CodeGen &owner)
+            : gen(owner), saved_splat(owner.splat_defaults_), saved_compact(owner.compact_ok_) {
+            owner.splat_defaults_ = true;
+            owner.compact_ok_ = true;
+        }
+        ~SplatScope() {
+            if (!saved_splat) {
+                gen.splats_.clear();
+            }
+            gen.splat_defaults_ = saved_splat;
+            gen.compact_ok_ = saved_compact;
+        }
+        SplatScope(const SplatScope &) = delete;
+        SplatScope &operator=(const SplatScope &) = delete;
+    };
     // The constant of the struct global `expr` names, built from that global's own initializer.
     llvm::Constant *const_struct_base(const Expr &expr, int struct_id);
     // The constant value of a place rooted at a global of this file: `p`, `p.x`, `w.pts[4999]`, `b.row`.
@@ -2068,6 +2102,14 @@ class CodeGen {
     bool collect_part_values(const Expr &expr, std::vector<const llvm::GlobalVariable *> *heavy);
     // The integer value of a part, `w.n` or `row[1]`, from the constant its global starts with.
     std::optional<WideInt> part_value(const Expr &place);
+    // The address of a place in a global, `w.n` or `row[1]`, as a constant. `type` is the place's type
+    // and `struct_id` the struct of that value or of its elements.
+    struct ConstAddress {
+        llvm::Constant *pointer = nullptr;
+        llvm::Type *type = nullptr;
+        int struct_id = -1;
+    };
+    std::optional<ConstAddress> const_address(const Expr &place);
     // `expr` folded to the integer or bool type `ty`. Null when it does not fold.
     llvm::Constant *folded_scalar(const Expr &expr, llvm::Type *ty);
     // What a comptime pointer expression points at. Null when it is not one.

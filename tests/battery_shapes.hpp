@@ -455,7 +455,8 @@ std::string ptr_case(const std::string &c, const std::vector<std::string> &shell
                top + ")) { return 42; } return 1; }";
     }
     if (c == "alias") {
-        return "type A " + T + ";\nfunc main() i32 { " + built + " var y A = " + top + "; " + ok(acc("y")) + " }";
+        // An alias is a different type. The cast confirms it.
+        return "type A " + T + ";\nfunc main() i32 { " + built + " var y A = A(" + top + "); " + ok(acc("y")) + " }";
     }
     if (c == "method") {
         if (E != "P") {

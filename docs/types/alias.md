@@ -58,6 +58,10 @@ retq                             # return
 
 Two aliases of `i32`, such as `Integer` and `Count`, are different types. `Ptr` is different from `*Point`, and `Pair` is different from `[2]i32`. `pair[0]` still has the element type.
 
+`var q Ptr = &p`, `var raw *Point = q`, and passing `&p` where `Ptr` is expected are `type mismatch`. `Ptr(&p)` and `*Point(q)` convert. `type Maybe ?*Point` is different from `?*Point` the same way, and `Maybe(&p)` converts. `null` is stored in `Maybe` without a cast.
+
+A function alias, `type BinOp func (i32, i32) i32`, is that function type. A `BinOp` may be passed where `func (i32, i32) i32` is expected, and `add` may be stored in a `BinOp`.
+
 A parameter, a result, and a field can use the name. `sizeof(Integer)` is `sizeof(i32)`. `typeof(Integer).name()` is `Integer`.
 
 A file-scope `const value Integer = Integer(10)` and `const value = Integer(10)` have type `Integer`. That name is not an array length.

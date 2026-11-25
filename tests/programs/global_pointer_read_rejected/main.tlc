@@ -1,0 +1,32 @@
+// A file-scope value that reads through a pointer or a slice, or keeps an address in a `var`, is not a
+// constant. `--check` reports each of them.
+type W struct {
+    n i32 = 2;
+    f f32 = 1.5;
+}
+
+var w W;
+var row = [_]i32{1, 2};
+var sl []i32 = row;
+const pp *W = &w;
+
+func give() i32 {
+    return 1;
+}
+
+var fp = give;
+
+var through = pp.n + 1;
+const through_const = pp.f + 1.0;
+var element = sl[1];
+var length = sl.len;
+const at_element = &sl[1];
+const at_field = &pp.n;
+var kept = pp;
+var copied_fn = fp;
+var compared = pp == null;
+var number = i64(pp);
+
+func main() i32 {
+    return through;
+}

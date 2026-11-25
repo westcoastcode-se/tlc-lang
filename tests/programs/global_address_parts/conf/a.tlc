@@ -1,0 +1,14 @@
+package conf;
+
+export type Tune struct {
+    export gain i32 = 5;
+}
+
+export var tune Tune;
+export var count = 3;
+export const at_count *i32 = &count;
+export var maybe ?*i32 = null;
+
+export func give() i32 {
+    return 2;
+}

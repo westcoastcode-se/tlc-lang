@@ -2100,6 +2100,9 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
                     if (const Binding *fn = function_designator(file, node)) {
                         return function_pointer_type(*fn);
                     }
+                    if (const Binding *fn = package_function(file, node)) {
+                        return function_pointer_type(*fn);
+                    }
                     // `Order.acquire` is the enumerator. The global stores that value.
                     if (item.base != nullptr) {
                         const int enum_id = enum_type_designator(*item.base);

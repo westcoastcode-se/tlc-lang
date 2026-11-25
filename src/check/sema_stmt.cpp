@@ -3028,21 +3028,19 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
                 const std::optional<NullGuard> guard = null_guard(node.cond.get());
                 // A store in one arm drops the comptime value after the `if`. The other arm still sees it.
-                const std::vector<HeldSlot> held_before = held_snapshot();
+                HeldBranch held(*this);
                 if (!guard) {
                     assign_ = on_true;
                     if (node.then_arm) {
                         check_stmt(*node.then_arm);
                     }
-                    const std::vector<HeldSlot> held_then = held_snapshot();
                     const AssignState then_out = assign_;
-                    held_restore(held_before);
+                    held.then_done();
                     assign_ = on_false;
                     if (node.else_arm) {
                         check_stmt(*node.else_arm);
                     }
-                    const std::vector<HeldSlot> held_else = node.else_arm ? held_snapshot() : held_before;
-                    held_and(held_before, held_then, held_else);
+                    held.else_done();
                     const AssignState else_out = node.else_arm ? assign_ : on_false;
                     assign_ = init_merge(then_out, else_out);
                 } else if (guard->equal_null) {
@@ -3050,9 +3048,8 @@ void Checker::check_stmt(const Stmt &stmt) {
                     if (node.then_arm) {
                         check_stmt(*node.then_arm);
                     }
-                    const std::vector<HeldSlot> held_then = held_snapshot();
                     const AssignState then_out = assign_;
-                    held_restore(held_before);
+                    held.then_done();
                     assign_ = on_false;
                     if (node.else_arm) {
                         const bool narrowed = narrow_optional(guard->name);
@@ -3061,8 +3058,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                             restore_optional(guard->name);
                         }
                     }
-                    const std::vector<HeldSlot> held_else = node.else_arm ? held_snapshot() : held_before;
-                    held_and(held_before, held_then, held_else);
+                    held.else_done();
                     const AssignState else_out = node.else_arm ? assign_ : on_false;
                     assign_ = init_merge(then_out, else_out);
                     if (node.then_arm && always_exits(node.then_arm.get())) {
@@ -3077,15 +3073,13 @@ void Checker::check_stmt(const Stmt &stmt) {
                     if (narrowed) {
                         restore_optional(guard->name);
                     }
-                    const std::vector<HeldSlot> held_then = held_snapshot();
                     const AssignState then_out = assign_;
-                    held_restore(held_before);
+                    held.then_done();
                     assign_ = on_false;
                     if (node.else_arm) {
                         check_stmt(*node.else_arm);
                     }
-                    const std::vector<HeldSlot> held_else = node.else_arm ? held_snapshot() : held_before;
-                    held_and(held_before, held_then, held_else);
+                    held.else_done();
                     const AssignState else_out = node.else_arm ? assign_ : on_false;
                     assign_ = init_merge(then_out, else_out);
                     if (node.else_arm && always_exits(node.else_arm.get())) {
@@ -3724,6 +3718,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                         } else {
                             assignable(*existing, loc, parts[i]);
                             if (Symbol *live = lookup(node.names[i]); live != nullptr) {
+                                held_touch(*live);
                                 live->held_comptime = false;
                                 ++fold_generation_;
                                 live->folded_local = false;

@@ -17,6 +17,7 @@ void Checker::check_isolated(uint32_t file, const FunctionDecl &fn) {
     // The nested check pops its own scopes. The caller's held names survive it.
     auto saved_held = std::move(held_names_);
     held_names_.clear();
+    HeldLog saved_log = take_held_log();
     const uint32_t saved_file = file_id_;
     // The caller may be learning a result type. This body is the real check of the specialization.
     const bool saved_quiet = quiet_;
@@ -67,6 +68,7 @@ void Checker::check_isolated(uint32_t file, const FunctionDecl &fn) {
     pop();
     scopes_ = std::move(saved_scopes);
     held_names_ = std::move(saved_held);
+    give_held_log(std::move(saved_log));
     file_id_ = saved_file;
     quiet_ = saved_quiet;
 }
@@ -754,6 +756,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             // The nested check pops its own scopes. The caller's held names survive it.
             auto saved_held = std::move(held_names_);
             held_names_.clear();
+            HeldLog saved_log = take_held_log();
             scopes_.clear();
             push();
             if (const auto found = statics_.find(owner); found != statics_.end()) {
@@ -781,6 +784,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             pop();
             scopes_ = std::move(saved_scopes);
             held_names_ = std::move(saved_held);
+            give_held_log(std::move(saved_log));
         }
         StructDecl arm;
         arm.loc = loc;
@@ -863,6 +867,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         // The nested check pops its own scopes. The caller's held names survive it.
         auto saved_held = std::move(held_names_);
         held_names_.clear();
+        HeldLog saved_log = take_held_log();
         scopes_.clear();
         push();
         if (const auto found = statics_.find(owner); found != statics_.end()) {
@@ -890,6 +895,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         pop();
         scopes_ = std::move(saved_scopes);
         held_names_ = std::move(saved_held);
+        give_held_log(std::move(saved_log));
     }
     for (const OwnedFn &owned : owned_fns_) {
         if (owned.file_id != owner || owned.fn.method_struct != templ->name) {

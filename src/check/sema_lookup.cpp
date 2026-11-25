@@ -32,7 +32,10 @@ void Checker::pop() {
     ++fold_generation_;
     if (!scopes_.empty()) {
         const std::size_t popped = scopes_.size() - 1;
-        std::erase_if(held_names_, [&](const auto &entry) { return entry.first >= popped; });
+        // A name is noted in the scope it is declared in, the innermost one, so this scope's names are last.
+        while (!held_names_.empty() && held_names_.back().first >= popped) {
+            held_names_.pop_back();
+        }
         for (const auto &[name, symbol] : scopes_.back().symbols) {
             (void)name;
             if (symbol.is_local_function) {
@@ -1273,6 +1276,12 @@ bool Checker::accepts_pointer(const Type &got, const Type &want) const {
         }
         if (from.kind != TypeKind::Pointer || to.kind != TypeKind::Pointer || from.pointee == nullptr ||
             to.pointee == nullptr) {
+            return false;
+        }
+        // `type Ptr *Point` is a different type from `*Point`. A cast confirms either side. A function alias,
+        // `type BinOp func (i32, i32) i32`, stays that function type.
+        const bool function = from.pointee->kind == TypeKind::Function && to.pointee->kind == TypeKind::Function;
+        if (from.alias_id != to.alias_id && !function) {
             return false;
         }
         if (from.optional != to.optional && !(loose && !from.optional && to.optional)) {

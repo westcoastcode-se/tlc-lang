@@ -5230,6 +5230,9 @@ void Checker::release_held_expr(const Expr &expr) {
     if (symbol == nullptr) {
         return;
     }
+    if (symbol->pending_fold || symbol->held_comptime) {
+        held_touch(*symbol);
+    }
     symbol->pending_fold = false;
     if (!symbol->held_comptime) {
         return;
@@ -5243,8 +5246,15 @@ bool Checker::expr_assigns(const Expr &expr, const std::string &name, bool hidde
     if (hidden) {
         return false;
     }
+    // While `assign_collect_` is set, each root a store reaches is collected and the walk goes on.
     const auto rooted = [&](const Expr &node) {
         const std::optional<std::string> root = held_root(node);
+        if (assign_collect_ != nullptr) {
+            if (root) {
+                assign_collect_->insert(*root);
+            }
+            return false;
+        }
         return root && *root == name;
     };
     return std::visit(
@@ -5256,7 +5266,9 @@ bool Checker::expr_assigns(const Expr &expr, const std::string &name, bool hidde
                     const auto *target = item.lhs == nullptr ? nullptr : std::get_if<Expr::Name>(&item.lhs->data);
                     const auto *address = item.rhs == nullptr ? nullptr : std::get_if<Expr::Unary>(&item.rhs->data);
                     const bool to_address = address != nullptr && !address->postfix && address->op == TokenKind::Amp;
-                    if (target != nullptr && target->text == name && !to_address) {
+                    if (target != nullptr && assign_collect_ != nullptr && !to_address) {
+                        assign_collect_->insert(target->text);
+                    } else if (target != nullptr && target->text == name && !to_address) {
                         return true;
                     }
                 } else if (item.lhs != nullptr && rooted(*item.lhs)) {
@@ -5271,7 +5283,9 @@ bool Checker::expr_assigns(const Expr &expr, const std::string &name, bool hidde
                 if (narrow_scan_) {
                     // `&p` can store null through the pointer. `&p.x` does not reach `p` itself.
                     const auto *target = std::get_if<Expr::Name>(&item.expr->data);
-                    if (!item.postfix && item.op == TokenKind::Amp && target != nullptr && target->text == name) {
+                    if (!item.postfix && item.op == TokenKind::Amp && target != nullptr && assign_collect_ != nullptr) {
+                        assign_collect_->insert(target->text);
+                    } else if (!item.postfix && item.op == TokenKind::Amp && target != nullptr && target->text == name) {
                         return true;
                     }
                 } else if (!item.postfix &&
@@ -5389,7 +5403,9 @@ bool Checker::stmt_assigns(const Stmt &stmt, const std::string &name, bool hidde
                     return false;
                 }
                 for (const std::string &one : node.names) {
-                    if (one == name) {
+                    if (assign_collect_ != nullptr) {
+                        assign_collect_->insert(one);
+                    } else if (one == name) {
                         return true;
                     }
                 }
@@ -5472,31 +5488,37 @@ bool Checker::stmt_assigns(const Stmt &stmt, const std::string &name, bool hidde
         stmt.data);
 }
 
+std::unordered_set<std::string> Checker::assigned_roots(const Stmt *stmt, const Expr *expr) const {
+    // Every name a store in `stmt` or `expr` may reach, inner bindings included. The exact check, which
+    // knows which binding a store changes, runs only for these.
+    std::unordered_set<std::string> out;
+    assign_collect_ = &out;
+    if (stmt != nullptr) {
+        (void)stmt_assigns(*stmt, std::string(), false);
+    }
+    if (expr != nullptr) {
+        (void)expr_assigns(*expr, std::string(), false);
+    }
+    assign_collect_ = nullptr;
+    return out;
+}
+
 void Checker::release_assigned(const Stmt *stmt, const std::string &hide_name) {
-    if (stmt == nullptr) {
+    if (stmt == nullptr || held_names_.empty()) {
         return;
     }
-    const std::vector<std::pair<std::size_t, std::string>> names = held_candidates();
-    for (const auto &item : names) {
-        if (!hide_name.empty() && item.second == hide_name) {
+    const std::unordered_set<std::string> assigned = assigned_roots(stmt, nullptr);
+    for (const std::string &name : assigned) {
+        if (!hide_name.empty() && name == hide_name) {
             continue;
         }
-        if (!stmt_assigns(*stmt, item.second, false)) {
+        // The visible binding is the one a store changes. Every held binding is in `held_names_`.
+        Symbol *visible = lookup(name);
+        if (visible == nullptr || (!visible->held_comptime && !visible->pending_fold) ||
+            !stmt_assigns(*stmt, name, false)) {
             continue;
         }
-        if (item.first >= scopes_.size()) {
-            continue;
-        }
-        const auto found = scopes_[item.first].symbols.find(item.second);
-        if (found == scopes_[item.first].symbols.end() ||
-            (!found->second.held_comptime && !found->second.pending_fold)) {
-            continue;
-        }
-        // An inner binding of the same name is the one a store would change.
-        Symbol *visible = lookup(item.second);
-        if (visible != &found->second) {
-            continue;
-        }
+        held_touch(*visible);
         visible->held_comptime = false;
         ++fold_generation_;
         visible->folded_local = false;
@@ -5505,26 +5527,17 @@ void Checker::release_assigned(const Stmt *stmt, const std::string &hide_name) {
 }
 
 void Checker::release_assigned_expr(const Expr *expr) {
-    if (expr == nullptr) {
+    if (expr == nullptr || held_names_.empty()) {
         return;
     }
-    const std::vector<std::pair<std::size_t, std::string>> names = held_candidates();
-    for (const auto &item : names) {
-        if (!expr_assigns(*expr, item.second, false)) {
+    const std::unordered_set<std::string> assigned = assigned_roots(nullptr, expr);
+    for (const std::string &name : assigned) {
+        Symbol *visible = lookup(name);
+        if (visible == nullptr || (!visible->held_comptime && !visible->pending_fold) ||
+            !expr_assigns(*expr, name, false)) {
             continue;
         }
-        if (item.first >= scopes_.size()) {
-            continue;
-        }
-        const auto found = scopes_[item.first].symbols.find(item.second);
-        if (found == scopes_[item.first].symbols.end() ||
-            (!found->second.held_comptime && !found->second.pending_fold)) {
-            continue;
-        }
-        Symbol *visible = lookup(item.second);
-        if (visible != &found->second) {
-            continue;
-        }
+        held_touch(*visible);
         visible->held_comptime = false;
         ++fold_generation_;
         visible->folded_local = false;
@@ -5601,100 +5614,142 @@ using HeldKeys = std::unordered_set<HeldKey, HeldKeyHash>;
 
 } // namespace
 
-std::vector<std::pair<std::size_t, std::string>> Checker::held_candidates() const {
-    // Each symbol that is held or pending now, once, from `held_names_`. Walking every symbol in every
-    // scope made each `if` and each loop linear in the locals.
-    std::vector<std::pair<std::size_t, std::string>> out;
-    HeldKeys seen;
-    seen.reserve(held_names_.size());
-    for (const auto &[scope, name] : held_names_) {
-        if (scope >= scopes_.size() || !seen.insert(HeldKey{scope, name}).second) {
-            continue;
-        }
-        const auto found = scopes_[scope].symbols.find(name);
-        if (found == scopes_[scope].symbols.end() ||
-            (!found->second.held_comptime && !found->second.pending_fold)) {
-            continue;
-        }
-        out.emplace_back(scope, name);
+void Checker::held_touch(const Symbol &symbol) {
+    if (held_marks_ == 0) {
+        return;
     }
-    return out;
+    for (std::size_t scope = scopes_.size(); scope-- > 0;) {
+        const auto found = scopes_[scope].symbols.find(symbol.name);
+        if (found == scopes_[scope].symbols.end() || &found->second != &symbol) {
+            continue;
+        }
+        HeldSlot slot;
+        slot.scope = scope;
+        slot.name = symbol.name;
+        slot.held = symbol.held_comptime;
+        slot.pending = symbol.pending_fold;
+        slot.folded = symbol.folded_local;
+        slot.fits = symbol.const_fits;
+        slot.value = symbol.const_value;
+        slot.init = symbol.const_init;
+        held_log_.push_back(std::move(slot));
+        return;
+    }
 }
 
-std::vector<Checker::HeldSlot> Checker::held_snapshot() const {
+// The first entry of each name in `log` from `mark` on, in a scope below `depth`. A scope at `depth` or
+// deeper was opened inside the branch and is gone after it.
+std::vector<Checker::HeldSlot> Checker::HeldBranch::first_changes(const std::vector<HeldSlot> &log, std::size_t mark,
+                                                                  std::size_t depth) {
     std::vector<HeldSlot> out;
-    for (const auto &[scope, name] : held_candidates()) {
-        const auto found = scopes_[scope].symbols.find(name);
-        {
-            const auto &item = *found;
-            HeldSlot slot;
-            slot.scope = scope;
-            slot.name = item.first;
-            slot.held = item.second.held_comptime;
-            slot.pending = item.second.pending_fold;
-            slot.folded = item.second.folded_local;
-            slot.value = item.second.const_value;
-            slot.init = item.second.const_init;
-            out.push_back(std::move(slot));
+    HeldKeys seen;
+    for (std::size_t index = mark; index < log.size(); ++index) {
+        const HeldSlot &slot = log[index];
+        if (slot.scope < depth && seen.insert(HeldKey{slot.scope, slot.name}).second) {
+            out.push_back(slot);
         }
     }
     return out;
 }
 
-void Checker::held_restore(const std::vector<HeldSlot> &snap) {
-    for (const HeldSlot &slot : snap) {
-        if (slot.scope >= scopes_.size()) {
+
+Checker::HeldBranch::HeldBranch(Checker &checker)
+    : self_(checker), mark_(checker.held_log_.size()), depth_(checker.scopes_.size()) {
+    ++self_.held_marks_;
+}
+
+Checker::HeldBranch::~HeldBranch() {
+    if (open_) {
+        --self_.held_marks_;
+    }
+}
+
+void Checker::HeldBranch::then_done() {
+    then_before_ = first_changes(self_.held_log_, mark_, depth_);
+    then_after_.clear();
+    then_after_.reserve(then_before_.size());
+    for (const HeldSlot &before : then_before_) {
+        HeldSlot now = before;
+        now.held = false;
+        now.pending = false;
+        if (before.scope < self_.scopes_.size()) {
+            const auto found = self_.scopes_[before.scope].symbols.find(before.name);
+            if (found != self_.scopes_[before.scope].symbols.end()) {
+                now.held = found->second.held_comptime;
+                now.pending = found->second.pending_fold;
+            }
+        }
+        then_after_.push_back(std::move(now));
+    }
+    // The second arm starts from the state before the `if`.
+    for (std::size_t index = self_.held_log_.size(); index-- > mark_;) {
+        const HeldSlot &slot = self_.held_log_[index];
+        if (slot.scope >= self_.scopes_.size()) {
             continue;
         }
-        const auto found = scopes_[slot.scope].symbols.find(slot.name);
-        if (found == scopes_[slot.scope].symbols.end()) {
+        const auto found = self_.scopes_[slot.scope].symbols.find(slot.name);
+        if (found == self_.scopes_[slot.scope].symbols.end()) {
             continue;
         }
         found->second.held_comptime = slot.held;
         found->second.pending_fold = slot.pending;
         found->second.folded_local = slot.folded;
         found->second.const_value = slot.value;
-        found->second.const_fits = true;
+        found->second.const_fits = slot.fits;
         found->second.const_init = slot.init;
     }
+    self_.held_log_.resize(mark_);
+    ++self_.fold_generation_;
 }
 
-void Checker::held_and(const std::vector<HeldSlot> &before, const std::vector<HeldSlot> &left,
-                       const std::vector<HeldSlot> &right) {
-    // One hash set per arm. A scan of each arm for each name made every `if` quadratic in the held names.
-    const auto keys = [](const std::vector<HeldSlot> &side) {
-        HeldKeys out;
-        out.reserve(side.size());
-        for (const HeldSlot &item : side) {
-            out.insert(HeldKey{item.scope, item.name});
+void Checker::HeldBranch::else_done() {
+    // A name stays held only when it was held before and both arms still hold it.
+    const std::vector<HeldSlot> else_before = first_changes(self_.held_log_, mark_, depth_);
+    std::vector<const HeldSlot *> before;
+    std::vector<bool> left;
+    HeldKeys in_then;
+    for (std::size_t index = 0; index < then_before_.size(); ++index) {
+        in_then.insert(HeldKey{then_before_[index].scope, then_before_[index].name});
+        before.push_back(&then_before_[index]);
+        left.push_back(then_after_[index].held || then_after_[index].pending);
+    }
+    for (const HeldSlot &slot : else_before) {
+        if (!in_then.contains(HeldKey{slot.scope, slot.name})) {
+            before.push_back(&slot);
+            left.push_back(slot.held || slot.pending);
         }
-        return out;
-    };
-    const HeldKeys in_left = keys(left);
-    const HeldKeys in_right = keys(right);
-    const auto kept = [](const HeldKeys &side, const HeldSlot &slot) {
-        return side.contains(HeldKey{slot.scope, slot.name});
-    };
-    for (const HeldSlot &slot : before) {
-        if (slot.scope >= scopes_.size()) {
+    }
+    for (std::size_t index = 0; index < before.size(); ++index) {
+        const HeldSlot &was = *before[index];
+        if ((!was.held && !was.pending) || was.scope >= self_.scopes_.size()) {
             continue;
         }
-        const auto found = scopes_[slot.scope].symbols.find(slot.name);
-        if (found == scopes_[slot.scope].symbols.end()) {
+        const auto found = self_.scopes_[was.scope].symbols.find(was.name);
+        if (found == self_.scopes_[was.scope].symbols.end()) {
             continue;
         }
-        if (kept(in_left, slot) && kept(in_right, slot)) {
-            found->second.held_comptime = slot.held;
-            found->second.pending_fold = slot.pending;
-            found->second.folded_local = slot.folded;
-            found->second.const_value = slot.value;
-            found->second.const_fits = true;
-            found->second.const_init = slot.init;
+        Symbol &symbol = found->second;
+        const bool right = symbol.held_comptime || symbol.pending_fold;
+        self_.held_touch(symbol);
+        if (left[index] && right) {
+            symbol.held_comptime = was.held;
+            symbol.pending_fold = was.pending;
+            symbol.folded_local = was.folded;
+            symbol.const_value = was.value;
+            symbol.const_fits = true;
+            symbol.const_init = was.init;
         } else {
-            found->second.held_comptime = false;
-            found->second.pending_fold = false;
-            found->second.folded_local = false;
+            symbol.held_comptime = false;
+            symbol.pending_fold = false;
+            symbol.folded_local = false;
         }
+    }
+    ++self_.fold_generation_;
+    open_ = false;
+    --self_.held_marks_;
+    // An enclosing branch still undoes from the oldest entries. The ones made here stay in the log.
+    if (self_.held_marks_ == 0) {
+        self_.held_log_.resize(mark_);
     }
 }
 
@@ -5937,8 +5992,10 @@ bool Checker::recheck_comptime_copy(FunctionDecl &wrapper, bool force) {
         std::size_t prefix = 0;
         // The caller's held names are restored with its scopes. A nested pop would erase them.
         std::vector<std::pair<std::size_t, std::string>> saved_held;
+        HeldLog saved_log;
         explicit FileScopes(Checker &checker)
-            : self(checker), saved(std::move(checker.scopes_)), saved_held(checker.held_names_) {
+            : self(checker), saved(std::move(checker.scopes_)), saved_held(checker.held_names_),
+              saved_log(checker.take_held_log()) {
             while (prefix < saved.size() && saved[prefix].function_id == 0) {
                 ++prefix;
             }
@@ -5954,6 +6011,7 @@ bool Checker::recheck_comptime_copy(FunctionDecl &wrapper, bool force) {
             }
             self.scopes_ = std::move(saved);
             self.held_names_ = std::move(saved_held);
+            self.give_held_log(std::move(saved_log));
         }
     } file_scopes(*this);
     const bool saved_quiet = quiet_;

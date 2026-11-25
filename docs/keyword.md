@@ -4,9 +4,9 @@
 
 This page names the keywords tlc adds beyond C, and the spellings that stay identifiers.
 
-Beyond C, `import`, `export`, `package`, `trait`, `func`, `defer`, `var`, `type`, and `unsafe` are keywords.
+Beyond C, `import`, `export`, `package`, `trait`, `func`, `defer`, `var`, `type`, `unsafe`, `comptime`, `macro`, `emit`, `test`, `assert`, `new`, `delete`, and `null` are keywords. `typeof` and `alignof` are keywords, as in C23.
 
-`impl`, `from`, `as`, and `this` are identifiers.
+`impl`, `from`, `as`, `static`, and `this` are identifiers.
 
 The full list is in the [grammar](grammar.md#tokens).
 

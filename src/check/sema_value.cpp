@@ -662,25 +662,21 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     AssignState then_out;
                     AssignState else_out;
                     // One arm can store. The other arm still sees the value from before the `?`.
-                    const std::vector<HeldSlot> held_before = held_snapshot();
+                    HeldBranch held(*this);
                     if (!have_guard || guard_null) {
                         then_type = check_arm(*node.mid, on_true, false);
                         then_out = assign_;
-                        const std::vector<HeldSlot> held_then = held_snapshot();
-                        held_restore(held_before);
+                        held.then_done();
                         else_type = check_arm(*node.rhs, on_false, have_guard);
                         else_out = assign_;
-                        const std::vector<HeldSlot> held_else = held_snapshot();
-                        held_and(held_before, held_then, held_else);
+                        held.else_done();
                     } else {
                         then_type = check_arm(*node.mid, on_true, true);
                         then_out = assign_;
-                        const std::vector<HeldSlot> held_then = held_snapshot();
-                        held_restore(held_before);
+                        held.then_done();
                         else_type = check_arm(*node.rhs, on_false, false);
                         else_out = assign_;
-                        const std::vector<HeldSlot> held_else = held_snapshot();
-                        held_and(held_before, held_then, held_else);
+                        held.else_done();
                     }
                     assign_ = init_merge(then_out, else_out);
                     cond_split_ = false;

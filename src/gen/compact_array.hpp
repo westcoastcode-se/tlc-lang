@@ -84,6 +84,11 @@ llvm::Constant *CodeGen::array_element(llvm::Constant *array, uint64_t index) {
     if (array == nullptr) {
         return nullptr;
     }
+    if (!splats_.empty() && splats_.contains(array)) {
+        auto *shape = llvm::cast<llvm::StructType>(array->getType());
+        const uint64_t total = 1 + llvm::cast<llvm::ArrayType>(shape->getElementType(1))->getNumElements();
+        return index < total ? array->getAggregateElement(0U) : nullptr;
+    }
     if (array->getType()->isArrayTy()) {
         if (index >= llvm::cast<llvm::ArrayType>(array->getType())->getNumElements()) {
             return nullptr;

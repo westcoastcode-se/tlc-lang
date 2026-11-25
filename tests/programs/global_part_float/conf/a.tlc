@@ -1,0 +1,10 @@
+package conf;
+
+export type Tune struct {
+    export gain f32 = 0.5;
+    export bias f64 = 1.25;
+}
+
+export var tune Tune;
+export var scale = 2.0;
+export var count = 5;

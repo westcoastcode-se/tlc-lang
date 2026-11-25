@@ -1,0 +1,26 @@
+// A field or an element a file-scope value leaves out is zero, for an inferred literal too.
+type S struct { a i32; b i32 = 1; }
+type N struct { in S; k i32; }
+type Holder struct { n i32; raw [4]i32; }
+var r = S{.b = 5};
+var q [2]S = {S{.b = 5}};
+var q2 = [_]S{S{.b = 5}};
+var n = N{.in = S{.b = 2}};
+const c = S{.b = 7};
+var h = Holder{.raw = {4}};
+var h2 Holder = {.raw = {4}};
+var g = r.a + 1;
+var g2 = q[0].a + q2[0].b;
+const k = c.a + c.b;
+func main() i32 {
+    if (r.a != 0 || r.b != 5 || q[0].a != 0 || q[1].b != 0 || q2[0].a != 0 || n.in.a != 0 || n.k != 0) {
+        return 1;
+    }
+    if (c.a != 0 || h.raw[0] != 4 || h.raw[3] != 0 || h.n != 0 || h2.raw[1] != 0 || h2.raw[0] != 4) {
+        return 2;
+    }
+    if (g != 1 || g2 != 5 || k != 7) {
+        return 3;
+    }
+    return 42;
+}

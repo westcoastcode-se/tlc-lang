@@ -574,6 +574,10 @@ class Checker {
     bool nested_startup_call(const Expr &expr);
     // `&p` or `*q` in a file-scope initializer, outside a call. Such a `var` is not a constant.
     bool reads_through_pointer(const Expr &expr) const;
+    // `p.x` or `p[1]` where `p` is a pointer reads what it points at.
+    bool selects_through_pointer(const Expr &expr);
+    // `var g = pp` stores an address in a `var`, and `var ok = pp == null` reads one as a value.
+    bool copies_address(const VarDecl &var, const Type &want);
     // `var h = make()`, or a copy of one: the value exists only once the program has started.
     bool set_at_start(const VarDecl &var, uint32_t file, int depth = 0) const;
     // A read of such a global in `fn` or a comptime func it calls is `set at start, not at compile time`,
@@ -1270,6 +1274,9 @@ class Checker {
     std::vector<InitStep> init_stack_;
     InitUse init_use_ = InitUse::Read;
     bool init_quiet_ = false;
+    // An inferred global whose initializer reported an error while its type was found. `check_globals`
+    // does not check that initializer again.
+    std::unordered_set<const VarDecl *> inferred_reported_;
     int init_keep_array_ = 0;
     // A brace used as a local initializer may leave fields unset.
     bool init_allow_partial_ = false;
@@ -1437,6 +1444,9 @@ class Checker {
     void release_held_expr(const Expr &expr);
     // A name this statement assigns, ignoring a nested binding of that same name.
     bool stmt_assigns(const Stmt &stmt, const std::string &name, bool hidden) const;
+    // Set while `assigned_roots` walks a statement. The two walks above then collect names instead.
+    mutable std::unordered_set<std::string> *assign_collect_ = nullptr;
+    std::unordered_set<std::string> assigned_roots(const Stmt *stmt, const Expr *expr) const;
     bool expr_assigns(const Expr &expr, const std::string &name, bool hidden) const;
     // A parameter of the `comptime func` being checked, or the index of a `comptime for` that is still waiting.
     bool comptime_param_pending(const Expr *expr) const;
@@ -1453,12 +1463,55 @@ class Checker {
         bool held = false;
         bool pending = false;
         bool folded = false;
+        bool fits = true;
         int value = 0;
         const Expr *init = nullptr;
     };
-    std::vector<HeldSlot> held_snapshot() const;
-    // Scope and name of each symbol that has been held or pending. `held_snapshot` reads only these, so an
-    // `if` in a function with many locals does not walk every symbol. An entry is checked again when read.
+    // The state each held name had before a change, oldest first, while an `if` or a `?` is checked.
+    // `HeldBranch` undoes the first arm from it and merges only the names its arms changed, so an `if`
+    // costs what its arms change, not every held name in the function.
+    std::vector<HeldSlot> held_log_;
+    int held_marks_ = 0;
+    // Records `symbol`'s state before a store releases it. A no-op outside a branch.
+    void held_touch(const Symbol &symbol);
+    // The log of an enclosing check, set aside while a nested check uses its own scopes.
+    struct HeldLog {
+        std::vector<HeldSlot> log;
+        int marks = 0;
+    };
+    HeldLog take_held_log() {
+        HeldLog out{std::move(held_log_), held_marks_};
+        held_log_.clear();
+        held_marks_ = 0;
+        return out;
+    }
+    void give_held_log(HeldLog saved) {
+        held_log_ = std::move(saved.log);
+        held_marks_ = saved.marks;
+    }
+    // One `if` or `?`. `then_done` after the first arm, `else_done` after the second, missing or not.
+    class HeldBranch {
+    public:
+        explicit HeldBranch(Checker &checker);
+        ~HeldBranch();
+        void then_done();
+        void else_done();
+        HeldBranch(const HeldBranch &) = delete;
+        HeldBranch &operator=(const HeldBranch &) = delete;
+
+    private:
+        static std::vector<HeldSlot> first_changes(const std::vector<HeldSlot> &log, std::size_t mark,
+                                                   std::size_t depth);
+        Checker &self_;
+        std::size_t mark_ = 0;
+        std::size_t depth_ = 0;
+        bool open_ = true;
+        // The names the first arm changed: their state before the `if`, and after that arm.
+        std::vector<HeldSlot> then_before_;
+        std::vector<HeldSlot> then_after_;
+    };
+    // Scope and name of each symbol that has been held or pending, in the order they were declared. A
+    // function with none skips the release walks.
     std::vector<std::pair<std::size_t, std::string>> held_names_;
     void note_held_name(const Symbol &symbol);
     // Names a null check narrowed, newest last. A loop inside that region checks these at its entry.
@@ -1469,11 +1522,6 @@ class Checker {
     // A loop body that can make a narrowed `?*T` null runs again after that store. The name is `?*T` for
     // the whole loop, so a use above the store needs its own check.
     void unsettle_narrowed(const Stmt &loop);
-    std::vector<std::pair<std::size_t, std::string>> held_candidates() const;
-    void held_restore(const std::vector<HeldSlot> &snap);
-    // Kept only when both arms still have the value from `before`.
-    void held_and(const std::vector<HeldSlot> &before, const std::vector<HeldSlot> &left,
-                  const std::vector<HeldSlot> &right);
     // `var row = [_]i32{1, 2}`, `var row [3]i32 = {1, 2, 3}`, and `const row = [_]i32{1}`.
     // `declared` is the symbol type when it was already stored.
     Type file_array_initializer(VarDecl &var, const Type *declared);
@@ -1482,6 +1530,8 @@ class Checker {
     FileConst file_constant(const Expr &expr, std::unordered_set<std::string> &seen, bool allow_var);
     // A file-scope `f32` or `f64`. A `var` may copy another global's initializer.
     bool accept_file_scalar(const VarDecl &var, const Type &type);
+    // `expr` is built from constants and places in file-scope variables, `w.f + 1.0` and `f64(row[at])`.
+    bool reads_globals(const Expr &expr);
     const VarDecl *global_var(const std::string &name);
     void define_constant(const VarDecl &var, Type type, int folded, bool fits = true);
     bool integer_const_type(const Type &type) const;

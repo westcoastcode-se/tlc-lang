@@ -439,13 +439,7 @@ A short list in that value stores only the named elements. Reading an omitted el
 
 `Holder{.raw = {4, 6, 8}}` is reported as `type mismatch`.
 
-A file-scope `var h Holder = {.raw = {4}}` is accepted by `--check`. Emitting it is reported as `global initializer is not a constant`.
-
-A file-scope `var h Holder = {.raw = {4, 0...}}` stores 4 and zero in the rest. `var h Holder = {.n = 40, .raw = {2, 0...}}` stores those fields.
-
-An inferred file-scope `var h = Holder{.raw = {4}}` is reported as `uninitialized`.
-
-An inferred file-scope `var h = Holder{.raw = {4, 0...}}`, when `raw` is the only field, stores 4 and zero in the rest.
+A file-scope value is zero where nothing is written. `var h Holder = {.raw = {4}}` and `var h = Holder{.raw = {4}}` store 4 and zero in the rest, with or without `0...`. `var h Holder = {.n = 40, .raw = {2, 0...}}` stores those fields. A field the value leaves out is zero too.
 
 `raw [2]i32 = {1, 2}` on the field is reported as `not supported yet`.
 

@@ -166,7 +166,7 @@ llvm::Constant *CodeGen::const_field(const Expr &expr, const FieldLayout &slot) 
         }
         // `var box Box = {.op = inc}` at file scope. A data pointer stays non-constant.
         if (slot.fn_ty != nullptr) {
-            if (const Binding *designator = function_designator(current_file_, expr)) {
+            if (const Binding *designator = constant_function(expr)) {
                 return llvm::dyn_cast_or_null<llvm::Function>(designator->value);
             }
         }
@@ -497,11 +497,19 @@ llvm::Constant *CodeGen::default_array(llvm::Type *type, int struct_id, std::uno
         one = default_struct_into(struct_id, stack);
     }
     --default_array_depth_;
-    if (one == nullptr || one->getType() != elem) {
+    if (one == nullptr || (one->getType() != elem && !(splat_defaults_ && same_layout(one->getType(), elem)))) {
         return nullptr;
     }
     if (one->isNullValue()) {
         return llvm::ConstantAggregateZero::get(array);
+    }
+    if (splat_defaults_ && array->getNumElements() > 1) {
+        // One element stands for all of them while a part is read.
+        auto *tail = llvm::ArrayType::get(elem, array->getNumElements() - 1);
+        llvm::Constant *splat = llvm::ConstantStruct::get(llvm::StructType::get(context_, {one->getType(), tail}),
+                                                          {one, llvm::ConstantAggregateZero::get(tail)});
+        splats_.insert(splat);
+        return splat;
     }
     std::vector<llvm::Constant *> values(array->getNumElements(), one);
     return llvm::ConstantArray::get(array, values);
@@ -1103,6 +1111,16 @@ llvm::Constant *CodeGen::const_place(const Expr &expr, int &struct_id) {
     const auto *named = std::get_if<Expr::Name>(&expr.data);
     uint32_t owner = 0;
     const Binding *found = named == nullptr ? nullptr : global_named(current_file_, named->text, &owner);
+    // `const g = conf.cptr` copies the start value of that pointer once it is set.
+    if (found != nullptr && !found->is_slice && found->depth > 0 && !found->is_array) {
+        auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found->value);
+        const auto file = files_.find(owner);
+        if (global == nullptr || !global->hasInitializer() || start_written_.contains(global) || file == files_.end() ||
+            !file->second.folded.contains(named->text)) {
+            return nullptr;
+        }
+        return global->getInitializer();
+    }
     if (found == nullptr || found->is_slice || found->depth != 0) {
         return nullptr;
     }
@@ -1125,7 +1143,61 @@ llvm::Constant *CodeGen::const_place(const Expr &expr, int &struct_id) {
     return const_initializer(expr, scalar);
 }
 
+std::optional<CodeGen::ConstAddress> CodeGen::const_address(const Expr &place) {
+    if (const auto *selector = std::get_if<Expr::Selector>(&place.data)) {
+        const Binding *root = package_global(current_file_, *selector);
+        std::optional<ConstAddress> base;
+        if (root != nullptr) {
+            auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(root->value);
+            if (global == nullptr || root->depth != 0 || root->is_slice) {
+                return std::nullopt;
+            }
+            return ConstAddress{global, global->getValueType(), root->struct_id};
+        }
+        base = selector->base == nullptr ? std::nullopt : const_address(*selector->base);
+        if (!base || base->struct_id < 0 || base->struct_id >= static_cast<int>(structs_.size())) {
+            return std::nullopt;
+        }
+        const StructLayout &layout = structs_[static_cast<std::size_t>(base->struct_id)];
+        int index = -1;
+        const FieldLayout *field = find_field(base->struct_id, selector->field, index);
+        if (field == nullptr || index < 0 || layout.is_union || layout.type != base->type ||
+            static_cast<unsigned>(index) >= layout.type->getNumElements()) {
+            return std::nullopt;
+        }
+        llvm::Constant *indices[] = {llvm::ConstantInt::get(i32(), 0),
+                                     llvm::ConstantInt::get(i32(), static_cast<uint64_t>(index))};
+        llvm::Type *type = layout.type->getElementType(static_cast<unsigned>(index));
+        const int struct_id = field->depth == 0 && !field->is_slice ? field->struct_id : -1;
+        return ConstAddress{llvm::ConstantExpr::getInBoundsGetElementPtr(base->type, base->pointer, indices), type,
+                            struct_id};
+    }
+    if (const auto *index = std::get_if<Expr::Index>(&place.data)) {
+        if (index->is_range || index->base == nullptr || index->index == nullptr) {
+            return std::nullopt;
+        }
+        const std::optional<int32_t> at = fold(*index->index);
+        const std::optional<ConstAddress> base = at && *at >= 0 ? const_address(*index->base) : std::nullopt;
+        auto *array = base ? llvm::dyn_cast<llvm::ArrayType>(base->type) : nullptr;
+        if (array == nullptr || static_cast<uint64_t>(*at) >= array->getNumElements()) {
+            return std::nullopt;
+        }
+        llvm::Constant *indices[] = {llvm::ConstantInt::get(i64(), 0),
+                                     llvm::ConstantInt::get(i64(), static_cast<uint64_t>(*at))};
+        return ConstAddress{llvm::ConstantExpr::getInBoundsGetElementPtr(array, base->pointer, indices),
+                            array->getElementType(), base->struct_id};
+    }
+    const auto *named = std::get_if<Expr::Name>(&place.data);
+    const Binding *binding = named == nullptr ? nullptr : global_named(current_file_, named->text);
+    auto *global = binding == nullptr ? nullptr : llvm::dyn_cast_or_null<llvm::GlobalVariable>(binding->value);
+    if (global == nullptr || binding->depth != 0 || binding->is_slice) {
+        return std::nullopt;
+    }
+    return ConstAddress{global, global->getValueType(), binding->struct_id};
+}
+
 std::optional<CodeGen::WideInt> CodeGen::part_value(const Expr &place) {
+    const SplatScope splat(*this);
     int struct_id = -1;
     auto *constant = llvm::dyn_cast_or_null<llvm::ConstantInt>(const_place(place, struct_id));
     if (constant == nullptr) {
@@ -1198,6 +1270,7 @@ std::optional<CodeGen::FoldedNumber> CodeGen::part_number(const Expr &expr) {
         }
         constant = global->getInitializer();
     } else {
+        const SplatScope splat(*this);
         int struct_id = -1;
         constant = const_place(expr, struct_id);
     }
@@ -1224,26 +1297,67 @@ bool CodeGen::collect_part_values(const Expr &expr, std::vector<const llvm::Glob
                 return true;
             }
             // A constant builds the value from what the global was written as. `const k = c + 1` after
-            // `var c = w.n` is `w.n + 1`.
-            if (!place) {
-                const auto *named = std::get_if<Expr::Name>(&expr.data);
-                const VarDecl *written = global_decl(named->text);
+            // `var c = w.n` is `w.n + 1`. `hv.c` and a sibling's `c` are built in their own file.
+            std::string name;
+            uint32_t owner = current_file_;
+            if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+                if (global_named(current_file_, named->text, &owner) != nullptr) {
+                    name = named->text;
+                }
+            } else if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+                if (package_global(current_file_, *selector, &owner) != nullptr) {
+                    name = selector->field;
+                }
+            }
+            if (!name.empty() && root->getValueType()->isFloatingPointTy()) {
+                // `const k = cf + 1.0` after `var cf = big.f`.
+                const AtFile at(current_file_, owner);
+                const VarDecl *written = global_decl(name);
+                const std::string key = std::to_string(owner) + ":" + name;
                 if (written == nullptr || written->init == nullptr || written->runtime_init ||
-                    !root->getValueType()->isIntegerTy() || !const_names_.insert(named->text).second) {
+                    !const_names_.insert(key).second) {
+                    return false;
+                }
+                std::optional<FoldedNumber> number;
+                if (collect_part_values(*written->init, nullptr)) {
+                    std::unordered_set<std::string> seen;
+                    number = fold_number(*written->init, seen);
+                }
+                const_names_.erase(key);
+                if (!number) {
+                    return false;
+                }
+                const bool wide = root->getValueType()->isDoubleTy();
+                number->is_float = true;
+                number->wide = wide;
+                if (!wide) {
+                    number->value = static_cast<double>(static_cast<float>(number->value));
+                }
+                part_numbers_[&expr] = *number;
+                return true;
+            }
+            if (!name.empty()) {
+                if (!root->getValueType()->isIntegerTy()) {
+                    return false;
+                }
+                const AtFile at(current_file_, owner);
+                const VarDecl *written = global_decl(name);
+                const std::string key = std::to_string(owner) + ":" + name;
+                if (written == nullptr || written->init == nullptr || written->runtime_init ||
+                    !const_names_.insert(key).second) {
                     return false;
                 }
                 llvm::Constant *value = collect_part_values(*written->init, nullptr)
                                             ? folded_scalar(*written->init, root->getValueType())
                                             : nullptr;
-                const_names_.erase(named->text);
+                const_names_.erase(key);
                 auto *constant = llvm::dyn_cast_or_null<llvm::ConstantInt>(value);
                 if (constant == nullptr) {
                     return false;
                 }
                 bool is_unsigned = false;
-                if (const auto file = files_.find(current_file_); file != files_.end()) {
-                    if (const auto binding = file->second.globals.find(named->text);
-                        binding != file->second.globals.end()) {
+                if (const auto file = files_.find(owner); file != files_.end()) {
+                    if (const auto binding = file->second.globals.find(name); binding != file->second.globals.end()) {
                         is_unsigned = binding->second.elem_unsigned;
                     }
                 }
@@ -1251,6 +1365,9 @@ bool CodeGen::collect_part_values(const Expr &expr, std::vector<const llvm::Glob
                 part_values_[&expr] = width == 1 ? WideInt{constant->getZExtValue(), 32, false}
                                                  : WideInt{constant->getZExtValue(), static_cast<int>(width), is_unsigned};
                 return true;
+            }
+            if (!place) {
+                return false;
             }
         }
         if (fold(expr) || fold_wide(expr)) {
@@ -2132,7 +2249,7 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
                     }
                     cursor = cast->expr.get();
                 }
-                if (const Binding *designator = function_designator(current_file_, *cursor)) {
+                if (const Binding *designator = constant_function(*cursor)) {
                     if (auto *function = llvm::dyn_cast_or_null<llvm::Function>(designator->value)) {
                         return function;
                     }
@@ -2198,7 +2315,7 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
         }
         return const_struct(*init, dest.struct_id);
     }
-    if (const Binding *designator = function_designator(current_file_, *cursor)) {
+    if (const Binding *designator = constant_function(*cursor)) {
         auto *function = llvm::dyn_cast_or_null<llvm::Function>(designator->value);
         if (function == nullptr || dest.depth <= 0 || dest.fn_ty == nullptr) {
             return nullptr;
@@ -2271,6 +2388,13 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
                     return global;
                 }
             }
+            return nullptr;
+        }
+        // `const at = &w.n` and `const at = &row[1]` point into that global.
+        if (dest.depth > 0) {
+            if (const std::optional<ConstAddress> address = const_address(*unary->expr)) {
+                return address->pointer;
+            }
         }
         return nullptr;
     }
@@ -2286,9 +2410,14 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
     // `var g = p.x` and `var g = crow[2]` read that part of a global's start value.
     if (std::holds_alternative<Expr::Selector>(cursor->data) || std::holds_alternative<Expr::Index>(cursor->data)) {
         int struct_id = -1;
-        llvm::Constant *part = const_place(*cursor, struct_id);
         llvm::Type *want = leaf_type(dest.depth, dest.elem_char, dest.struct_id, dest.elem_bool, dest.elem_bits,
                                      dest.elem_float);
+        // A scalar part reads one element of a large defaulted array, not the whole array.
+        std::optional<SplatScope> splat;
+        if (want != nullptr && !want->isAggregateType()) {
+            splat.emplace(*this);
+        }
+        llvm::Constant *part = const_place(*cursor, struct_id);
         // A part with a compact array has that array's layout, not its type.
         if (part != nullptr && want != nullptr &&
             (part->getType() == want || (want->isAggregateType() && same_layout(part->getType(), want)))) {
@@ -2646,6 +2775,10 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         if (value == nullptr && global != nullptr && global->getValueType()->isIntegerTy() &&
             collect_part_values(*var.init, nullptr)) {
             value = folded_scalar(*var.init, global->getValueType());
+        } else if (value == nullptr && global != nullptr && found->second.elem_float &&
+                   global->getValueType()->isFloatingPointTy() && collect_part_values(*var.init, nullptr)) {
+            // `const g = w.f * 2.0` is a float of those parts.
+            value = const_initializer(*var.init, found->second);
         }
         part_values_.clear();
         part_numbers_.clear();
@@ -2810,7 +2943,7 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         file.folded.insert(key);
         return;
     }
-    if (const Binding *designator = function_designator(current_file_, *var.init)) {
+    if (const Binding *designator = constant_function(*var.init)) {
         auto *function = llvm::dyn_cast<llvm::Function>(designator->value);
         if (found_early == file.globals.end() || found_early->second.fn_ty == nullptr ||
             found_early->second.value == nullptr || function == nullptr) {
@@ -2821,10 +2954,36 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         file.folded.insert(key);
         return;
     }
+    // `var n = w.n + 1` and `var m = row[1] * 2` fold with the value each part of a global starts with.
+    // When that global is written at start, `w` with a large array of defaulted structs, the value is
+    // written at start too, after `w`. So is `var m = n + 1` after `var n = w.n`.
+    struct ClearParts {
+        std::unordered_map<const Expr *, WideInt> &values;
+        std::unordered_map<const Expr *, FoldedNumber> &numbers;
+        ~ClearParts() {
+            values.clear();
+            numbers.clear();
+        }
+    } clear_parts{part_values_, part_numbers_};
+    // A float computed from parts, `var f = w.f + 1.0` and `var f f64 = w.n`, folds the same way.
     if (found_early != file.globals.end() && found_early->second.elem_float && !found_early->second.is_array &&
         found_early->second.depth == 0) {
         auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found_early->second.value);
-        llvm::Constant *value = global == nullptr ? nullptr : const_initializer(*var.init, found_early->second);
+        std::vector<const llvm::GlobalVariable *> heavy;
+        const bool valued = global != nullptr && collect_part_values(*var.init, &heavy);
+        if (global != nullptr && !heavy.empty()) {
+            StartWrite write;
+            write.type = global->getValueType();
+            write.source = var.init.get();
+            write.root = heavy.front();
+            write.roots = heavy;
+            std::vector<StartWrite> writes{write};
+            set_global_initializer(global, llvm::Constant::getNullValue(global->getValueType()));
+            commit_start_writes(writes, global, var);
+            file.folded.insert(key);
+            return;
+        }
+        llvm::Constant *value = !valued ? nullptr : const_initializer(*var.init, found_early->second);
         // A compact array is accepted. It waits for the global of its own type.
         if (value == nullptr || global == nullptr || !set_global_initializer(global, value)) {
             error(var.loc, "global initializer is not a constant");
@@ -2839,7 +2998,12 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         !fold(*var.init) && !fold_wide(*var.init)) {
         auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found_early->second.value);
         int struct_id = -1;
+        std::optional<SplatScope> splat;
+        if (global != nullptr && !global->getValueType()->isAggregateType()) {
+            splat.emplace(*this);
+        }
         llvm::Constant *part = global == nullptr ? nullptr : const_place(*var.init, struct_id);
+        splat.reset();
         if (part != nullptr && part->getType() != global->getValueType() &&
             !same_layout(part->getType(), global->getValueType())) {
             part = nullptr;
@@ -2867,17 +3031,6 @@ void CodeGen::apply_initializer(const VarDecl &var) {
         file.folded.insert(key);
         return;
     }
-    // `var n = w.n + 1` and `var m = row[1] * 2` fold with the value each part of a global starts with.
-    // When that global is written at start, `w` with a large array of defaulted structs, the value is
-    // written at start too, after `w`. So is `var m = n + 1` after `var n = w.n`.
-    struct ClearParts {
-        std::unordered_map<const Expr *, WideInt> &values;
-        std::unordered_map<const Expr *, FoldedNumber> &numbers;
-        ~ClearParts() {
-            values.clear();
-            numbers.clear();
-        }
-    } clear_parts{part_values_, part_numbers_};
     if (found_early != file.globals.end() && found_early->second.depth == 0 && !found_early->second.is_array &&
         !found_early->second.is_slice && found_early->second.struct_id < 0) {
         auto *global = llvm::dyn_cast_or_null<llvm::GlobalVariable>(found_early->second.value);

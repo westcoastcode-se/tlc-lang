@@ -1,0 +1,46 @@
+// A `const` computed from a part of a global that holds a large array of defaulted structs reads that
+// part's start value. The compiler builds one element of the array, not all of them.
+import "hv";
+
+type Point struct {
+    x i32 = 3;
+    y i32 = 4;
+}
+
+type Inner struct {
+    p Point;
+    m i64 = 9;
+}
+
+type World struct {
+    n i32 = 7;
+    pts [100000000]Point;
+    grid [10000][10000]Inner;
+    u u8 = 200;
+}
+
+var w = World{.n = 5};
+var row [100000000]Point;
+var c = w.n;
+
+const plus = w.n + 1;
+const pair = w.pts[0].x + w.pts[99999999].y * 100;
+const deep = w.grid[9999][5].m + w.grid[3][3].p.y;
+const last = row[99999999].y;
+const wide = w.u + 1;
+const from_copy = c + 1;
+const imported = hv.b.n + hv.b.cells[99999999].x;
+const imported_copy = hv.copy * 2;
+
+func main() i32 {
+    if (plus != 6 || pair != 403 || deep != 13) {
+        return 1;
+    }
+    if (last != 4 || wide != 201 || from_copy != 6) {
+        return 2;
+    }
+    if (imported != 10 || imported_copy != 14) {
+        return 3;
+    }
+    return 42;
+}

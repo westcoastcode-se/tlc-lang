@@ -1,0 +1,73 @@
+// A file-scope float computed from parts of globals folds with each part's start value, as an integer
+// does. A part of a global that holds a large array of defaulted structs makes it a start write.
+import "conf";
+
+type W struct {
+    n i32 = 3;
+    f f32 = 1.5;
+    d f64 = 2.25;
+}
+
+type P struct {
+    x i32 = 1;
+}
+
+type Big struct {
+    f f32 = 4.5;
+    pts [100000]P;
+}
+
+var w W;
+var big Big;
+var fl = 0.5;
+var row = [_]f32{1.0, 2.0};
+var at = 1;
+
+var part = w.f;
+var plus = w.f + 1.0;
+var from_var = fl + 1.0;
+var widened f64 = w.n;
+var narrowed = f32(w.d);
+var divided = f64(w.n) / 2.0;
+var element = row[at] + 0.25;
+var negated = -w.f;
+var summed f32 = w.n + 1;
+var heavy = big.f + 1.0;
+var heavy_copy = big.f;
+var imported = conf.tune.gain * f32(conf.scale);
+var mixed = conf.tune.bias + w.d;
+var flag = w.d * 2.0 > 4.0;
+var next = conf.count + 1;
+
+const doubled = w.f * 2.0;
+const heavy_const = big.f + 1.0;
+const from_copy = heavy_copy + 0.5;
+
+// A comptime call reads the start value of a global computed from another package's globals.
+comptime func read() i32 {
+    return i32(mixed * 2.0) + next * 100;
+}
+
+func near(a f64, b f64) bool {
+    return a - b < 0.0001 && b - a < 0.0001;
+}
+
+func main() i32 {
+    comptime const k = read();
+    if (!near(part, 1.5) || !near(plus, 2.5) || !near(from_var, 1.5) || !near(widened, 3.0)) {
+        return 1;
+    }
+    if (!near(narrowed, 2.25) || !near(divided, 1.5) || !near(element, 2.25) || !near(negated, -1.5)) {
+        return 2;
+    }
+    if (!near(summed, 4.0) || !near(heavy, 5.5) || !near(heavy_copy, 4.5)) {
+        return 3;
+    }
+    if (!near(imported, 1.0) || !near(mixed, 3.5) || !flag || k != 607) {
+        return 4;
+    }
+    if (!near(doubled, 3.0) || !near(heavy_const, 5.5) || !near(from_copy, 5.0)) {
+        return 5;
+    }
+    return 42;
+}

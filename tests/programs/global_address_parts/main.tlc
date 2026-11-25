@@ -1,0 +1,49 @@
+// A `const` may hold the address of a field or a constant element of a global, and copy another
+// pointer constant, here or in an imported package. A function of an imported package is a value.
+import "conf";
+
+type P struct {
+    x i32 = 1;
+    y i32 = 2;
+}
+
+type W struct {
+    n i32 = 2;
+    pts [3]P;
+    grid [2][2]i32;
+}
+
+var w W;
+var row = [_]i32{10, 20, 30};
+var ps [4]P;
+
+const a = &w.n;
+const b = &row[1];
+const c = &w.pts[2].y;
+const d = &ps[3].x;
+const e = &w.grid[1][0];
+const f *P = &w.pts[1];
+const gain = &conf.tune.gain;
+const counted = conf.at_count;
+const none = conf.maybe;
+var call = conf.give;
+const fixed = conf.give;
+
+func main() i32 {
+    *a = 5;
+    *b = 7;
+    *c = 9;
+    *e = 4;
+    f.x = 3;
+    if (w.n != 5 || row[1] != 7 || w.pts[2].y != 9 || *d != 1 || w.grid[1][0] != 4 || w.pts[1].x != 3) {
+        return 1;
+    }
+    *gain = 6;
+    if (conf.tune.gain != 6 || *counted != 3 || none != null) {
+        return 2;
+    }
+    if (call() != 2 || fixed() != 2) {
+        return 3;
+    }
+    return 42;
+}

@@ -1,0 +1,14 @@
+package hv;
+
+export type Cell struct {
+    export x i32 = 3;
+    export y i32 = 4;
+}
+
+export type Board struct {
+    export n i32 = 7;
+    export cells [100000000]Cell;
+}
+
+export var b Board;
+export var copy = b.n;

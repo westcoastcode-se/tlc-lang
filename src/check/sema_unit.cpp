@@ -820,6 +820,16 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 error(var->loc, "type mismatch");
             }
             Type type = type_invalid();
+            // A field or an element a file-scope value leaves out is zero, as `check_globals` lets it be.
+            // `var r = S{.b = 5}` is found here, before that check.
+            struct PartialFlag {
+                bool &slot;
+                bool saved;
+                ~PartialFlag() { slot = saved; }
+            } partial{init_allow_partial_, init_allow_partial_};
+            if (!(var->is_const_decl && var->is_comptime)) {
+                init_allow_partial_ = true;
+            }
             if (var->inferred) {
                 if (var->init == nullptr) {
                     error(var->loc, "type mismatch");
@@ -872,7 +882,11 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                     }
                     continue;
                 } else {
+                    const std::size_t before = diags_.size();
                     type = check_expr(*var->init, true);
+                    if (diags_.size() != before) {
+                        inferred_reported_.insert(var);
+                    }
                     // `40i8` is `i8`, and `var g = 250u8` and `g := 250u8` keep `u8`, as a local binding does.
                     // A use in arithmetic still widens. `a + b` is already `i32`.
                     const Type raw = last_unpromoted_;
@@ -1156,8 +1170,52 @@ bool Checker::accept_file_scalar(const VarDecl &var, const Type &type) {
     if (kind == FileConst::Yes) {
         return true;
     }
+    // `var f = w.f + 1.0` and `var f f64 = w.n` read parts of globals. Each part is its start value, as
+    // for an integer. A call and an address were reported before this check.
+    if (kind == FileConst::No && !(var.is_const_decl && var.is_comptime) && reads_globals(*var.init)) {
+        return true;
+    }
     error(var.loc, kind == FileConst::Unfolded ? "not supported yet" : "global initializer is not a constant");
     return false;
+}
+
+bool Checker::reads_globals(const Expr &expr) {
+    if (constant_operand(expr)) {
+        return true;
+    }
+    if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
+        const bool value_op =
+            unary->op == TokenKind::Plus || unary->op == TokenKind::Minus || unary->op == TokenKind::Bang;
+        return value_op && unary->expr != nullptr && reads_globals(*unary->expr);
+    }
+    if (const auto *binary = std::get_if<Expr::Binary>(&expr.data)) {
+        return binary->lhs != nullptr && binary->rhs != nullptr && reads_globals(*binary->lhs) &&
+               (binary->mid == nullptr || reads_globals(*binary->mid)) && reads_globals(*binary->rhs);
+    }
+    if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
+        return cast->expr != nullptr && cast->indirections == 0 && !cast->is_fn_ptr && reads_globals(*cast->expr);
+    }
+    // `w.f`, `row[1]`, `conf.w.f`, and `fl`: a place in a file-scope variable.
+    const Expr *cursor = &expr;
+    while (cursor != nullptr) {
+        if (const auto *selector = std::get_if<Expr::Selector>(&cursor->data)) {
+            uint32_t owner = 0;
+            if (file_scope_var(*cursor, file_id_, owner) != nullptr) {
+                return true;
+            }
+            cursor = selector->base.get();
+        } else if (const auto *index = std::get_if<Expr::Index>(&cursor->data)) {
+            if (index->is_range || index->index == nullptr || !reads_globals(*index->index)) {
+                return false;
+            }
+            cursor = index->base.get();
+        } else {
+            break;
+        }
+    }
+    uint32_t owner = 0;
+    return cursor != nullptr && std::holds_alternative<Expr::Name>(cursor->data) &&
+           file_scope_var(*cursor, file_id_, owner) != nullptr;
 }
 
 const VarDecl *Checker::global_var(const std::string &name) {
@@ -1770,6 +1828,133 @@ bool Checker::reads_through_pointer(const Expr &expr) const {
         expr.data);
 }
 
+bool Checker::selects_through_pointer(const Expr &expr) {
+    // A slice points at its elements too. A constant string is its bytes.
+    const auto pointer_base = [&](const Expr &base) {
+        const bool saved = quiet_;
+        quiet_ = true;
+        const Type type = check_expr(base, true);
+        quiet_ = saved;
+        if (type.kind == TypeKind::Pointer) {
+            return true;
+        }
+        std::unordered_set<std::string> seen;
+        return is_slice(type) && !constant_string(base, seen);
+    };
+    if (const auto *selector = std::get_if<Expr::Selector>(&expr.data)) {
+        return selector->base != nullptr && (pointer_base(*selector->base) || selects_through_pointer(*selector->base));
+    }
+    if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
+        // `all[1:3]` is a slice of the same elements, not a read of one.
+        if (index->is_range) {
+            return index->base != nullptr && selects_through_pointer(*index->base);
+        }
+        return (index->base != nullptr && (pointer_base(*index->base) || selects_through_pointer(*index->base))) ||
+               (index->index != nullptr && selects_through_pointer(*index->index));
+    }
+    if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
+        if (unary->op == TokenKind::Amp) {
+            // `&pp.n` and `&sl[1]` are addresses that are not fixed. `&p` and `&w.n` are.
+            return unary->expr != nullptr && !std::holds_alternative<Expr::Name>(unary->expr->data) &&
+                   selects_through_pointer(*unary->expr);
+        }
+        return unary->expr != nullptr && selects_through_pointer(*unary->expr);
+    }
+    if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
+        return cast->expr != nullptr && selects_through_pointer(*cast->expr);
+    }
+    if (const auto *binary = std::get_if<Expr::Binary>(&expr.data)) {
+        return (binary->lhs != nullptr && selects_through_pointer(*binary->lhs)) ||
+               (binary->mid != nullptr && selects_through_pointer(*binary->mid)) ||
+               (binary->rhs != nullptr && selects_through_pointer(*binary->rhs));
+    }
+    return false;
+}
+
+bool Checker::copies_address(const VarDecl &var, const Type &want) {
+    if (var.init == nullptr) {
+        return false;
+    }
+    const auto quiet_type = [&](const Expr &expr) {
+        const bool saved = quiet_;
+        quiet_ = true;
+        const Type type = check_expr(expr, true);
+        quiet_ = saved;
+        return type;
+    };
+    const auto place = [](const Expr &expr) {
+        return std::holds_alternative<Expr::Name>(expr.data) || std::holds_alternative<Expr::Selector>(expr.data) ||
+               std::holds_alternative<Expr::Index>(expr.data);
+    };
+    // A pointer, a function, or a slice that is not a constant string, held in a variable. `add`,
+    // `Point.make`, and `pkg.add` name functions.
+    const auto holds_address = [&](const Expr &expr) {
+        const Expr *root = &expr;
+        while (root != nullptr) {
+            if (const auto *selector = std::get_if<Expr::Selector>(&root->data)) {
+                uint32_t owner = 0;
+                if (file_scope_var(*root, file_id_, owner) != nullptr) {
+                    break;
+                }
+                root = selector->base.get();
+            } else if (const auto *index = std::get_if<Expr::Index>(&root->data)) {
+                root = index->base.get();
+            } else {
+                break;
+            }
+        }
+        if (root == nullptr) {
+            return false;
+        }
+        if (const auto *named = std::get_if<Expr::Name>(&root->data)) {
+            const Symbol *symbol = lookup(named->text);
+            if (symbol == nullptr || symbol->is_function || symbol->is_type || symbol->is_package) {
+                return false;
+            }
+        }
+        const Type type = quiet_type(expr);
+        if (type.kind == TypeKind::Pointer || type.kind == TypeKind::Function) {
+            return true;
+        }
+        std::unordered_set<std::string> seen;
+        return is_slice(type) && !constant_string(expr, seen);
+    };
+    if (want.kind == TypeKind::Pointer || want.kind == TypeKind::Function) {
+        // `const g = pp` copies the constant address. `var g = pp` is an address in a `var`.
+        if (var.is_const_decl) {
+            return false;
+        }
+        const Expr *cursor = var.init.get();
+        while (const auto *cast = std::get_if<Expr::Cast>(&cursor->data)) {
+            if (cast->expr == nullptr) {
+                return false;
+            }
+            cursor = cast->expr.get();
+        }
+        return place(*cursor) && holds_address(*cursor);
+    }
+    if (is_slice(want) || want.kind == TypeKind::Struct || want.kind == TypeKind::Array ||
+        want.kind == TypeKind::Tuple) {
+        return false;
+    }
+    // `var ok = pp == null`, `var n = i64(pp)`, and `var n = sl.len` read an address as a number.
+    const auto reads = [&](const auto &self, const Expr &expr) -> bool {
+        if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
+            return unary->op != TokenKind::Amp && unary->expr != nullptr && self(self, *unary->expr);
+        }
+        if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
+            return cast->expr != nullptr && self(self, *cast->expr);
+        }
+        if (const auto *binary = std::get_if<Expr::Binary>(&expr.data)) {
+            return (binary->lhs != nullptr && self(self, *binary->lhs)) ||
+                   (binary->mid != nullptr && self(self, *binary->mid)) ||
+                   (binary->rhs != nullptr && self(self, *binary->rhs));
+        }
+        return place(expr) && holds_address(expr);
+    };
+    return reads(reads, *var.init);
+}
+
 bool Checker::accept_array_copy(VarDecl &var) {
     if (var.init == nullptr || std::holds_alternative<Expr::Init>(var.init->data)) {
         return true;
@@ -2217,6 +2402,10 @@ void Checker::check_globals(const TranslationUnit &unit) {
                         continue;
                     }
                 }
+                // `var v = zz` reported `zz` while its type was found. Checking it again repeats that.
+                if (var->inferred && inferred_reported_.contains(var)) {
+                    continue;
+                }
                 const Symbol *symbol = lookup(var->name);
                 const Type want = symbol != nullptr ? symbol->type : type_invalid();
                 if (mentions_trait(want)) {
@@ -2355,8 +2544,11 @@ void Checker::check_globals(const TranslationUnit &unit) {
                     } else if (var->is_const_decl && !var->is_comptime && unfolded_call(unfolded_call, *var->init)) {
                         // `const pt Point = {.x = give()}` would run `give` before `main`. A `const` does not.
                         error(var->loc, "global initializer is not a constant");
-                    } else if (!var->is_const_decl && reads_through_pointer(*var->init)) {
+                    } else if ((!var->is_const_decl && reads_through_pointer(*var->init)) ||
+                               (!(var->is_const_decl && var->is_comptime) &&
+                                (selects_through_pointer(*var->init) || copies_address(*var, want)))) {
                         // `var g *Point = &p` and `var g = *q`. The address is not a constant here. A `const` is.
+                        // `p.x` and `sl[1]` read what `p` and `sl` point at, for a `const` too.
                         error(var->loc, "global initializer is not a constant");
                     } else if (is_slice(want)) {
                         require_slice_name(*var->init, want, var->loc, before);

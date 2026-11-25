@@ -1,0 +1,6 @@
+compile-error: main.tlc:20:17: error: type mismatch: expected Ptr, found *Point
+stderr:
+main.tlc:20:17: error: type mismatch: expected Ptr, found *Point
+main.tlc:21:23: error: type mismatch: expected *Point, found Ptr
+main.tlc:22:17: error: type mismatch: expected Ptr, found *Point
+main.tlc:22:27: error: type mismatch: expected *Point, found Ptr

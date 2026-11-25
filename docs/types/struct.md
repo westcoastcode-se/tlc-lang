@@ -574,7 +574,7 @@ A call used as the whole initializer of a file-scope `var` runs before `main`. A
 
 `Point{}` is a `Point`, so an inferred binding does not write the type again. `var p = Point{}`, `const origin = Point{}`, and `p := Point{}` are that form.
 
-`Point{.x = 40}` fills `x`. `y` stays uninitialized when `y` has no value. `y i32 = 2` stores 2 in the field that was left out.
+`Point{.x = 40}` fills `x`. `y` stays uninitialized when `y` has no value. `y i32 = 2` stores 2 in the field that was left out. In a file-scope value, `var p = Point{.x = 40}` and `var row [2]Point = {Point{.x = 40}}`, a field with no value is zero, as in a global with no initializer.
 
 `Point{0...}` stores 0 in every field the list does not name. `new Point{.x = 40}`, `var p Point`, and `var p = Point{}` use that same rule. A named field replaces the value written on the field.
 

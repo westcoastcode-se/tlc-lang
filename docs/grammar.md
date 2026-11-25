@@ -50,6 +50,8 @@ name-list   = identifier { "," identifier } ;
 
 `as` and `from` are ordinary identifiers in every other position.
 
+The path may carry the `b` suffix. `import "std/mem"b` names the same package as `import "std/mem"`.
+
 A declaration is one of the following.
 
 ```ebnf
@@ -152,9 +154,10 @@ type-params = "<" type-param { "," type-param } ">" ;
 type-param  = identifier "type"
             | identifier integer-name
             | identifier identifier [ "." identifier ] ;
-method      = [ "unsafe" ] "func" identifier [ method-params ] "::" ( identifier | "new" ) [ type-params ] "(" [ parameters ] ")" ( result ( block | ";" ) | block ) ;
+method      = [ "unsafe" ] "func" identifier [ method-params ] "::" ( identifier | "new" ) [ type-params ] "(" [ method-args ] ")" ( result ( block | ";" ) | block ) ;
 method-params = "<" identifier { "," identifier } ">" ;
-receiver    = identifier [ "*" ] "this" ;
+method-args = receiver [ "," parameters ] | parameters ;
+receiver    = identifier [ [ "?" ] "*" [ "const" ] ] "this" ;
 
 parameters  = parameter { "," parameter } [ "," "..." ] ;
 parameter   = [ "comptime" ] identifier placed-type
@@ -163,6 +166,10 @@ parameter   = [ "comptime" ] identifier placed-type
 result      = placed-type
             | "(" placed-type { "," placed-type } ")" ;
 ```
+
+A method's receiver comes first: `self this`, `self *this`, `self *const this`, `self ?*this`, or `self ?*const this`. `self const this` is `not supported yet`, and `self **this` is `expected 'this'`.
+
+A `;` in place of the body is for `extern(abi="c")`. `func add(a i32, b i32) i32;` without it is `not supported yet`.
 
 A parameter may be `name const Type`.
 
@@ -1298,12 +1305,12 @@ A typed variable names the type in Go order, after the name:
 var-decl    = "var" identifier go-type [ "=" expression ] ";"
             | "var" identifier "const" go-type [ "=" expression ] ";"
             | "var" identifier "=" expression ";"
-            | "var" identifier [ "<" name { "," name } ">" ] "::" identifier [ go-type ] "=" expression ";"
-            | "var" identifier [ "<" name { "," name } ">" ] "::" identifier go-type [ "=" expression ] ";"
+            | "var" identifier [ "<" identifier { "," identifier } ">" ] "::" identifier [ go-type ] "=" expression ";"
+            | "var" identifier [ "<" identifier { "," identifier } ">" ] "::" identifier go-type [ "=" expression ] ";"
             | identifier ":=" expression ";" ;
 const-decl  = [ "comptime" ] "const" identifier [ go-type ] "=" expression ";"
             | "const" go-type identifier [ "=" expression ] ";"
-            | [ "comptime" ] "const" identifier [ "<" name { "," name } ">" ] "::" identifier [ go-type ] "=" expression ";" ;
+            | [ "comptime" ] "const" identifier [ "<" identifier { "," identifier } ">" ] "::" identifier [ go-type ] "=" expression ";" ;
 ```
 
 `const name = expr` is a runtime variable that cannot be assigned.
@@ -1418,23 +1425,18 @@ A trait parameter is specialized, so the call does not consult a table.
 type-decl   = "type" identifier [ type-params ] type-body ;
 type-body   = "struct" [ align ] ( "{" { struct-item } "}" [ ";" ] | ";" )
             | "enum" [ "(" underlying ")" ] "{" [ enumerators ] "}" [ ";" ]
-            | "trait" "{" { trait-item } "}" [ ";" ]
+            | "trait" [ "(" identifier [ "." identifier ] ")" ] "{" { trait-item } "}" [ ";" ]
             | "union" "(" identifier [ "." identifier ] ")" "{" { union-variant } "}" [ ";" ]
             | "union" "{" field { field } "}" [ ";" ]
             | [ "const" ] go-type ";" ;
 union-variant = identifier "struct" "{" { struct-item } "}" ";"
               | field ;
 align       = "(" "align" "=" integer-literal ")" ;
-struct-item = field
-            | "const" identifier [ go-type ] "=" expression ";"
-            | "var" identifier "=" expression ";"
-            | "var" identifier go-type [ "=" expression ] ";" ;
+struct-item = field ;
 field       = [ "export" ] identifier go-type [ "=" expression ] ";"
             | [ "export" ] identifier [ "export" ] "struct" "{" { struct-item } "}" ";"
             | [ "export" ] identifier [ "export" ] "union" "{" { field } "}" ";"
             | [ "export" ] identifier [ "export" ] "union" "(" identifier [ "." identifier ] ")" "{" { union-variant } "}" ";" ;
-declarator  = identifier [ array ]
-            | "(" "*" { "*" } identifier ")" "(" [ func-args ] ")" ;
 
 underlying  = integer-name | "bool" ;
 enumerators = enumerator { "," enumerator } [ "," ] ;
@@ -1445,6 +1447,10 @@ trait-method = [ "unsafe" ] "func" identifier "(" [ parameters ] ")" result ";" 
 ```
 
 `type Vec<T type> struct` is a generic struct.
+
+`trait(Parent)` copies `Parent`'s methods and fields into the trait, and `trait(pkg.Parent)` names an exported trait of an imported package. One parent is written. `trait(S, U)` is `expected ')'`.
+
+A `const` or a `var` inside struct braces is `not supported yet`. The constant is `const Type::name` and the variable is `var Type::name`, beside the type.
 
 The parameter list is allowed before `struct` and before `union`.
 
@@ -2018,7 +2024,7 @@ A file-scope constant can name a struct, a function pointer, or a typedef.
 
 `const value = Integer(10)` is that constant.
 
-The function-pointer declarator `i32 (*name)(` parameters `)` still parses.
+A C function-pointer declarator is not a form. Inside a function, `i32 (*name)(i32);` is a cast and a call, and `name` is `undeclared identifier`. In a struct it is `expected ';'`. The type is written `func (i32) i32`.
 
 A new variable is not written as a C declarator.
 
@@ -2139,7 +2145,7 @@ multiplicative = unary { ( "*" | "/" | "%" ) unary } ;
 unary       = "unsafe" unary
             | new-expr
             | delete-expr
-            | ( "+" | "-" | "!" | "~" | "&" | "*" | "++" | "--" | "sizeof" | "typeof" ) unary
+            | ( "+" | "-" | "!" | "~" | "&" | "*" | "++" | "--" | "sizeof" | "typeof" | "alignof" ) unary
             | postfix ;
 postfix     = primary { postfix-op } ;
 postfix-op  = "(" [ argument-list ] ")"
@@ -2452,15 +2458,18 @@ float-suffix = "f" | "F" ;
 digits      = digit { digit | "'" digit } ;
 hex-digits  = hex-digit { hex-digit | "'" hex-digit } ;
 
-string      = '"' { string-char } '"'
+string      = plain-string [ "b" ] ;
+plain-string = '"' { string-char } '"'
             | "`" { raw-char } "`" ;
-char-literal = "'" ( char | escape ) "'" ;
+char-literal = "'" ( char | escape ) "'" [ "b" ] ;
 escape      = "\" ( "'" | '"' | "?" | "\" | "a" | "b" | "f" | "n" | "r" | "t" | "v"
             | octal-digit [ octal-digit [ octal-digit ] ]
             | "x" hex-digit { hex-digit } ) ;
 ```
 
 A `'` between digits is a separator, not an empty gap and not a trailing mark.
+
+`b` after a string or a character literal marks it as bytes: `"hi"b` is `[]const u8` and `'A'b` is `u8`.
 
 A quoted string cannot cross a line.
 

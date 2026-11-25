@@ -153,6 +153,36 @@ const Binding *CodeGen::package_global(uint32_t file, const Expr::Selector &sele
     return nullptr;
 }
 
+const Binding *CodeGen::package_function(uint32_t file, const Expr &expr) const {
+    const auto *selector = std::get_if<Expr::Selector>(&expr.data);
+    const auto *base = selector == nullptr || selector->base == nullptr ? nullptr
+                                                                        : std::get_if<Expr::Name>(&selector->base->data);
+    if (base == nullptr || global_named(file, base->text) != nullptr) {
+        return nullptr;
+    }
+    const uint32_t target = package_file(file, base->text);
+    if (target == 0) {
+        return nullptr;
+    }
+    for (const uint32_t id : package_files(target)) {
+        const auto found = files_.find(id);
+        if (found == files_.end()) {
+            continue;
+        }
+        const auto it = found->second.functions.find(selector->field);
+        if (it == found->second.functions.end()) {
+            continue;
+        }
+        const Binding &fn = it->second;
+        if (!fn.is_function || fn.is_generic || fn.value == nullptr ||
+            (fn.decl != nullptr && !fn.decl->method_struct.empty())) {
+            return nullptr;
+        }
+        return &fn;
+    }
+    return nullptr;
+}
+
 void CodeGen::bind_package_globals() {
     for (const uint32_t id : package_files(current_file_)) {
         if (id == current_file_) {

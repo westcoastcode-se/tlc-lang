@@ -14,14 +14,11 @@ These were found by review and have a repro. They are not fixed yet.
 
 - A file-scope `comptime const k = f(2)` used as an array length in a struct field, `type S struct { buf [k]u8; }`, is `not supported yet` twice. Types are resolved before the call runs. A `const` or a `var` that names `k` binds it first.
 - A C function pointer type that differs from the tlc one has no spelling of its own. A local or a tlc struct field holds it only by inference, `var f = get_cb()`. A generic parameter `func (T) i32` is a tlc type, so a C pointer that passes a struct is `type mismatch` there.
-- Each `if` in a function with held `k := i` locals copies and merges every held name, so a function with H held names and B branches costs H times B. 1500 of each take 0.8 seconds in a release build, 3000 take 3.6, and 6000 take 15. Before, each merge also scanned both arms for each name, and 1500 took 57 seconds in a debug build. Recording each change to a held name, instead of copying them all, would make an `if` cost only what its arms change. There are 31 places that change that state.
 - A negative literal is not a generic value argument. `width<-5>()` is `expected a type`. A negative constant, `width<m>()`, works.
 - An array length is a literal or a name. `[sizeof(Pair) + 1]u8` is `expected ']'`.
 - `?func` is not allowed as an array element, `[2]?func (i32) i32`, or behind a pointer, `*?func (i32) i32`. The cast form `?func (i32) i32(x)` is `expected an expression`.
 - Deeply nested blocks check in quadratic time. In a release build 2000 nested `if` take 33 ms, 4000 take 98 ms, and 8000 take 0.35 seconds. The nesting limit stays at 10000 levels.
-- A file-scope value built from a global that holds a large array of defaulted structs is written at start only when it is that global or a place in it: `var c = w`, `var n = w.n`, `{w, w}`, and `Pair{.left = w}`. A `const` copy, `const c = w`, builds the global's defaults as a constant, so `pts [100000000]Point` there is `compile-time memory limit exceeded`. So do `const k = w.n + 1` and `const k = c + 1` after `var c = w.n`. A list element that is neither a struct literal, a nested list, nor such a place, `{make_world(), w}` with a `comptime func`, does the same.
-- A file-scope float computed from a global is `global initializer is not a constant`: `var f = w.f`, `var f = w.f + 1.0`, `var f = fl + 1.0`, and `var f f64 = w.n`. The copy `var f f64 = fl` is a constant. An integer or a `bool` computed from a float part, `var ok = w.f > 1.0` and `var n = i32(w.f)`, is a constant.
-- An omitted field with no default is `uninitialized` when it is read from a struct global, `var r = S{.b = 5}` then `var g = r.a`. The same field of a listed element, `var r [2]S = {S{.b = 5}}` then `var g = r[0].a`, is accepted and is zero.
+- A file-scope value built from a global that holds a large array of defaulted structs is written at start only when it is that global or a place in it: `var c = w`, `var n = w.n`, `{w, w}`, and `Pair{.left = w}`. A `const` copy, `const c = w`, is the whole value in the binary, as C has it, so `pts [100000000]Point` there is `compile-time memory limit exceeded`. A scalar part, `const k = w.n + 1` or `const k = w.pts[9].y`, builds one element. A list element that is neither a struct literal, a nested list, nor such a place, `{make_world(), w}` with a `comptime func`, does the same.
 
 ### Runtime
 
@@ -98,16 +95,6 @@ No open items.
 ## Inconsistencies
 
 An accepted form whose rule does not match its page is inserted here. Each bullet is one change. The first sentence is what `tlc --check` does. Closing a bullet updates the pages it names. A gap that is already listed above stays there.
-
-- `type A *i32` then `var y A = x` with `x` a `*i32` is accepted without a cast. `docs/types/alias.md` says `Ptr` is a different type from `*Point`.
-- `alignof(i64)` is accepted. The `unary` rule in `docs/grammar.md` lists only `sizeof` and `typeof`.
-- `"hi"b`, `'A'b`, and `import "std/mem"b` are accepted. The `string` and `char-literal` rules in `docs/grammar.md` have no suffix.
-- `func P::read(self *const this)`, `?*this`, and `?*const this` are accepted. The `receiver` rule in `docs/grammar.md` is `identifier ["*"] "this"`, and `method` does not reference it.
-- `type T trait(S) { ... }` is accepted. The `trait` rule in `docs/grammar.md` has no parent list.
-- The `struct-item` rule lists `const` and `var` inside the braces. Those are `not supported yet`.
-- The `function` rule allows `result ";"`. `func add(a i32, b i32) i32;` is `not supported yet`.
-- The `declarator` rule is not referenced and uses an undefined `array` rule. `docs/grammar.md` says `i32 (*name)(` parses. In a struct it is `expected ';'`. `var-decl` uses an undefined `name` rule.
-- `docs/keyword.md` lists nine keywords beyond C. `comptime`, `macro`, `emit`, `test`, `assert`, `new`, `delete`, `null`, `typeof`, and `alignof` are keywords too. `static` is an identifier, as `docs/grammar.md` says.
 
 ## Optimization
 
