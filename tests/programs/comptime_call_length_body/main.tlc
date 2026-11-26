@@ -1,4 +1,4 @@
-// A body with statements runs only after types are resolved. The struct field cannot wait for it.
+// A body of `i32` statements runs while the structs are sized, so a struct field takes its result.
 comptime func twice(n i32) i32 {
     var x = n;
     x = x * 2;

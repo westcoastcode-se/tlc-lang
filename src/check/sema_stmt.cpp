@@ -1292,6 +1292,25 @@ struct ThreeClause {
     const Expr *step = nullptr;
 };
 
+// The amount `i += 2` or `i = i + 2` adds to the index. Null for another step.
+const Expr *loop_step_amount(const Expr::Assign &assign, const std::string &index) {
+    if (assign.rhs == nullptr) {
+        return nullptr;
+    }
+    if (assign.op == TokenKind::PlusEq) {
+        return assign.rhs.get();
+    }
+    if (assign.op != TokenKind::Eq) {
+        return nullptr;
+    }
+    const auto *plus = std::get_if<Expr::Binary>(&assign.rhs->data);
+    if (plus == nullptr || plus->op != TokenKind::Plus || !index_name_expr(plus->lhs.get(), index) ||
+        plus->rhs == nullptr) {
+        return nullptr;
+    }
+    return plus->rhs.get();
+}
+
 std::optional<ThreeClause> three_clause(const Stmt::For &loop) {
     if (loop.each || loop.body == nullptr) {
         return std::nullopt;
@@ -1307,12 +1326,11 @@ std::optional<ThreeClause> three_clause(const Stmt::For &loop) {
         step_assign == nullptr || !index_name_expr(step_assign->lhs.get(), index) || step_assign->rhs == nullptr) {
         return std::nullopt;
     }
-    const auto *plus = std::get_if<Expr::Binary>(&step_assign->rhs->data);
-    if (plus == nullptr || plus->op != TokenKind::Plus || !index_name_expr(plus->lhs.get(), index) ||
-        plus->rhs == nullptr) {
+    const Expr *amount = loop_step_amount(*step_assign, index);
+    if (amount == nullptr) {
         return std::nullopt;
     }
-    return ThreeClause{low_expr, cmp->rhs.get(), plus->rhs.get()};
+    return ThreeClause{low_expr, cmp->rhs.get(), amount};
 }
 
 // One iteration. `name` in the body is `replacement`.
@@ -1474,6 +1492,188 @@ void Checker::expand_generic_macro(const Expr::Call &call, const FunctionDecl &f
     expand_macro_call(call, spec, out);
 }
 
+void Checker::apply_macro_locals(std::unique_ptr<Expr> &slot) {
+    if (macro_locals_.empty() || slot == nullptr) {
+        return;
+    }
+    // The latest binding of a name hides an earlier one.
+    std::vector<std::string> names;
+    std::vector<const Expr *> values;
+    for (auto it = macro_locals_.rbegin(); it != macro_locals_.rend(); ++it) {
+        if (std::find(names.begin(), names.end(), it->name) != names.end()) {
+            continue;
+        }
+        names.push_back(it->name);
+        values.push_back(it->value.get());
+    }
+    replace_names(slot, names, values);
+}
+
+void Checker::apply_macro_locals(Stmt &stmt) {
+    if (macro_locals_.empty()) {
+        return;
+    }
+    // The latest binding of a name hides an earlier one.
+    std::vector<std::string> names;
+    std::vector<const Expr *> values;
+    for (auto it = macro_locals_.rbegin(); it != macro_locals_.rend(); ++it) {
+        if (std::find(names.begin(), names.end(), it->name) != names.end()) {
+            continue;
+        }
+        names.push_back(it->name);
+        values.push_back(it->value.get());
+    }
+    subst_in_stmt(stmt, names, values, {});
+}
+
+namespace {
+
+// The literal a macro binding holds: an integer, a `bool`, or a float or string literal.
+std::unique_ptr<Expr> macro_literal(Checker &self, const Expr &value, std::optional<int> folded, bool is_bool,
+                                    SourceLoc loc) {
+    (void)self;
+    auto out = std::make_unique<Expr>();
+    if (folded && is_bool) {
+        Expr::Bool flag;
+        flag.loc = loc;
+        flag.value = *folded != 0;
+        out->data = flag;
+        return out;
+    }
+    if (folded) {
+        Expr::Int number;
+        number.loc = loc;
+        number.value = static_cast<uint64_t>(*folded < 0 ? -static_cast<int64_t>(*folded) : *folded);
+        out->data = number;
+        if (*folded >= 0) {
+            return out;
+        }
+        auto negated = std::make_unique<Expr>();
+        Expr::Unary minus;
+        minus.loc = loc;
+        minus.op = TokenKind::Minus;
+        minus.expr = std::move(out);
+        negated->data = std::move(minus);
+        return negated;
+    }
+    const Expr *cursor = &value;
+    if (const auto *unary = std::get_if<Expr::Unary>(&cursor->data);
+        unary != nullptr && unary->op == TokenKind::Minus && !unary->postfix && unary->expr != nullptr) {
+        cursor = unary->expr.get();
+    }
+    if (std::holds_alternative<Expr::Float>(cursor->data) || std::holds_alternative<Expr::String>(value.data)) {
+        return clone_expr(value);
+    }
+    return nullptr;
+}
+
+TokenKind compound_op(TokenKind op) {
+    switch (op) {
+    case TokenKind::PlusEq:
+        return TokenKind::Plus;
+    case TokenKind::MinusEq:
+        return TokenKind::Minus;
+    case TokenKind::StarEq:
+        return TokenKind::Star;
+    case TokenKind::SlashEq:
+        return TokenKind::Slash;
+    case TokenKind::PercentEq:
+        return TokenKind::Percent;
+    default:
+        return TokenKind::End;
+    }
+}
+
+} // namespace
+
+bool Checker::macro_local_stmt(Stmt &stmt) {
+    auto bind = [&](const std::string &name, std::unique_ptr<Expr> &value, bool is_var, SourceLoc loc) {
+        apply_macro_locals(value);
+        std::unique_ptr<Expr> literal;
+        if (value != nullptr) {
+            literal = macro_literal(*this, *value, fold_int(*value), folds_to_bool(*value), expr_loc(*value));
+        }
+        if (literal == nullptr) {
+            // The value has to be known while the macro expands. The written value stands in, so a later use
+            // does not report the name again.
+            error(loc, "not supported yet");
+            if (value != nullptr) {
+                macro_locals_.push_back(MacroLocal{name, clone_expr(*value), is_var});
+            }
+            return;
+        }
+        // A second binding of the name hides the first until the block ends.
+        macro_locals_.push_back(MacroLocal{name, std::move(literal), is_var});
+    };
+    if (auto *node = std::get_if<Stmt::Bind>(&stmt.data)) {
+        if (node->names.size() != 1 || node->names.front() == "_") {
+            error(node->loc, "not supported yet");
+            return true;
+        }
+        bind(node->names.front(), node->value, node->is_var && !node->is_const, node->loc);
+        return true;
+    }
+    if (auto *node = std::get_if<Stmt::Decl>(&stmt.data)) {
+        if (node->vars.size() != 1 || node->vars.front().init == nullptr) {
+            error(node->loc, "not supported yet");
+            return true;
+        }
+        VarDecl &var = node->vars.front();
+        bind(var.name, var.init, !var.is_const_decl && !var.is_const, var.loc);
+        return true;
+    }
+    auto *expr = std::get_if<Stmt::Expression>(&stmt.data);
+    if (expr == nullptr || expr->emit || expr->expr == nullptr) {
+        return false;
+    }
+    auto *assign = std::get_if<Expr::Assign>(&expr->expr->data);
+    const auto *target = assign == nullptr || assign->lhs == nullptr ? nullptr : std::get_if<Expr::Name>(&assign->lhs->data);
+    if (target == nullptr) {
+        return false;
+    }
+    MacroLocal *local = nullptr;
+    for (auto it = macro_locals_.rbegin(); it != macro_locals_.rend(); ++it) {
+        if (it->name == target->text) {
+            local = &*it;
+            break;
+        }
+    }
+    if (local == nullptr) {
+        return false;
+    }
+    if (!local->is_var) {
+        // The body check already reported the store into a `const`.
+        return true;
+    }
+    apply_macro_locals(assign->rhs);
+    std::unique_ptr<Expr> next;
+    if (assign->op == TokenKind::Eq) {
+        next = std::move(assign->rhs);
+    } else {
+        const TokenKind op = compound_op(assign->op);
+        if (op == TokenKind::End || assign->rhs == nullptr) {
+            error(assign->loc, "not supported yet");
+            return true;
+        }
+        auto combined = std::make_unique<Expr>();
+        Expr::Binary binary;
+        binary.loc = assign->loc;
+        binary.op = op;
+        binary.lhs = clone_expr(*local->value);
+        binary.rhs = std::move(assign->rhs);
+        combined->data = std::move(binary);
+        next = std::move(combined);
+    }
+    std::unique_ptr<Expr> literal =
+        next == nullptr ? nullptr : macro_literal(*this, *next, fold_int(*next), folds_to_bool(*next), assign->loc);
+    if (literal == nullptr) {
+        error(assign->loc, "not supported yet");
+        return true;
+    }
+    local->value = std::move(literal);
+    return true;
+}
+
 void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &fn,
                                 const std::vector<std::string> &names, const std::vector<const Expr *> &exprs,
                                 std::vector<std::unique_ptr<Stmt>> &out, bool substitute, bool defer,
@@ -1484,6 +1684,9 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
     if (substitute) {
         const std::unordered_set<std::string> skip;
         subst_in_stmt(*stmt, names, exprs, skip);
+    }
+    if (macro_local_stmt(*stmt)) {
+        return;
     }
     if (std::holds_alternative<Stmt::Return>(stmt->data)) {
         // A `return` in a macro is not pasted. Inside a folded `comptime switch` it also ends the path.
@@ -1511,6 +1714,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
             return;
         }
         if (expr->emit && expr->expr != nullptr) {
+            apply_macro_locals(expr->expr);
             const std::size_t before = diags_.size();
             fold_format_expr(expr->expr);
             if (diags_.size() != before) {
@@ -1523,6 +1727,16 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
     }
     if (auto *block = std::get_if<Stmt::Block>(&stmt->data)) {
         std::vector<std::unique_ptr<Stmt>> children = std::move(block->statements);
+        // A binding made in this block ends with it.
+        struct LocalScope {
+            std::vector<MacroLocal> &locals;
+            std::size_t size;
+            ~LocalScope() {
+                if (locals.size() > size) {
+                    locals.erase(locals.begin() + static_cast<std::ptrdiff_t>(size), locals.end());
+                }
+            }
+        } local_scope{macro_locals_, macro_locals_.size()};
         // Pasting flattens a plain block. An `unsafe` block stays, so the context stays with it.
         if (block->unsafe_block) {
             std::vector<std::unique_ptr<Stmt>> inner;
@@ -1571,6 +1785,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
             error(sw->loc, "not supported yet");
             return;
         }
+        apply_macro_locals(sw->cond);
         const bool saved_quiet = quiet_;
         const AssignState saved_assign = assign_;
         const AssignState saved_true = cond_true_;
@@ -1671,10 +1886,18 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
     }
     if (auto *loop = std::get_if<Stmt::For>(&stmt->data)) {
         if (loop->emit) {
+            apply_macro_locals(*stmt);
             loop->emit = false;
             append_statement(std::move(stmt), out, defer);
             return;
         }
+        // `for (var i = 0; i < count; i += 1)` reads a macro binding in its bounds.
+        if (loop->init != nullptr) {
+            apply_macro_locals(*loop->init);
+        }
+        apply_macro_locals(loop->cond);
+        apply_macro_locals(loop->step);
+        apply_macro_locals(loop->each_expr);
         // A `comptime for` does not become a runtime loop. A bound that does not fold stays out.
         if (loop->comptime_for) {
             unroll_inline_for(*stmt, fn, names, exprs, out, defer);
@@ -1706,6 +1929,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
     }
     if (auto *branch = std::get_if<Stmt::If>(&stmt->data)) {
         if (branch->emit) {
+            apply_macro_locals(*stmt);
             branch->emit = false;
             append_statement(std::move(stmt), out, defer);
             return;
@@ -1714,6 +1938,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
             error(branch->loc, "not supported yet");
             return;
         }
+        apply_macro_locals(branch->cond);
         const bool saved_quiet = quiet_;
         const AssignState saved_assign = assign_;
         const AssignState saved_true = cond_true_;
@@ -1783,10 +2008,12 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
     };
     if (auto *loop = std::get_if<Stmt::While>(&stmt->data)) {
         if (loop->emit) {
+            apply_macro_locals(*stmt);
             loop->emit = false;
             append_statement(std::move(stmt), out, defer);
             return;
         }
+        apply_macro_locals(loop->cond);
         if (loop->cond == nullptr || !expand_loop_body(loop->body, loop->loc)) {
             if (loop->cond == nullptr) {
                 error(loop->loc, "not supported yet");
@@ -1798,10 +2025,12 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
     }
     if (auto *loop = std::get_if<Stmt::DoWhile>(&stmt->data)) {
         if (loop->emit) {
+            apply_macro_locals(*stmt);
             loop->emit = false;
             append_statement(std::move(stmt), out, defer);
             return;
         }
+        apply_macro_locals(loop->cond);
         if (loop->cond == nullptr || !expand_loop_body(loop->body, loop->loc)) {
             if (loop->cond == nullptr) {
                 error(loop->loc, "not supported yet");
@@ -1972,13 +2201,12 @@ void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const 
         return;
     }
     const std::optional<int> high = loop->comptime_for ? fold_runtime_const(*cmp->rhs) : fold_int(*cmp->rhs);
-    const auto *plus = std::get_if<Expr::Binary>(&step_assign->rhs->data);
-    if (!high || plus == nullptr || plus->op != TokenKind::Plus || !index_name_expr(plus->lhs.get(), index) ||
-        plus->rhs == nullptr) {
+    const Expr *amount = loop_step_amount(*step_assign, index);
+    if (!high || amount == nullptr) {
         error(loop->loc, "not supported yet");
         return;
     }
-    const std::optional<int> step = loop->comptime_for ? fold_runtime_const(*plus->rhs) : fold_int(*plus->rhs);
+    const std::optional<int> step = loop->comptime_for ? fold_runtime_const(*amount) : fold_int(*amount);
     if (!step || *step <= 0) {
         error(loop->loc, "not supported yet");
         return;
@@ -2088,12 +2316,11 @@ bool Checker::unroll_comptime_for(Stmt::For &loop) {
             return false;
         }
         const std::optional<int> high = fold_runtime_const(*cmp->rhs);
-        const auto *plus = std::get_if<Expr::Binary>(&step_assign->rhs->data);
-        if (!high || plus == nullptr || plus->op != TokenKind::Plus || !index_name_expr(plus->lhs.get(), name) ||
-            plus->rhs == nullptr) {
+        const Expr *amount = loop_step_amount(*step_assign, name);
+        if (!high || amount == nullptr) {
             return false;
         }
-        const std::optional<int> step = fold_runtime_const(*plus->rhs);
+        const std::optional<int> step = fold_runtime_const(*amount);
         if (!step || *step <= 0) {
             return false;
         }
@@ -2214,12 +2441,16 @@ void Checker::expand_macro_call(const Expr::Call &call, const FunctionDecl &fn,
         error(call.loc, "not supported yet");
         return;
     }
+    // A macro that calls a macro sees only its own bindings.
+    std::vector<MacroLocal> outer = std::move(macro_locals_);
+    macro_locals_.clear();
     for (const auto &stmt : body->statements) {
         if (stmt == nullptr) {
             continue;
         }
         expand_macro_stmt(clone_stmt(*stmt), fn, names, replacement, out, true);
     }
+    macro_locals_ = std::move(outer);
 }
 
 void Checker::append_statement(std::unique_ptr<Stmt> stmt, std::vector<std::unique_ptr<Stmt>> &out, bool defer) {
@@ -2733,6 +2964,11 @@ void Checker::check_stmt(const Stmt &stmt) {
                 } else if constexpr (std::is_same_v<T, Stmt::While> || std::is_same_v<T, Stmt::DoWhile>) {
                     // A plain loop runs at the call. `emit while` and `emit do` paste the statement.
                     return true;
+                } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
+                    // `const twice = n * 2` and `var extra = 1` are values while the macro expands.
+                    return node.names.size() == 1;
+                } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
+                    return node.vars.size() == 1 && node.vars.front().init != nullptr;
                 } else {
                     return false;
                 }
@@ -3489,12 +3725,19 @@ void Checker::check_stmt(const Stmt &stmt) {
                         }
                     }
                 }
-                // A runtime binding of that tuple has no signature on the loaded field.
-                if (!node.is_comptime && tuple_holds_fn(rhs)) {
+                // A runtime binding of that tuple has no signature on the loaded field. `var f, k = two()` binds
+                // each result on its own, and a function pointer result keeps its signature.
+                if (!node.is_comptime && node.names.size() == 1 && tuple_holds_fn(rhs)) {
                     error(node.loc, "type mismatch");
                     return;
                 }
                 std::vector<Type> parts;
+                // `var x = nothing()` and `var x = void(f())` have no value to bind.
+                if (node.names.size() == 1 && rhs.kind == TypeKind::Void && rhs.alias_id == 0 &&
+                    !(discard_var && node.names.front() == "_")) {
+                    error(node.loc, "type mismatch: expected a value, found void");
+                    return;
+                }
                 if (node.names.size() == 1) {
                     parts.push_back(rhs);
                 } else if (rhs.kind != TypeKind::Tuple || rhs.results.size() != node.names.size()) {
@@ -4517,14 +4760,6 @@ void Checker::check_function(const FunctionDecl &fn) {
     const int saved_unsafe = unsafe_depth_;
     // A function written in an `unsafe func` or `unsafe { }` keeps that context.
     unsafe_depth_ = fn.unsafe && saved_unsafe == 0 ? 1 : saved_unsafe;
-    if (fn.results.size() > 1) {
-        for (const ResultSlot &slot : fn.results) {
-            if (slot.is_fn_ptr) {
-                error(fn.loc, "not supported yet");
-                break;
-            }
-        }
-    }
     checking_.push_back(const_cast<FunctionDecl *>(&fn));
     push_function();
     const_cast<FunctionDecl &>(fn).function_id = scopes_.empty() ? 0 : scopes_.back().function_id;

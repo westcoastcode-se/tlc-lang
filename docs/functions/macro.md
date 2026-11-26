@@ -511,6 +511,12 @@ retq
 
 `emit` in that body is an ordinary statement.
 
+## A binding in the macro body
+
+`const twice = n * 2` and `var total = 0` in a macro body, without `emit`, are values while the macro expands. They are not pasted. A later statement reads the value: `emit *slot = twice` pastes `*slot = 40` when `n` is 20, and `if (total > 5)` folds. `total += i` and `total = 7` without `emit` change a `var`, so a loop that unrolls can add up a value. A store into a `const` is `type mismatch`. The binding ends with the block that holds it, and each call of the macro starts with none.
+
+The value is an integer, a `bool`, a float, or a string known while compiling. A value that reads an argument without `comptime`, `var copy = n`, is `not supported yet`. `emit var` and `emit const` are `not supported yet`: a pasted statement uses the names of the caller.
+
 ## Limits on a macro
 
 A value call of a `macro` is `not supported yet`.

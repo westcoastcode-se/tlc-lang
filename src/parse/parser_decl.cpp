@@ -78,6 +78,7 @@ Parser::UnionBody Parser::parse_union_variants(const std::string &union_name, bo
             field.array_len_name = type.array_len_name;
             field.type_args = type.type_args;
             field.is_fn_ptr = type.is_fn_ptr;
+            field.fn_c_abi = type.fn_c_abi;
             field.ret_indirections = type.ret_indirections;
             field.ret_optional = type.ret_optional;
             field.ret_const_pointee = type.ret_const_pointee;
@@ -126,6 +127,7 @@ Parser::StructMembers Parser::parse_struct_members(const std::string &owner, boo
         field.array_len_name = type.array_len_name;
         field.type_args = type.type_args;
         field.is_fn_ptr = type.is_fn_ptr;
+        field.fn_c_abi = type.fn_c_abi;
         field.ret_indirections = type.ret_indirections;
         field.ret_optional = type.ret_optional;
         field.ret_const_pointee = type.ret_const_pointee;
@@ -614,6 +616,7 @@ void Parser::parse_type_decl(TranslationUnit &unit, bool exported, bool is_exter
     item.array_len_name = type.array_len_name;
     item.type_args = type.type_args;
     item.is_fn_ptr = type.is_fn_ptr;
+    item.fn_c_abi = type.fn_c_abi;
     item.ret_indirections = type.ret_indirections;
     item.ret_optional = type.ret_optional;
     item.ret_const_pointee = type.ret_const_pointee;

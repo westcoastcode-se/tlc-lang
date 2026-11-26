@@ -286,6 +286,80 @@ Type Checker::increment_operand(const Expr &expr) {
     return type_invalid();
 }
 
+std::unique_ptr<Expr> Checker::inline_capture(const Symbol &symbol, SourceLoc loc) {
+    // `comptime const k = 40` folds to that `i32`. `true` stays a `bool`.
+    if (symbol.type.kind == TypeKind::Bool && symbol.type.alias_id == 0 && symbol.const_fits) {
+        auto out = std::make_unique<Expr>();
+        Expr::Bool value;
+        value.loc = loc;
+        value.value = symbol.const_value != 0;
+        out->data = value;
+        return out;
+    }
+    if (int_constant(symbol) && symbol.const_fits && symbol.type.kind == TypeKind::Int && symbol.type.alias_id == 0 &&
+        (symbol.type.rank == 0 || symbol.type.rank == 3) && !symbol.type.is_unsigned) {
+        auto out = std::make_unique<Expr>();
+        Expr::Int number;
+        number.loc = loc;
+        number.value = static_cast<uint64_t>(symbol.const_value < 0 ? -static_cast<int64_t>(symbol.const_value)
+                                                                    : symbol.const_value);
+        out->data = number;
+        if (symbol.const_value >= 0) {
+            return out;
+        }
+        auto negated = std::make_unique<Expr>();
+        Expr::Unary minus;
+        minus.loc = loc;
+        minus.op = TokenKind::Minus;
+        minus.expr = std::move(out);
+        negated->data = std::move(minus);
+        return negated;
+    }
+    // `Point{.x = 1, .y = 2}`, `0.5`, `3000000000u32`, and `(40, 2)`: a copy that reads no other name. A name
+    // there could mean something else inside the inner function.
+    if (symbol.const_init == nullptr) {
+        return nullptr;
+    }
+    const auto plain = [&](const auto &self, const Expr &part, int depth) -> bool {
+        if (depth > 32) {
+            return false;
+        }
+        return std::visit(
+            [&](const auto &item) -> bool {
+                using T = std::decay_t<decltype(item)>;
+                if constexpr (std::is_same_v<T, Expr::Int> || std::is_same_v<T, Expr::Float> ||
+                              std::is_same_v<T, Expr::Bool> || std::is_same_v<T, Expr::String> ||
+                              std::is_same_v<T, Expr::Nullptr>) {
+                    return true;
+                } else if constexpr (std::is_same_v<T, Expr::Unary> || std::is_same_v<T, Expr::Cast>) {
+                    return item.expr != nullptr && self(self, *item.expr, depth + 1);
+                } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                    return item.lhs != nullptr && item.rhs != nullptr && self(self, *item.lhs, depth + 1) &&
+                           (item.mid == nullptr || self(self, *item.mid, depth + 1)) && self(self, *item.rhs, depth + 1);
+                } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                    for (const Expr::FieldInit &field : item.fields) {
+                        if (field.value == nullptr || !self(self, *field.value, depth + 1)) {
+                            return false;
+                        }
+                    }
+                    for (const auto &element : item.elements) {
+                        if (element == nullptr || !self(self, *element, depth + 1)) {
+                            return false;
+                        }
+                    }
+                    return true;
+                } else {
+                    return false;
+                }
+            },
+            part.data);
+    };
+    if (!plain(plain, *symbol.const_init, 0)) {
+        return nullptr;
+    }
+    return clone_expr(*symbol.const_init);
+}
+
 Type Checker::check_raw(const Expr &expr, bool used) {
     return std::visit(
         [&](const auto &node) -> Type {
@@ -304,6 +378,13 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         symbol->is_package || symbol->is_type) {
                         error(node.loc, "not supported yet");
                         return type_invalid();
+                    }
+                    // The value is known, so the inner function reads a copy and passes nothing. It is then a
+                    // value too: `var f = pass`.
+                    if (std::unique_ptr<Expr> copy = inline_capture(*symbol, node.loc)) {
+                        Expr &written = const_cast<Expr &>(expr);
+                        written.data = std::move(copy->data);
+                        return check_raw(expr, used);
                     }
                     note_capture(*checking_.back(), node.text, symbol->function_id);
                     return symbol->type;
@@ -1373,6 +1454,10 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return type_invalid();
                     }
                     const std::size_t before = diags_.size();
+                    // A local `const p = Point{...}` passes a copy of its initializer.
+                    for (std::unique_ptr<Expr> &arg : const_cast<Expr::Call &>(node).args) {
+                        promote_comptime_arg(arg, 0);
+                    }
                     if (!node.type_args.empty() || !fn->type_params.empty()) {
                         error(node.loc, "not supported yet");
                     } else if (node.args.size() != fn->params.size()) {
@@ -2815,7 +2900,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 const Type type = operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum,
                                                node.indirections, node.optional, node.expr.get(), node.loc,
                                                node.const_pointee, node.is_array, node.array_len, node.elem_const,
-                                               node.elem_slice, node.shells);
+                                               node.elem_slice, node.shells, node.tuple_parts);
                 if (type.kind == TypeKind::Invalid) {
                     return type_invalid();
                 }
@@ -2939,9 +3024,9 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                     error(node.loc, "type mismatch");
                     return type_invalid();
                 }
+                // `void(f())` runs `f` and drops the result, the same as `_ = f()`.
                 if (target.kind == TypeKind::Void) {
-                    error(node.loc, "not supported yet");
-                    return type_invalid();
+                    return type_void();
                 }
                 if ((is_c_enum(source) && is_integer(target)) || (is_c_enum(target) && is_integer(source))) {
                     return target;
@@ -3600,7 +3685,11 @@ Checker::TypeReflect Checker::reflect_typeof(const Expr &expr, const Expr::Typeo
 Type Checker::operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
                            bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc,
                            uint32_t const_pointee, bool is_array, int64_t array_len, bool elem_const, bool elem_slice,
-                           const std::vector<TypeShell> &shells) {
+                           const std::vector<TypeShell> &shells, const std::vector<ResultSlot> &tuple_parts) {
+    // `sizeof(U)` and `typeof(U)` when `U` is bound to `(i32, f64)`.
+    if (on_type && !tuple_parts.empty()) {
+        return type_of_written_tuple(tuple_parts, 0, false, {}, loc);
+    }
     if (on_type) {
         if (is_array || elem_slice || !shells.empty()) {
             std::vector<TypeShell> folded = shells;
@@ -3640,7 +3729,7 @@ Type Checker::sizeof_operand(const Expr::Sizeof &node) {
     specialize_operand(const_cast<Expr::Sizeof &>(node));
     return operand_type(node.on_type, node.type_name, node.type_package, node.is_struct, node.is_enum, node.indirections,
                         node.optional, node.expr.get(), node.loc, node.const_pointee, node.is_array, node.array_len,
-                        node.elem_const, node.elem_slice, node.shells);
+                        node.elem_const, node.elem_slice, node.shells, node.tuple_parts);
 }
 
 } // namespace tlc

@@ -1,0 +1,11 @@
+// A C function pointer that passes a struct is a different type from the tlc one. Without a struct or a
+// narrow integer both conventions are the same type.
+type FI struct { a i32; b f32; };
+
+func main() i32 {
+    var c extern(abi="c") ?func (FI) i32 = null;
+    var t ?func (FI) i32 = c;
+    var s extern(abi="c") ?func (i32) i32 = null;
+    var p ?func (i32) i32 = s;
+    return 0;
+}

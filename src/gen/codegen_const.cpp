@@ -896,7 +896,10 @@ std::optional<int32_t> CodeGen::folded_sizeof(const Expr::Sizeof &node) const {
 
 std::optional<int64_t> CodeGen::folded_sizeof_wide(const Expr::Sizeof &node) const {
     llvm::Type *measured = nullptr;
-    if (node.on_type) {
+    if (node.on_type && !node.tuple_parts.empty()) {
+        // `sizeof(U)` when `U` is `(i32, f64)`.
+        measured = lower_tuple_parts(current_file_, node.tuple_parts).type;
+    } else if (node.on_type) {
         const Lowered low = lower(current_file_, node.type_name, node.type_package, node.is_struct, node.indirections,
                                   node.is_array, node.is_array ? node.array_len : 0, false, node.elem_slice, node.shells);
         if (low.depth == 0 && low.elem_void) {

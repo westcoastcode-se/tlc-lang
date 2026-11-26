@@ -26,7 +26,7 @@ A method is an enclosing function in the same way.
 
 An anonymous function, used from `defer` or called directly, is that same kind of function.
 
-> **Warning:** The compiler reports `not supported yet` for a `var`, a runtime `const`, or a parameter from an enclosing function. It reports `not supported yet` for `var f = pass` when `pass` reads a `comptime const`, and for passing that function as an argument. `func` is not a lambda. `export`, `extern`, and a method on a function in a block are `not supported yet`.
+> **Warning:** The compiler reports `not supported yet` for a `var`, a runtime `const`, or a parameter from an enclosing function. `var f = pass` and passing `pass` as an argument work when each `comptime const` it reads is a value that names nothing else: an integer, a `bool`, a float, `3000000000u32`, a string, or a struct or tuple of those such as `Point{.x = 1, .y = 2}`. The inner function reads a copy of that value. A constant whose initializer reads another name, `Point{.x = k}` or `comptime const fp = add`, is passed to the call, and `var f = pass` is then `not supported yet`. `func` is not a lambda. `export`, `extern`, and a method on a function in a block are `not supported yet`.
 
 ## Reading a comptime const
 

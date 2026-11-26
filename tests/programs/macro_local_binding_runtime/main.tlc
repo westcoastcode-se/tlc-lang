@@ -1,0 +1,13 @@
+// A binding whose value is not known while the macro expands is `not supported yet`. A store into a `const` is `type mismatch`.
+macro func bad(slot *i32, n i32) void {
+    var copy = n;
+    const fixed = 1;
+    fixed = 2;
+    emit *slot = copy;
+}
+func main() i32 {
+    var v = 0;
+    var k = 3;
+    bad(&v, k);
+    return v;
+}

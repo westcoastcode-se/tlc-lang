@@ -500,6 +500,7 @@ bool Parser::parse_field(FieldDecl &field, bool extern_c, bool allow_init) {
     field.array_len_name = type.array_len_name;
     field.type_args = type.type_args;
     field.is_fn_ptr = type.is_fn_ptr;
+    field.fn_c_abi = type.fn_c_abi;
     field.ret_indirections = type.ret_indirections;
     field.ret_optional = type.ret_optional;
     field.ret_const_pointee = type.ret_const_pointee;
@@ -546,7 +547,19 @@ bool Parser::array_length_literal(const Token &number) const {
            (number.suffix.bits == 32 && number.int_value <= 2147483647ULL);
 }
 
+std::size_t Parser::fn_abi_prefix(std::size_t ahead) const {
+    if (peek(ahead).kind != TokenKind::KwExtern || peek(ahead + 1).kind != TokenKind::LParen ||
+        peek(ahead + 2).kind != TokenKind::Identifier || peek(ahead + 2).text != "abi" ||
+        peek(ahead + 3).kind != TokenKind::Eq || peek(ahead + 4).kind != TokenKind::StringLiteral ||
+        peek(ahead + 5).kind != TokenKind::RParen) {
+        return 0;
+    }
+    return 6;
+}
+
 bool Parser::at_func_type(std::size_t ahead) const {
+    // `extern(abi="c") func (i32) i32` is the C function pointer type.
+    ahead += fn_abi_prefix(ahead);
     // `?func (i32) i32` is a function pointer that may be null.
     if (peek(ahead).kind == TokenKind::Question) {
         ++ahead;
@@ -558,6 +571,14 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
     PlacedType type;
     type.loc = peek().loc;
     type.is_fn_ptr = true;
+    if (fn_abi_prefix(0) != 0) {
+        // `extern(abi="c")` is the one convention a function pointer type names.
+        if (peek(4).text != "c") {
+            diags_.error(peek(4).loc, "not supported yet");
+        }
+        type.fn_c_abi = true;
+        pos_ += 6;
+    }
     // The value is the function pointer. Stars on the result stay in ret_indirections.
     type.indirections = 1;
     // `?func` marks that one pointer optional, as `?*T` marks its outer pointer.
@@ -618,8 +639,7 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
     bool reject = false;
     SourceLoc reject_loc = type.loc;
     for (const PlacedType &result : results) {
-        // One result may be a function pointer. Several results may not include one.
-        if (result.struct_definition || result.enum_definition || (result.is_fn_ptr && results.size() != 1)) {
+        if (result.struct_definition || result.enum_definition) {
             reject = true;
             reject_loc = result.loc.valid() ? result.loc : reject_loc;
         }
@@ -633,7 +653,8 @@ Parser::PlacedType Parser::parse_func_type(bool as_cast) {
         return type;
     }
     const PlacedType &first = results.front();
-    if (first.is_fn_ptr) {
+    // `func () (func (i32) i32, i32)` is two results. Each keeps its own entry below.
+    if (first.is_fn_ptr && results.size() == 1) {
         // The nested pointer is the one entry in `fn_results`. The flattened name is the
         // innermost result, so a later empty check still sees a type. Stars on that name
         // are not this pointer.
@@ -698,6 +719,7 @@ void Parser::parse_func_vars(std::vector<VarDecl> &vars, bool exported, bool is_
         var.optional = type.optional;
         var.const_pointee = type.const_pointee;
         var.is_fn_ptr = type.is_fn_ptr;
+        var.fn_c_abi = type.fn_c_abi;
         var.ret_optional = type.ret_optional;
         var.ret_const_pointee = type.ret_const_pointee;
         var.ret_indirections = type.ret_indirections;
@@ -806,6 +828,7 @@ ResultSlot Parser::slot_from_type(const PlacedType &type) const {
     slot.optional = type.optional;
     slot.const_pointee = type.const_pointee;
     slot.is_fn_ptr = type.is_fn_ptr;
+    slot.fn_c_abi = type.fn_c_abi;
     slot.ret_indirections = type.ret_indirections;
     slot.fn_params = type.fn_params;
     slot.fn_variadic = type.fn_variadic;
@@ -1244,6 +1267,7 @@ std::vector<Param> Parser::parse_params(bool &variadic, const std::string &metho
             param.shells = type.shells;
             param.array_len = type.array_len;
             param.is_fn_ptr = type.is_fn_ptr;
+            param.fn_c_abi = type.fn_c_abi;
             param.ret_indirections = type.ret_indirections;
             param.ret_optional = type.ret_optional;
             param.ret_const_pointee = type.ret_const_pointee;
@@ -1455,6 +1479,7 @@ static FnParam fn_param_from_result(const ResultSlot &slot) {
         return param;
     }
     param.is_fn_ptr = slot.is_fn_ptr;
+    param.fn_c_abi = slot.fn_c_abi;
     param.ret_indirections = slot.ret_indirections;
     param.ret_optional = slot.ret_optional;
     param.ret_const_pointee = slot.ret_const_pointee;
@@ -1479,6 +1504,7 @@ FnParam Parser::fn_param_from(const PlacedType &type) const {
     param.elem_const = type.elem_const;
     param.shells = type.shells;
     param.is_fn_ptr = type.is_fn_ptr;
+    param.fn_c_abi = type.fn_c_abi;
     param.ret_indirections = type.ret_indirections;
     param.ret_optional = type.ret_optional;
     param.ret_const_pointee = type.ret_const_pointee;

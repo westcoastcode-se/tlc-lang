@@ -182,7 +182,7 @@ retq
 
 The program returns 42.
 
-A local `const` and a `var` in that tuple are `not supported yet`.
+A local `const` in that tuple is a copy of its initializer. A `var` in that tuple is `not supported yet`.
 
 A local `comptime const` in that tuple is that value. That includes an array, `comptime const row = [_]i32{2, 0}`, and an alias, `comptime const other = Integer(4)`.
 
@@ -1896,7 +1896,7 @@ A file-scope `const origin = Point{.x = 40, .y = 2}` then `field(origin)` is 42.
 
 `type Integer i32` then `const n = Integer(4)` and `id(n)` is `movl $4, %eax` and `retq`.
 
-A local `const` of that struct, enumerator, or alias is `not supported yet`. A `var` is `var is not a compile-time constant` when it is the initializer of a `comptime const`.
+A local `const` of that struct, enumerator, or alias is a copy of its initializer. A `var` is `var is not a compile-time constant` when it is the initializer of a `comptime const`.
 
 ## A struct returned from a comptime function
 
@@ -2127,7 +2127,7 @@ The fields are named in source order.
 
 That copy loads `self.x` and adds the stored `x` field.
 
-A local `const` of a struct, a float, an alias, or a function is `type mismatch`.
+A local `const` of a struct, a float, an alias, or a function passes a copy of its initializer, so `here.shift(by)` with `const by = Point{.x = 2, .y = 0}` is the same copy.
 
 A parameter `[2]i32` is a pointer.
 
@@ -2203,9 +2203,9 @@ The compiler still compiles that function.
 
 A `var` tuple is `type mismatch`.
 
-A local `const` of a tuple is `type mismatch`.
+A local `const` of a tuple passes that tuple.
 
-A tuple element that is a local runtime `const` is `type mismatch`.
+A tuple element that is a local runtime `const` is a copy of its initializer.
 
 An element that is a `var` is `type mismatch`.
 
@@ -2465,7 +2465,7 @@ That `field` is `comptime func field(p ([2]i32, i32)) i32 { return p[0][0] + p[1
 
 `main` is `movl $42, %eax` and `retq`.
 
-A local `const` of that array is `not supported yet`.
+A local `const` of that array is a copy of the list.
 
 A `var` array in that tuple is `var is not a compile-time constant`.
 
@@ -2475,7 +2475,7 @@ That `field` is `comptime func field(p ([2]Point, i32)) i32 { return p[0][0].x +
 
 `comptime const row` of that array then `return field((row, 0))` is `movl $42, %eax` and `retq`.
 
-A local `const` of that array is `not supported yet`. A `var` of that array is `var is not a compile-time constant`.
+A local `const` of that array is a copy of the list. A `var` of that array is `var is not a compile-time constant`.
 
 `take((row, 0), n)` with `comptime p ([2]Point, i32)` is `type mismatch`.
 
@@ -2541,7 +2541,7 @@ That `field` is `comptime func field(p ([2][2]i32, i32)) i32 { return p[0][0][0]
 
 `main` is `movl $42, %eax` and `retq`.
 
-A local `const` of that array is `not supported yet`. A `var` of that array is `var is not a compile-time constant`.
+A local `const` of that array is a copy of the list. A `var` of that array is `var is not a compile-time constant`.
 
 A `comptime func` folds the same indexes, and `pick(pair)` is `2 + 1`.
 
@@ -2707,9 +2707,9 @@ movl $42, %eax                   # constant
 retq                             # return
 ```
 
-`const k = 0.5f` and `const flag = true` are that call. `main` is those two instructions. A local `const` is `not supported yet`.
+`const k = 0.5f` and `const flag = true` are that call. `main` is those two instructions. A local `const` is that call too.
 
-`const k = 3000000000u32` then `field(k)` is those two instructions. `const k = 3000000000` against `i64` and `const k = 4u64` against `u64` are that call. `40u32` and `40i64` are too. `const a = 40i8` against `i8` is that call. `200u8`, `40i16`, and `40000u16` are too. `(k, 42)` passes that value in the tuple. A local `const` is `not supported yet`. `const k = 200i8` is `value does not fit`.
+`const k = 3000000000u32` then `field(k)` is those two instructions. `const k = 3000000000` against `i64` and `const k = 4u64` against `u64` are that call. `40u32` and `40i64` are too. `const a = 40i8` against `i8` is that call. `200u8`, `40i16`, and `40000u16` are too. `(k, 42)` passes that value in the tuple. A local `const` is that call too. `const k = 200i8` is `value does not fit`.
 
 `const n = 4i8` then `var row [n]i32` has `row.len` of 4. `main` is `movl $4, %eax` and `retq`. `4u8`, `4i16`, and `4u16` are that length. `width<4i8>()` and `width<n>()` are `type mismatch`.
 
@@ -2752,7 +2752,7 @@ That `field` is `comptime func field(p (Integer, i32)) i32 { return i32(p[0]) + 
 
 `take((other, 0), n)` calls `main.take.spec.t_4_0`.
 
-A local `const` in that tuple is `not supported yet`. A `var` in that tuple is `var is not a compile-time constant`.
+A local `const` in that tuple is a copy of its initializer. A `var` in that tuple is `var is not a compile-time constant`.
 
 A function is that argument too.
 

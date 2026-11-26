@@ -1,0 +1,4 @@
+func main() i32 {
+    var o extern(abi="tlc") ?func (i32) i32 = null;
+    return 0;
+}

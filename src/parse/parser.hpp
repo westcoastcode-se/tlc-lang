@@ -151,6 +151,8 @@ class Parser {
         // `*[4]i32`: one pointer outside the array.
         bool ptr_to_array = false;
         bool is_fn_ptr = false;
+        // `extern(abi="c") func (i32) i32`.
+        bool fn_c_abi = false;
         int ret_indirections = 0;
         uint32_t ret_optional = 0;
         uint32_t ret_const_pointee = 0;
@@ -219,6 +221,8 @@ class Parser {
     void parse_fn_pointer(int &fn_depth, std::string &name, SourceLoc &loc, std::vector<FnParam> &params, bool &variadic);
     FnParam fn_param_from(const PlacedType &type) const;
     bool at_func_type(std::size_t ahead = 0) const;
+    // The length of `extern(abi="...")` in front of a function type at `ahead`, or 0.
+    std::size_t fn_abi_prefix(std::size_t ahead) const;
     // An integer literal that can be an array length.
     bool array_length_literal(const Token &number) const;
     // `as_cast` is `func (i32) i32(value)`. The `(` after the result is the operand,

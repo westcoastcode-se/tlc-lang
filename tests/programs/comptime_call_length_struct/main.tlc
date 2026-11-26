@@ -1,0 +1,18 @@
+// A body that builds a struct runs only after the structs have a size. A field cannot wait for it.
+type Pair struct { a i32; b i32; }
+
+comptime func width(n i32) i32 {
+    var p = Pair{.a = n, .b = 1};
+    return p.a + p.b;
+}
+
+comptime const wide = width(2);
+
+type Buffer struct {
+    head [wide]u8;
+}
+
+func main() i32 {
+    var b Buffer;
+    return i32(b.head.len);
+}

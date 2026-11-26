@@ -1,0 +1,35 @@
+// `extern(abi="c") func (FI) i32` spells the C function pointer. A local, a field of a tlc struct, a parameter, a
+// result, and an alias keep the C convention, so a struct argument is split as C does.
+extern(abi="c") type FI struct { a i32; b f32; };
+extern(abi="c") type Big struct { a i64; b i64; c i64; };
+
+type TakeFi extern(abi="c") func (FI) i32;
+
+extern(abi="c") func get_take_fi() func (FI) i32;
+extern(abi="c") func get_make_big() func (i32) Big;
+extern(abi="c") func call_fi(f func (FI) i32) i32;
+
+type Holder struct { run extern(abi="c") func (FI) i32; }
+
+func keep(f extern(abi="c") func (FI) i32) extern(abi="c") func (FI) i32 { return f; }
+
+func run(f TakeFi, v FI) i32 { return f(v); }
+
+func take_fi(v FI) i32 { return v.a + i32(v.b); }
+
+func main() i32 {
+    var fi FI = {.a = 40, .b = 2.0};
+    var local extern(abi="c") func (FI) i32 = get_take_fi();
+    if (local(fi) != 42) { return 1; }
+    var h = Holder{.run = get_take_fi()};
+    if (h.run(fi) != 42) { return 2; }
+    if (keep(local)(fi) != 42) { return 3; }
+    if (run(TakeFi(get_take_fi()), fi) != 42) { return 4; }
+    var make extern(abi="c") func (i32) Big = get_make_big();
+    if (make(40).a != 40) { return 5; }
+    // A tlc function stored there is passed as a C wrapper.
+    var mine extern(abi="c") func (FI) i32 = take_fi;
+    if (call_fi(mine) != 42) { return 6; }
+    if (mine(fi) != 42) { return 7; }
+    return 42;
+}

@@ -1,0 +1,4 @@
+compile-error: main.tlc:5:5: error: type mismatch
+stderr:
+main.tlc:5:5: error: type mismatch
+main.tlc:3:9: error: not supported yet

@@ -1,0 +1,10 @@
+// `void(x)` evaluates `x` and drops the value, the same as `_ = x`.
+var calls = 0;
+func bump() i32 { calls += 1; return 7; }
+func nothing() void { calls += 10; }
+func main() i32 {
+    void(bump());
+    void(nothing());
+    void(calls);
+    return calls + 31;
+}

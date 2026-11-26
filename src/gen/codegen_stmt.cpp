@@ -1021,7 +1021,15 @@ void CodeGen::emit_bind(const Stmt::Bind &node) {
                 parts.push_back(lower_result(current_file_, as_slot(as_slot, part)));
                 continue;
             }
-            const bool array = part.is_array && !part.is_fn_ptr && part.array_len != 0;
+            if (part.is_fn_ptr) {
+                // `var f, k = make()` through a pointer whose first result is a function pointer.
+                Lowered leaf = lower_fnptr(current_file_, part.type_name, part.type_package, part.is_struct,
+                                           part.is_enum, part.ret_indirections, part.indirections, part.params,
+                                           part.variadic, part.results);
+                parts.push_back(part.shells.empty() ? leaf : compose_shells(std::move(leaf), part.shells, false));
+                continue;
+            }
+            const bool array = part.is_array && part.array_len != 0;
             // A sized array lives in `shells`. `is_array` is only the slice spelling.
             parts.push_back(lower(current_file_, part.type_name, part.type_package, part.is_struct, part.indirections,
                                   array, array ? part.array_len : 0, false, part.elem_slice, part.shells));

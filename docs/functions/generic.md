@@ -808,6 +808,8 @@ That value may be an integer, a struct with several fields, or a tuple of severa
 
 `func id<T type>(value *T)` of `&row`, when `row` is `(40, 2)`, binds `T` to `(i32, i32)`.
 
+`typeof(T).fields().len` is the number of elements when `T` is a tuple, and 0 for a type that is neither a tuple nor a named struct. `count_of((1, 2.0, 3))` with `return i32(typeof(U).fields().len)` is 3, and `(1, (2, 3))` is 2. `sizeof(T)` is the size of that tuple, 24 for `(i32, f64, i32)`, and `typeof(T) == typeof(value)` is true. There is no separate `count` builtin.
+
 The call is `main.id.spec.tuple.2.i32.i32`.
 
 `tuple.2` is the number of elements. `((40, 2), 1)` is `tuple.2.tuple.2.i32.i32.i32`.

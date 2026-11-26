@@ -1140,7 +1140,8 @@ std::optional<int> Checker::known_len(const Expr &base) {
     quiet_ = true;
     const Type type = operand_type(info->on_type, info->type_name, info->type_package, info->is_struct, info->is_enum,
                                    info->indirections, info->optional, info->expr.get(), info->loc, info->const_pointee,
-                                   info->is_array, info->array_len, info->elem_const, info->elem_slice, info->shells);
+                                   info->is_array, info->array_len, info->elem_const, info->elem_slice, info->shells,
+                                   info->tuple_parts);
     quiet_ = saved_quiet;
     folding_fields_len_ = false;
     if (type.kind == TypeKind::Invalid || mentions_trait(type)) {
@@ -3536,6 +3537,30 @@ const FunctionDecl *Checker::baked_callee(const Expr::Call &call) {
     return found;
 }
 
+void Checker::promote_comptime_arg(std::unique_ptr<Expr> &arg, int depth) {
+    if (arg == nullptr || depth > 16) {
+        return;
+    }
+    // A local `const p = Point{...}` passes its initializer, the same copy `comptime const q = p` makes.
+    if (const Expr *src = promotable_init(*arg)) {
+        arg = clone_expr(*src);
+        return;
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&arg->data)) {
+        if (const Symbol *symbol = lookup(named->text);
+            symbol != nullptr && symbol->runtime_const && symbol->array_init != nullptr) {
+            arg = clone_expr(*symbol->array_init);
+            return;
+        }
+    }
+    // `(row, 40)`: each name in the tuple is copied the same way.
+    if (auto *tuple = std::get_if<Expr::Init>(&arg->data); tuple != nullptr && tuple->is_tuple) {
+        for (std::unique_ptr<Expr> &part : tuple->elements) {
+            promote_comptime_arg(part, depth + 1);
+        }
+    }
+}
+
 void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &call, std::size_t skip) {
     // `extern` / `extern(abi="tlc")` keeps the parameter in the symbol. A runtime value calls it.
     if (fn.is_comptime || fn.is_macro || !fn.type_params.empty() || (fn.is_extern && !fn.extern_c) ||
@@ -3548,6 +3573,7 @@ void Checker::require_comptime_params(const FunctionDecl &fn, const Expr::Call &
         if (!fn.params[skip + i].is_comptime || call.args[i] == nullptr) {
             continue;
         }
+        promote_comptime_arg(const_cast<Expr::Call &>(call).args[i], 0);
         // A free function specializes through `argument_is_comptime`. A method also accepts
         // a forwarded comptime name. An enumerator then builds a copy that drops the parameter.
         // A struct, a float, an alias, a function, or a tuple is `comptime_constant`. An enumerator is not.
@@ -3602,7 +3628,7 @@ std::optional<int> Checker::fold_early_call(const Expr &init) {
         return std::nullopt;
     }
     const Expr *value = single_i32_return(*fn);
-    if (value == nullptr) {
+    if (value == nullptr && !early_runnable(*fn)) {
         return std::nullopt;
     }
     std::vector<std::unique_ptr<Expr>> owned;
@@ -3632,11 +3658,277 @@ std::optional<int> Checker::fold_early_call(const Expr &init) {
         exprs.push_back(item.get());
     }
     comptime_folding_.insert(fn);
-    std::unique_ptr<Expr> rewritten = clone_expr(*value);
-    replace_names(rewritten, names, exprs);
-    const std::optional<int> folded = fold_int(*rewritten);
+    std::optional<int> folded;
+    if (value != nullptr) {
+        std::unique_ptr<Expr> rewritten = clone_expr(*value);
+        replace_names(rewritten, names, exprs);
+        folded = fold_int(*rewritten);
+    } else {
+        // `for`, `if`, and locals of `i32`: the body runs here, before the structs have a size.
+        std::vector<std::pair<std::string, int>> env;
+        for (std::size_t i = 0; i < names.size(); ++i) {
+            env.emplace_back(names[i], *fold_int(*exprs[i]));
+        }
+        folded = early_run(*fn, std::move(env));
+    }
     comptime_folding_.erase(fn);
     return folded;
+}
+
+bool Checker::early_runnable(const FunctionDecl &fn) const {
+    if (fn.body == nullptr || fn.results.size() != 1) {
+        return false;
+    }
+    const ResultSlot &result = fn.results.front();
+    return result.type_name == "i32" && result.type_package.empty() && result.indirections == 0 && !result.is_array &&
+           !result.is_tuple && !result.is_fn_ptr && result.shells.empty() && result.type_args.empty();
+}
+
+std::optional<int> Checker::early_run(const FunctionDecl &fn, std::vector<std::pair<std::string, int>> env) {
+    // Statements of `i32` only. Anything else leaves the call to the later check.
+    enum class Flow { Next, Break, Continue, Return, Fail };
+    int steps = 0;
+    int result = 0;
+    const bool saved_quiet = quiet_;
+    quiet_ = true;
+    auto find = [&](const std::string &name) -> int * {
+        for (auto it = env.rbegin(); it != env.rend(); ++it) {
+            if (it->first == name) {
+                return &it->second;
+            }
+        }
+        return nullptr;
+    };
+    auto eval = [&](const Expr &expr) -> std::optional<int> {
+        std::unique_ptr<Expr> copy = clone_expr(expr);
+        std::vector<std::string> names;
+        std::vector<std::unique_ptr<Expr>> owned;
+        std::vector<const Expr *> values;
+        for (auto it = env.rbegin(); it != env.rend(); ++it) {
+            if (std::find(names.begin(), names.end(), it->first) != names.end()) {
+                continue;
+            }
+            names.push_back(it->first);
+            owned.push_back(folded_int(it->second, expr_loc(expr)));
+        }
+        for (const auto &item : owned) {
+            values.push_back(item.get());
+        }
+        replace_names(copy, names, values);
+        const int errors = quiet_errors_;
+        const std::optional<int> value = fold_int(*copy);
+        // `1 / 0` folds to nothing. The later check reports it.
+        if (quiet_errors_ != errors) {
+            return std::nullopt;
+        }
+        return value;
+    };
+    auto plain_i32 = [](const VarDecl &var) {
+        return var.inferred || (var.type_name == "i32" && var.type_package.empty() && var.indirections == 0 &&
+                                !var.is_array && var.shells.empty() && !var.is_struct && !var.is_fn_ptr &&
+                                !var.is_tuple);
+    };
+    auto store = [&](const Expr &target_expr, TokenKind op, const Expr *rhs) -> bool {
+        const auto *target = std::get_if<Expr::Name>(&target_expr.data);
+        int *slot = target == nullptr ? nullptr : find(target->text);
+        if (slot == nullptr) {
+            return false;
+        }
+        std::optional<int> value = rhs == nullptr ? std::optional<int>{1} : eval(*rhs);
+        if (!value) {
+            return false;
+        }
+        const int64_t now = *slot;
+        int64_t next = *value;
+        switch (op) {
+        case TokenKind::Eq:
+            break;
+        case TokenKind::PlusEq:
+        case TokenKind::PlusPlus:
+            next = now + *value;
+            break;
+        case TokenKind::MinusEq:
+        case TokenKind::MinusMinus:
+            next = now - *value;
+            break;
+        case TokenKind::StarEq:
+            next = now * *value;
+            break;
+        case TokenKind::SlashEq:
+        case TokenKind::PercentEq:
+            if (*value == 0 || (now == INT32_MIN && *value == -1)) {
+                return false;
+            }
+            next = op == TokenKind::SlashEq ? now / *value : now % *value;
+            break;
+        default:
+            return false;
+        }
+        // An `i32` wraps, the same as the compiled body.
+        *slot = static_cast<int32_t>(static_cast<uint32_t>(static_cast<uint64_t>(next)));
+        return true;
+    };
+    auto run = [&](auto &&self, const Stmt &stmt) -> Flow {
+        if (++steps > 100000) {
+            return Flow::Fail;
+        }
+        return std::visit(
+            [&](const auto &node) -> Flow {
+                using T = std::decay_t<decltype(node)>;
+                if constexpr (std::is_same_v<T, Stmt::Block>) {
+                    const std::size_t depth = env.size();
+                    for (const auto &child : node.statements) {
+                        if (child == nullptr) {
+                            continue;
+                        }
+                        const Flow flow = self(self, *child);
+                        if (flow != Flow::Next) {
+                            env.resize(depth);
+                            return flow;
+                        }
+                    }
+                    env.resize(depth);
+                    return Flow::Next;
+                } else if constexpr (std::is_same_v<T, Stmt::Return>) {
+                    if (node.value == nullptr || !node.extra.empty()) {
+                        return Flow::Fail;
+                    }
+                    const std::optional<int> value = eval(*node.value);
+                    if (!value) {
+                        return Flow::Fail;
+                    }
+                    result = *value;
+                    return Flow::Return;
+                } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
+                    if (node.names.size() != 1 || node.value == nullptr) {
+                        return Flow::Fail;
+                    }
+                    const std::optional<int> value = eval(*node.value);
+                    if (!value || folds_to_bool(*node.value)) {
+                        return Flow::Fail;
+                    }
+                    env.emplace_back(node.names.front(), *value);
+                    return Flow::Next;
+                } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
+                    for (const VarDecl &var : node.vars) {
+                        if (!plain_i32(var) || var.init == nullptr) {
+                            return Flow::Fail;
+                        }
+                        const std::optional<int> value = eval(*var.init);
+                        if (!value || folds_to_bool(*var.init)) {
+                            return Flow::Fail;
+                        }
+                        env.emplace_back(var.name, *value);
+                    }
+                    return Flow::Next;
+                } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
+                    if (node.expr == nullptr) {
+                        return Flow::Next;
+                    }
+                    if (const auto *assign = std::get_if<Expr::Assign>(&node.expr->data)) {
+                        return assign->lhs != nullptr && store(*assign->lhs, assign->op, assign->rhs.get()) ? Flow::Next
+                                                                                                           : Flow::Fail;
+                    }
+                    if (const auto *unary = std::get_if<Expr::Unary>(&node.expr->data);
+                        unary != nullptr && unary->expr != nullptr &&
+                        (unary->op == TokenKind::PlusPlus || unary->op == TokenKind::MinusMinus)) {
+                        return store(*unary->expr, unary->op, nullptr) ? Flow::Next : Flow::Fail;
+                    }
+                    return Flow::Fail;
+                } else if constexpr (std::is_same_v<T, Stmt::If>) {
+                    if (node.cond == nullptr) {
+                        return Flow::Fail;
+                    }
+                    const std::optional<int> cond = eval(*node.cond);
+                    if (!cond) {
+                        return Flow::Fail;
+                    }
+                    const Stmt *arm = *cond != 0 ? node.then_arm.get() : node.else_arm.get();
+                    return arm == nullptr ? Flow::Next : self(self, *arm);
+                } else if constexpr (std::is_same_v<T, Stmt::While>) {
+                    while (true) {
+                        if (node.cond == nullptr) {
+                            return Flow::Fail;
+                        }
+                        const std::optional<int> cond = eval(*node.cond);
+                        if (!cond) {
+                            return Flow::Fail;
+                        }
+                        if (*cond == 0) {
+                            return Flow::Next;
+                        }
+                        const Flow flow = node.body == nullptr ? Flow::Next : self(self, *node.body);
+                        if (flow == Flow::Break) {
+                            return Flow::Next;
+                        }
+                        if (flow == Flow::Return || flow == Flow::Fail) {
+                            return flow;
+                        }
+                        if (++steps > 100000) {
+                            return Flow::Fail;
+                        }
+                    }
+                } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                    if (node.each || node.comptime_for || !node.unrolled.empty()) {
+                        return Flow::Fail;
+                    }
+                    const std::size_t depth = env.size();
+                    if (node.init != nullptr && self(self, *node.init) != Flow::Next) {
+                        env.resize(depth);
+                        return Flow::Fail;
+                    }
+                    while (true) {
+                        if (node.cond != nullptr) {
+                            const std::optional<int> cond = eval(*node.cond);
+                            if (!cond) {
+                                env.resize(depth);
+                                return Flow::Fail;
+                            }
+                            if (*cond == 0) {
+                                break;
+                            }
+                        }
+                        const Flow flow = node.body == nullptr ? Flow::Next : self(self, *node.body);
+                        if (flow == Flow::Break) {
+                            break;
+                        }
+                        if (flow == Flow::Return || flow == Flow::Fail) {
+                            env.resize(depth);
+                            return flow;
+                        }
+                        if (node.step != nullptr) {
+                            Stmt::Expression step;
+                            step.expr = clone_expr(*node.step);
+                            Stmt wrapped;
+                            wrapped.data = std::move(step);
+                            if (self(self, wrapped) != Flow::Next) {
+                                env.resize(depth);
+                                return Flow::Fail;
+                            }
+                        }
+                        if (++steps > 100000) {
+                            env.resize(depth);
+                            return Flow::Fail;
+                        }
+                    }
+                    env.resize(depth);
+                    return Flow::Next;
+                } else if constexpr (std::is_same_v<T, Stmt::Break>) {
+                    return Flow::Break;
+                } else if constexpr (std::is_same_v<T, Stmt::Continue>) {
+                    return Flow::Continue;
+                } else {
+                    return Flow::Fail;
+                }
+            },
+            stmt.data);
+    };
+    const Flow flow = run(run, *fn.body);
+    quiet_ = saved_quiet;
+    if (flow != Flow::Return) {
+        return std::nullopt;
+    }
+    return result;
 }
 
 std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
@@ -5239,6 +5531,10 @@ void Checker::require_comptime_method_call(const Expr::Call &call, const Expr *r
 void Checker::note_promotable(Symbol &symbol, const Expr *init) {
     if (init == nullptr || symbol.is_constant) {
         return;
+    }
+    if (const auto *list = std::get_if<Expr::Init>(&init->data);
+        list != nullptr && list->array_literal && comptime_array_literal(*init)) {
+        symbol.array_init = init;
     }
     if (strict_comptime_expr(*init)) {
         symbol.promotable = true;

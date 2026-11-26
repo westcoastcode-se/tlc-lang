@@ -1115,6 +1115,13 @@ Type Checker::file_array_initializer(VarDecl &var, const Type *declared) {
             }
             return;
         }
+        // `{"ab", "cde"}` of `[]const u8`. A string, a range of a constant, or a slice global is that header.
+        if (is_slice(element)) {
+            std::unordered_set<std::string> slice_seen;
+            if (constant_slice_expr(value, slice_seen)) {
+                return;
+            }
+        }
         const FileConst kind = file_constant(value, seen, !(var.is_const_decl && var.is_comptime));
         if (kind == FileConst::Unfolded) {
             unfolded = true;
@@ -1269,6 +1276,10 @@ const VarDecl *Checker::global_var(const std::string &name) {
 }
 
 Checker::FileConst Checker::file_constant(const Expr &expr, std::unordered_set<std::string> &seen, bool allow_var) {
+    // `"one"` is a header in the binary, also as a field of a struct element, `{.name = "one"}`.
+    if (std::holds_alternative<Expr::String>(expr.data)) {
+        return FileConst::Yes;
+    }
     if (const auto *init = std::get_if<Expr::Init>(&expr.data)) {
         if (!init->fields.empty() && !init->elements.empty()) {
             return FileConst::No;
@@ -2029,8 +2040,12 @@ bool Checker::constant_slice_expr(const Expr &expr, std::unordered_set<std::stri
     if (const auto *list = std::get_if<Expr::Init>(&expr.data); list != nullptr && list->array_literal) {
         for (const auto &element : list->elements) {
             std::unordered_set<std::string> names;
+            // `[_][]const u8{"ab", "cde"}`: a string element is a header of its own. The type check already
+            // matched each element to the slice.
+            std::unordered_set<std::string> inner;
             if (element == nullptr ||
-                (file_constant(*element, names, true) != FileConst::Yes && !const_parts(*element, 0))) {
+                (file_constant(*element, names, true) != FileConst::Yes && !const_parts(*element, 0) &&
+                 !constant_slice_expr(*element, inner))) {
                 return false;
             }
         }

@@ -1,0 +1,26 @@
+// A local `const` whose initializer is a compile-time value is a comptime argument. The call gets a copy.
+type Point struct { x i32; y i32; }
+type Order enum { less, equal, more };
+type Integer i32;
+
+comptime func sum(p Point) i32 { return p.x + p.y; }
+comptime func half(f f64) i32 { return i32(f / 2.0); }
+comptime func rank(o Order) i32 { if (o == Order.more) { return 3; } return 0; }
+comptime func pair(p ([2]i32, i32)) i32 { return p[0][0] + p[0][1] + p[1]; }
+func add(a i32, b i32) i32 { return a + b; }
+func use(comptime f func (i32, i32) i32, n i32) i32 { return f(n, 1); }
+func id(comptime k Integer, n i32) i32 { return i32(k) + n; }
+func Point::shift(self this, comptime by Point) i32 { return self.x + by.x; }
+
+func main() i32 {
+    const p = Point{.x = 10, .y = 2};
+    const f = 8.0;
+    const o = Order.more;
+    const row = [_]i32{1, 2};
+    const g = add;
+    const k = Integer(4);
+    var n = 0;
+    var here = Point{.x = 3, .y = 0};
+    // 12 + 4 + 3 + 6 + 1 + 4 + 13 = 43
+    return sum(p) + half(f) + rank(o) + pair((row, 3)) + use(g, n) + id(k, n) + here.shift(p) - 1;
+}

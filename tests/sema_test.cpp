@@ -2161,8 +2161,10 @@ int run_sema_tests() {
     }
 
     {
-        const std::string errors = diagnose("func main() i32 { void(1); return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        // `void(1)` drops the value. A binding of it has no value.
+        EXPECT_EQ(check, diagnose("func main() i32 { void(1); return 0; }\n"), "");
+        const std::string errors = diagnose("func main() i32 { var x = void(1); return 0; }\n");
+        EXPECT_HAS(check, errors, "type mismatch: expected a value, found void");
     }
 
     {
@@ -6042,7 +6044,8 @@ int run_sema_tests() {
         const std::string errors = diagnose(
             "func f() (func (i32) i32, i32) { return 0, 0; }\n"
             "func main() i32 { return 0; }\n");
-        EXPECT_HAS(check, errors, "not supported yet");
+        // A function pointer result takes a function, not an integer.
+        EXPECT_HAS(check, errors, "return type: expected *func(i32) i32, found i32");
     }
 
     {

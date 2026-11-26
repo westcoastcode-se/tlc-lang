@@ -116,6 +116,8 @@ struct Symbol {
     const Expr *promote_init = nullptr;
     // Initializer of a `comptime const`. `*p` reads it when `p` is a comptime pointer.
     const Expr *const_init = nullptr;
+    // `const row = [_]i32{1, 2}` inside a function. A comptime argument copies this list.
+    const Expr *array_init = nullptr;
     // Initializer of a local runtime `const` slice. `s[5]` checks that index against those bytes when they
     // are a constant string. The name is not a compile-time string.
     const Expr *const_text = nullptr;
@@ -906,6 +908,18 @@ class Checker {
     // after `emit` has been cleared, so a name bound by that statement is in scope.
     void append_statement(std::unique_ptr<Stmt> stmt, std::vector<std::unique_ptr<Stmt>> &out, bool defer = false);
     void expand_macro_call(const Expr::Call &call, const FunctionDecl &fn, std::vector<std::unique_ptr<Stmt>> &out);
+    // `const twice = n * 2` and `var extra = 1` in a macro body, without `emit`. Each is a value while the macro
+    // expands. A later statement reads it, and `extra += 1` without `emit` changes it. The enclosing block ends it.
+    struct MacroLocal {
+        std::string name;
+        std::unique_ptr<Expr> value;
+        bool is_var = false;
+    };
+    std::vector<MacroLocal> macro_locals_;
+    void apply_macro_locals(std::unique_ptr<Expr> &slot);
+    void apply_macro_locals(Stmt &stmt);
+    // True when `stmt` was a macro binding or a store into one. It is not pasted.
+    bool macro_local_stmt(Stmt &stmt);
     // `keep_block` leaves a block in place. The statements inside it are still expanded.
     void expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &fn, const std::vector<std::string> &names,
                            const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out,
@@ -1056,7 +1070,8 @@ class Checker {
     Type operand_type(bool on_type, const std::string &type_name, const std::string &type_package, bool is_struct,
                       bool is_enum, int indirections, uint32_t optional, const Expr *expr, SourceLoc loc,
                       uint32_t const_pointee = 0, bool is_array = false, int64_t array_len = 0, bool elem_const = false,
-                      bool elem_slice = false, const std::vector<TypeShell> &shells = {});
+                      bool elem_slice = false, const std::vector<TypeShell> &shells = {},
+                      const std::vector<ResultSlot> &tuple_parts = {});
     // Fold each array shell's length name. A non-positive length is `not supported yet`.
     void fold_shells(std::vector<TypeShell> &shells, SourceLoc loc);
     // `[N * 2 + 1]`: each name an array length may be is replaced by its value, and the expression folds.
@@ -1412,6 +1427,15 @@ class Checker {
     // bools, or the name of such a constant. `comptime const on = 1 < 2` keeps that type.
     bool folds_to_bool(const Expr &expr, int depth = 0);
     // The type of a folded file-scope `comptime const`: `bool` or the compile-time `i32`.
+    // `extern(abi="c") func (i32) i32` marks that pointer, and the functions it passes, as C.
+    // Nonzero while a function type's parameters and results are typed.
+    int fn_type_depth_ = 0;
+    static Type c_fn(Type pointer, bool c) {
+        if (c) {
+            mark_c_abi(pointer);
+        }
+        return pointer;
+    }
     static Type folded_const_type(const VarDecl &var) { return var.const_bool ? type_bool() : type_int(); }
     // A `comptime const` whose initializer is `sizeof` of a struct. True when one value was stored.
     bool fold_ready_consts();
@@ -1419,12 +1443,20 @@ class Checker {
     // package whose body is one `return` of an `i32`. Struct fields `[k]u8` wait for that value. Empty when the
     // call does not fold that way. The call is checked again where `k` is declared.
     std::optional<int> fold_early_call(const Expr &init);
+    // A body of `i32` locals, `if`, loops, and `return`, run while the structs are still being sized.
+    bool early_runnable(const FunctionDecl &fn) const;
+    std::optional<int> early_run(const FunctionDecl &fn, std::vector<std::pair<std::string, int>> env);
     void bind_file_const(VarDecl &var);
     // The type of a file-scope `comptime const`. Sets `has_const` when the value folds.
     // Does not declare the name. Invalid means the constant was rejected.
     Type check_file_const(VarDecl &var);
     // A runtime `const` whose initializer is a compile-time constant. The name itself is not.
     const Expr *promotable_init(const Expr &expr);
+    // Replaces a local `const` name in a comptime argument with a copy of its initializer.
+    void promote_comptime_arg(std::unique_ptr<Expr> &arg, int depth);
+    // A copy of a captured `comptime const` the inner function reads in place of the capture. Null when the
+    // initializer reads another name.
+    std::unique_ptr<Expr> inline_capture(const Symbol &symbol, SourceLoc loc);
     // `&name` where `name` is a `comptime const`.
     bool comptime_address(const Expr &expr);
     // What a comptime pointer expression points at. Null when it is not one.

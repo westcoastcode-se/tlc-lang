@@ -1,0 +1,9 @@
+func seven() i32 { return 7; }
+func nothing() void {}
+
+func main() i32 {
+    var x = void(seven());
+    var y = nothing();
+    var z i32 = void(1);
+    return void(2);
+}

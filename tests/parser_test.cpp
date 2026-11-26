@@ -271,8 +271,9 @@ int run_parser_tests() {
     }
 
     {
+        // Several results of a function type may include a function pointer.
         const Parsed parsed = parse_source("func f(p func (i32) (func (i32) i32, i32)) i32 { return 0; }\n");
-        EXPECT_HAS(check, parsed.errors, "not supported yet");
+        EXPECT(check, parsed.errors.empty());
     }
 
     {

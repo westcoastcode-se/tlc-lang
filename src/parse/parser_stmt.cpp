@@ -602,6 +602,7 @@ VarDecl Parser::parse_const_decl(bool exported, bool is_comptime) {
     var.type_args = type.type_args;
     var.ptr_to_array = type.ptr_to_array;
     var.is_fn_ptr = type.is_fn_ptr;
+    var.fn_c_abi = type.fn_c_abi;
     var.ret_indirections = type.ret_indirections;
     var.ret_optional = type.ret_optional;
     var.ret_const_pointee = type.ret_const_pointee;
@@ -662,6 +663,7 @@ VarDecl Parser::parse_typed_var(bool exported, bool is_static, bool is_extern, b
     var.type_args = type.type_args;
     var.ptr_to_array = type.ptr_to_array;
     var.is_fn_ptr = type.is_fn_ptr;
+    var.fn_c_abi = type.fn_c_abi;
     var.ret_indirections = type.ret_indirections;
     var.ret_optional = type.ret_optional;
     var.ret_const_pointee = type.ret_const_pointee;
@@ -715,6 +717,7 @@ VarDecl Parser::parse_const_type_var(bool exported, bool is_extern, bool extern_
     var.type_args = type.type_args;
     var.ptr_to_array = type.ptr_to_array;
     var.is_fn_ptr = type.is_fn_ptr;
+    var.fn_c_abi = type.fn_c_abi;
     var.ret_indirections = type.ret_indirections;
     var.ret_optional = type.ret_optional;
     var.ret_const_pointee = type.ret_const_pointee;
@@ -890,6 +893,7 @@ std::unique_ptr<Stmt> Parser::parse_const_local(bool is_comptime) {
     var.type_args = type.type_args;
     var.ptr_to_array = type.ptr_to_array;
     var.is_fn_ptr = type.is_fn_ptr;
+    var.fn_c_abi = type.fn_c_abi;
     var.ret_indirections = type.ret_indirections;
     var.ret_optional = type.ret_optional;
     var.ret_const_pointee = type.ret_const_pointee;

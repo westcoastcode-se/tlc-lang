@@ -1,0 +1,32 @@
+// A `var` or `const` in a macro body, without `emit`, is a value while the macro expands.
+macro func fill(slot *i32, comptime n i32) void {
+    var total = 0;
+    for (var i = 0; i < n; i += 1) {
+        total += i;
+    }
+    const big = total > 5;
+    if (big) {
+        emit *slot = total * 2;
+    } else {
+        emit *slot = total;
+    }
+    var count = n;
+    while (count > 100) {
+        emit *slot += 1;
+    }
+}
+macro func each(slot *i32) void {
+    const step = 2;
+    for (var i = 0; i < step + 1; i += 1) {
+        emit *slot += step;
+    }
+}
+func main() i32 {
+    var a = 0;
+    var b = 0;
+    var c = 0;
+    fill(&a, 4);      // 0+1+2+3 = 6 > 5 → 12
+    fill(&b, 3);      // 3 → 3
+    each(&c);         // 3 * 2 = 6
+    return a + b + c + 21;
+}

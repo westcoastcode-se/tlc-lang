@@ -1,0 +1,6 @@
+compile-error: main.tlc:5:9: error: type mismatch: expected a value, found void
+stderr:
+main.tlc:5:9: error: type mismatch: expected a value, found void
+main.tlc:6:9: error: type mismatch: expected a value, found void
+main.tlc:7:17: error: type mismatch: expected i32, found void
+main.tlc:8:5: error: return type: expected i32, found void

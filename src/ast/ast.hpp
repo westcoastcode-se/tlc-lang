@@ -106,6 +106,8 @@ struct FnParam {
     // Constructors outside the leaf, outermost first.
     std::vector<TypeShell> shells;
     bool is_fn_ptr = false;
+    // `extern(abi="c") func (i32) i32`. The pointer calls with the C convention.
+    bool fn_c_abi = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
     uint32_t ret_const_pointee = 0;
@@ -120,6 +122,8 @@ struct FnParam {
     // `Box<i32>` on this parameter, or on the result when `is_fn_ptr` is set.
     std::vector<TypeArg> type_args;
 };
+
+struct ResultSlot;
 
 struct Expr {
     struct Name {
@@ -279,6 +283,8 @@ struct Expr {
         // Constructors outside the leaf, outermost first.
         std::vector<TypeShell> shells;
         int64_t array_len = 0;
+        // `sizeof(T)` and `typeof(T)` when `T` is bound to a tuple. The elements, in order.
+        std::vector<ResultSlot> tuple_parts;
         std::unique_ptr<Expr> expr;
         // `alignof`. The operand is the same as `sizeof`. The value is the alignment in bytes.
         bool align = false;
@@ -302,6 +308,8 @@ struct Expr {
         bool elem_slice = false;
         std::vector<TypeShell> shells;
         int64_t array_len = 0;
+        // `sizeof(T)` and `typeof(T)` when `T` is bound to a tuple. The elements, in order.
+        std::vector<ResultSlot> tuple_parts;
         std::unique_ptr<Expr> expr;
         // Filled while checking. Codegen interns this spelling, so equal types share one value.
         mutable std::string canonical;
@@ -509,6 +517,8 @@ struct ResultSlot {
     std::string array_len_name;
     std::vector<TypeArg> type_args;
     bool is_fn_ptr = false;
+    // `extern(abi="c") func (i32) i32`. The pointer calls with the C convention.
+    bool fn_c_abi = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
     uint32_t ret_const_pointee = 0;
@@ -543,6 +553,8 @@ struct FieldDecl {
     std::string array_len_name;
     std::vector<TypeArg> type_args;
     bool is_fn_ptr = false;
+    // `extern(abi="c") func (i32) i32`. The pointer calls with the C convention.
+    bool fn_c_abi = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
     uint32_t ret_const_pointee = 0;
@@ -633,6 +645,8 @@ struct TypedefDecl {
     std::vector<TypeArg> type_args;
     bool exported = false;
     bool is_fn_ptr = false;
+    // `extern(abi="c") func (i32) i32`. The pointer calls with the C convention.
+    bool fn_c_abi = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
     uint32_t ret_const_pointee = 0;
@@ -672,6 +686,8 @@ struct VarDecl {
     // The value is a pointer to the array, as in `*[4]i32`.
     bool ptr_to_array = false;
     bool is_fn_ptr = false;
+    // `extern(abi="c") func (i32) i32`. The pointer calls with the C convention.
+    bool fn_c_abi = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
     uint32_t ret_const_pointee = 0;
@@ -899,6 +915,8 @@ struct Param {
     bool is_comptime = false;
     bool is_receiver = false;
     bool is_fn_ptr = false;
+    // `extern(abi="c") func (i32) i32`. The pointer calls with the C convention.
+    bool fn_c_abi = false;
     int ret_indirections = 0;
     uint32_t ret_optional = 0;
     uint32_t ret_const_pointee = 0;

@@ -20,7 +20,7 @@ FieldDecl::FieldDecl(const FieldDecl &other)
       is_struct(other.is_struct), is_enum(other.is_enum), indirections(other.indirections), optional(other.optional),
       const_pointee(other.const_pointee), is_array(other.is_array), elem_const(other.elem_const),
       is_const(other.is_const), elem_slice(other.elem_slice), shells(other.shells), array_len(other.array_len),
-      array_len_name(other.array_len_name), type_args(other.type_args), is_fn_ptr(other.is_fn_ptr),
+      array_len_name(other.array_len_name), type_args(other.type_args), is_fn_ptr(other.is_fn_ptr), fn_c_abi(other.fn_c_abi),
       ret_indirections(other.ret_indirections), ret_optional(other.ret_optional),
       ret_const_pointee(other.ret_const_pointee), fn_params(other.fn_params), fn_variadic(other.fn_variadic),
       fn_results(other.fn_results), is_tuple(other.is_tuple), tuple_parts(other.tuple_parts),
@@ -940,6 +940,7 @@ VarDecl clone_var(const VarDecl &var) {
     copy.tuple_parts = var.tuple_parts;
     copy.ptr_to_array = var.ptr_to_array;
     copy.is_fn_ptr = var.is_fn_ptr;
+    copy.fn_c_abi = var.fn_c_abi;
     copy.ret_indirections = var.ret_indirections;
     copy.ret_optional = var.ret_optional;
     copy.ret_const_pointee = var.ret_const_pointee;
@@ -1074,6 +1075,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.elem_slice = node.elem_slice;
                 copy.shells = node.shells;
                 copy.array_len = node.array_len;
+                copy.tuple_parts = node.tuple_parts;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
                 copy.align = node.align;
                 out->data = std::move(copy);
@@ -1099,6 +1101,7 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.type_has_this = node.type_has_this;
                 copy.type_generic = node.type_generic;
                 copy.type_variadic = node.type_variadic;
+                copy.tuple_parts = node.tuple_parts;
                 copy.expr = node.expr ? clone_expr(*node.expr) : nullptr;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Cast>) {

@@ -3083,6 +3083,39 @@ void Checker::substitute_value_arg(const std::vector<TypeParam> &params, const s
     substitute_expr(params, bounds, *arg.value_expr);
 }
 
+namespace {
+
+// The elements of a tuple bound, as written slots.
+std::vector<ResultSlot> pack_slots(const SpecArg &bound) {
+    std::vector<ResultSlot> out;
+    out.reserve(bound.parts.size());
+    for (const SpecArg &part : bound.parts) {
+        ResultSlot written;
+        if (part.is_pack) {
+            written.is_tuple = true;
+            written.tuple_parts = pack_slots(part);
+            out.push_back(std::move(written));
+            continue;
+        }
+        written.type_name = part.type_name;
+        written.type_package = part.type_package;
+        written.is_struct = part.is_struct;
+        written.is_enum = part.is_enum;
+        written.indirections = part.indirections;
+        written.optional = part.optional;
+        written.const_pointee = part.const_pointee;
+        written.is_array = part.is_array;
+        written.elem_const = part.elem_const;
+        written.elem_slice = part.elem_slice;
+        written.shells = part.shells;
+        written.array_len = part.array_len;
+        out.push_back(std::move(written));
+    }
+    return out;
+}
+
+} // namespace
+
 void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::vector<SpecArg> &bounds, Expr &expr) {
     // `sizeof(*T)` and `sizeof([4]T)` when `T` is `[4]i32`. Shells are outermost first.
     // A written star or array stays outside the bound. `sizeof(T)` does not come here.
@@ -3251,6 +3284,13 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 // array bound. `sizeof(T)` when `T` is `[4]i32` copies that array.
                 if (node.on_type) {
                     if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
+                        bound != nullptr && bound->is_pack && node.indirections == 0 && !node.is_array &&
+                        node.shells.empty()) {
+                        // `sizeof(U)` and `typeof(U)` when `U` is `(i32, f64)`. The elements are that tuple.
+                        node.tuple_parts = pack_slots(*bound);
+                        node.type_name.clear();
+                        node.type_package.clear();
+                    } else if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
                         bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
                         if (!stamp_shaped(node, *bound, [&](SourceLoc loc) { error(loc, "not supported yet"); })) {
                             const int stars = node.indirections;
@@ -3285,7 +3325,15 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 }
                 const auto *named = cursor == nullptr ? nullptr : std::get_if<Expr::Name>(&cursor->data);
                 if (named != nullptr) {
-                    if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
+                    if (const SpecArg *bound = find_arg(params, bounds, named->text);
+                        bound != nullptr && bound->is_pack && stars == 0) {
+                        // `sizeof(U)` and `typeof(U)` when `U` is `(i32, f64)`. The elements are that tuple.
+                        node.tuple_parts = pack_slots(*bound);
+                        node.type_name.clear();
+                        node.type_package.clear();
+                        node.on_type = true;
+                        node.expr.reset();
+                    } else if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
                         // `sizeof *T` when `T` is an array. The stars are a shell around that array.
                         node.indirections = stars;
                         node.optional = 0;
@@ -3326,6 +3374,13 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 // `typeof(T)` is parsed as a type, the same way as `sizeof(T)`.
                 if (node.on_type) {
                     if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
+                        bound != nullptr && bound->is_pack && node.indirections == 0 && !node.is_array &&
+                        node.shells.empty()) {
+                        // `sizeof(U)` and `typeof(U)` when `U` is `(i32, f64)`. The elements are that tuple.
+                        node.tuple_parts = pack_slots(*bound);
+                        node.type_name.clear();
+                        node.type_package.clear();
+                    } else if (const SpecArg *bound = find_arg(params, bounds, node.type_name);
                         bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
                         if (!stamp_shaped(node, *bound, [&](SourceLoc loc) { error(loc, "not supported yet"); })) {
                             const int stars = node.indirections;
@@ -3364,7 +3419,15 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                 }
                 const auto *named = cursor == nullptr ? nullptr : std::get_if<Expr::Name>(&cursor->data);
                 if (named != nullptr) {
-                    if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
+                    if (const SpecArg *bound = find_arg(params, bounds, named->text);
+                        bound != nullptr && bound->is_pack && stars == 0) {
+                        // `sizeof(U)` and `typeof(U)` when `U` is `(i32, f64)`. The elements are that tuple.
+                        node.tuple_parts = pack_slots(*bound);
+                        node.type_name.clear();
+                        node.type_package.clear();
+                        node.on_type = true;
+                        node.expr.reset();
+                    } else if (const SpecArg *bound = find_arg(params, bounds, named->text); bound != nullptr && !bound->is_value && !bound->is_text && !bound->is_constant_expr) {
                         // `typeof *T` when `T` is an array. The stars are a shell around that array.
                         // `typeof(T)` when `T` is `[4]i32` copies that array.
                         node.indirections = stars;

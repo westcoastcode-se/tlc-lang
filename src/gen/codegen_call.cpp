@@ -1320,6 +1320,18 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
                 slot.tuple_parts.push_back(self(self, inner));
             }
         }
+        // `func () (func (i32) i32, i32)`. The first result keeps the signature of the pointer.
+        if (part.is_fn_ptr) {
+            slot.is_fn_ptr = true;
+            slot.is_array = false;
+            slot.array_len = 0;
+            slot.ret_indirections = part.ret_indirections;
+            slot.ret_optional = part.ret_optional;
+            slot.ret_const_pointee = part.ret_const_pointee;
+            slot.fn_params = part.params;
+            slot.fn_variadic = part.variadic;
+            slot.fn_results = part.results;
+        }
         return slot;
     };
     if (inst->getType()->isStructTy() && call.decl != nullptr && call.decl->results.size() == 1 &&
@@ -1367,26 +1379,8 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         } else {
             result.tuple_parts.reserve(call.fn_results.size());
             for (const FnParam &part : call.fn_results) {
-                if (part.is_tuple) {
-                    // `func () ((i32, i32), i32)`. That result stays one tuple.
-                    result.tuple_parts.push_back(slot_from_fn(slot_from_fn, part));
-                    continue;
-                }
-                ResultSlot slot;
-                slot.type_name = part.type_name;
-                slot.type_package = part.type_package;
-                slot.is_struct = part.is_struct;
-                slot.is_enum = part.is_enum;
-                slot.indirections = part.indirections;
-                slot.optional = part.optional;
-                slot.const_pointee = part.const_pointee;
-                slot.is_array = part.is_array && part.array_len != 0;
-                slot.array_len = slot.is_array ? part.array_len : 0;
-                slot.elem_slice = part.elem_slice;
-                slot.elem_const = part.elem_const;
-                slot.shells = part.shells;
-                slot.type_args = part.type_args;
-                result.tuple_parts.push_back(std::move(slot));
+                // `func () ((i32, i32), i32)` keeps that tuple. A function pointer keeps its signature.
+                result.tuple_parts.push_back(slot_from_fn(slot_from_fn, part));
             }
         }
     }

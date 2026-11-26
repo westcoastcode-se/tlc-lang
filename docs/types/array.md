@@ -44,6 +44,8 @@ A file-scope list that ends with `0...` stores 0 in every element the list does 
 
 A file-scope element built from literals and `const` names folds: `const K = 4` then `var row [3]i32 = {K, K * 2, -K}` is 4, 8, -4.
 
+An element that is a slice is a header in the binary: `var w [3][]const u8 = {label, label[1:3], "z"}`, `var b [2][]i32 = {nums[:], nums[1:]}`, and a struct field `{.name = "one", .n = 1}` in `var table [2]Entry`. A store through `b[0]` changes `nums`.
+
 A long run of those zeros costs the compiler nothing. `var arr [2147483647]i32 = {1, 2, 3}` is built as the three elements and one zero tail, in the compiler and in a `comptime` call alike. The binary still holds the whole array, zeros included, the same as a C compiler's. A file-scope array with no initializer, or one that is all zero, takes no space in the binary.
 
 The same holds for an array field of a file-scope struct, `var h = H{.raw = {1, 0...}}`, and for a field's default value, `raw [100000000]u8 = {7, 8, 0...}`.
@@ -198,7 +200,7 @@ Inside a function, `const n = 4` then `var row [n]i32` is `[4]i32`.
 
 A length is any expression that folds: `[sizeof(Pair) + 1]u8`, `[N * 2 + 1]u8`, `[twice(N) + 1]i32`, and `[(1 + 1)][N + 1]i32`. `type G<N i32> struct { buf [N + 1]u8; }` and `func pad<N i32>()` with `[N * 2 + 1]i32` substitute `N` first. A length that reads a `var` or a `bool` is `not supported yet`. A file-scope `const N = 4`, with or without `comptime`, is a field length, `type Buf struct { head [N]u8; }`, and so is `const M = N * 2`. `comptime const N = sizeof(Point)` is a field length once `Point` is complete. `type Holder struct { buf [N]u8; }` is 8 bytes when `Point` holds two `i32` fields. `buf [sizeof(Point)]u8` is that same length. Inside `Point`, `buf [sizeof(Point)]u8` is the size of the other fields. `sizeof(Point)` after that struct is complete includes `buf`.
 
-`comptime const wide = twice(10)` is a field length when `twice` is a `comptime func` in the same package whose body is one `return` of an `i32` and whose parameters are `i32`: `type Buffer struct { head [wide]u8; }`. An argument may be a folded constant or another such call, `add(twice(1), base + 3)`. Field types are resolved before functions are declared, so a body with statements runs too late for a field. That field is `not supported yet`. Inside a function, `var row [wide]i32` takes any `comptime const` that folds.
+`comptime const wide = twice(10)` is a field length when `twice` is a `comptime func` in the same package whose body is one `return` of an `i32` and whose parameters are `i32`: `type Buffer struct { head [wide]u8; }`. An argument may be a folded constant or another such call, `add(twice(1), base + 3)`. A body of `i32` statements also runs that early: locals, `=` and `+=`, `++`, `if`, `while`, `for`, `break`, `continue`, and `return`, as in a loop that sums `1` to `n`. A body that uses another type, such as a struct, runs after the fields are resolved, so that field is `not supported yet`. Inside a function, `var row [wide]i32` takes any `comptime const` that folds.
 
 ```c
 func main() i32 {

@@ -1,0 +1,8 @@
+// The results bind one name each. One `var` of the whole tuple holds a function and is `type mismatch`.
+func inc(n i32) i32 { return n + 1; }
+func two() (func (i32) i32, i32) { return inc, 3; }
+
+func main() i32 {
+    var t = two();
+    return 0;
+}

@@ -1,0 +1,33 @@
+// Loops, `if`, `break`, and `continue` over `i32` locals run before the struct has a size.
+comptime func sum_to(n i32) i32 {
+    var total = 0;
+    for (var i = 1; i <= n; i += 1) {
+        if (i % 2 == 0) {
+            continue;
+        }
+        total += i;
+    }
+    return total;
+}
+comptime func first_over(limit i32, step i32) i32 {
+    var x = 0;
+    while (true) {
+        x += step;
+        if (x > limit) {
+            break;
+        }
+    }
+    const extra = 1;
+    x++;
+    return x + extra;
+}
+comptime const a = sum_to(9);          // 1+3+5+7+9 = 25
+comptime const b = first_over(10, 4);  // 12, 13, 14
+type Buf struct {
+    head [a]u8;
+    tail [b]i32;
+}
+func main() i32 {
+    var buf Buf;
+    return i32(buf.head.len + buf.tail.len) + 3;
+}

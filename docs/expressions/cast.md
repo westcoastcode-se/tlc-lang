@@ -38,6 +38,10 @@ The compiler reports a cast to a different struct as `type mismatch`.
 
 From another file in the package, `ShapeType(shape)` still reads that tag.
 
+## A cast to void
+
+`void(f())` evaluates `f()` and drops the result, the same as `_ = f()`. The operand may be any value, a `void` call included. The cast has no value: `var x = void(f())` is `type mismatch: expected a value, found void`, and so is `var x = nothing()` when `nothing` returns `void`. `var n i32 = void(1)` and `return void(2)` from an `i32` function are `type mismatch`.
+
 ## An array cast to a pointer
 
 A sized array casts to a pointer to its element: `*i32(row)` when `row` is `[N]i32`.

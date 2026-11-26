@@ -1,0 +1,21 @@
+// `typeof(U).fields().len` counts the elements when `U` is bound to a tuple. `sizeof(U)` is that tuple.
+import "builtin";
+func count_of<U type>(value U) i32 {
+    return i32(typeof(U).fields().len);
+}
+func size_of<U type>(value U) i32 {
+    return i32(sizeof(U));
+}
+func same<U type>(value U) bool {
+    return typeof(U) == typeof(value);
+}
+func main() i32 {
+    var t = (1, 2.0, 3);
+    var p = (1, (2, 3));
+    var total = count_of(t) * 10 + count_of(5) + count_of(p);   // 30 + 0 + 2
+    total += size_of(t) - 24 + size_of(p) - 12;                 // 0
+    if (same(t) && same(p)) {
+        total += 10;
+    }
+    return total;
+}

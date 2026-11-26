@@ -1767,7 +1767,10 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                 return loaded;
             } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                 llvm::Type *measured = nullptr;
-                if (node.on_type) {
+                if (node.on_type && !node.tuple_parts.empty()) {
+                    // `sizeof(U)` when `U` is `(i32, f64)`.
+                    measured = lower_tuple_parts(current_file_, node.tuple_parts).type;
+                } else if (node.on_type) {
                     const Lowered low = lower(current_file_, node.type_name, node.type_package, node.is_struct, node.indirections,
                                               node.is_array, node.is_array ? node.array_len : 0, false, node.elem_slice,
                                               node.shells);
@@ -1857,6 +1860,11 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     return source;
                 }
                 const TypedValue source = node.expr ? emit_rvalue(*node.expr) : TypedValue{};
+                // `void(f())` ran the operand. Nothing is kept.
+                if (!node.is_fn_ptr && !node.is_tuple && node.type_name == "void" && node.indirections == 0 &&
+                    node.shells.empty() && node.type_package.empty()) {
+                    return {zero(), 0};
+                }
                 // `Drawable(value)` is the value. The trait has no representation.
                 if (node.trait_value) {
                     return source;

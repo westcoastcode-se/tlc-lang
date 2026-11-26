@@ -1,0 +1,20 @@
+// An inner function that reads a `comptime const` is a value. It reads a copy of that constant.
+type Point struct { x i32; y i32; }
+func apply(f func (i32) i32, n i32) i32 { return f(n); }
+func main() i32 {
+    comptime const k = 30;
+    comptime const neg = -5;
+    comptime const p = Point{.x = 1, .y = 2};
+    comptime const half = 0.5;
+    comptime const on = true;
+    comptime const big = 3000000000u32;
+    func pass(n i32) i32 {
+        var extra = 0;
+        if (on && big > 1u32) {
+            extra = p.y + i32(half * 4.0);
+        }
+        return n + k + neg + extra;
+    }
+    var f = pass;
+    return f(1) + apply(pass, 1) - 31 + 13;
+}

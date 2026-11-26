@@ -1,0 +1,26 @@
+// Several results may include a function pointer. Each binding keeps its signature.
+func inc(n i32) i32 { return n + 1; }
+func dbl(n i32) i32 { return n * 2; }
+var table [2]func (i32) i32 = {inc, dbl};
+func two() (func (i32) i32, i32) { return inc, 3; }
+func three() (i32, [2]func (i32) i32, ?func (i32) i32) { return 1, table, null; }
+func pass() (func (i32) i32, i32) {
+    var f, k = two();
+    return f, k + 1;
+}
+type Box struct { n i32; }
+func Box::pick(self this) (func (i32) i32, i32) { return dbl, self.n; }
+func main() i32 {
+    var f, k = two();                 // inc, 3
+    var a, row, none = three();        // 1, table, null
+    var g, m = pass();                // inc, 4
+    var b = Box{.n = 5};
+    var h, q = b.pick();              // dbl, 5
+    var make func () (func (i32) i32, i32) = two;
+    var u, v = make();                // inc, 3
+    var total = f(k) + a + row[1](3) + g(m) + h(q) + u(v);   // 4 + 1 + 6 + 5 + 10 + 4 = 30
+    if (none == null) {
+        total += 12;
+    }
+    return total;
+}

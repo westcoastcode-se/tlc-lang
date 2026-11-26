@@ -236,6 +236,10 @@ bool Parser::starts_declaration() const {
         return true;
     }
     const TokenKind kind = peek().kind;
+    // `void(f())` drops a value. It is an expression, not a declarator.
+    if (kind == TokenKind::KwVoid && peek(1).kind == TokenKind::LParen) {
+        return false;
+    }
     const bool typedef_name = kind == TokenKind::Identifier && peek(1).kind != TokenKind::Dot &&
                               (peek(1).kind == TokenKind::Star || peek(1).kind == TokenKind::Identifier);
     return kind == TokenKind::KwExport || kind == TokenKind::KwExtern ||

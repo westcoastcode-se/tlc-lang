@@ -195,19 +195,19 @@ A string is a literal, a constant range, or a `comptime const` in the same file.
 
 A `var` is not. A `const` is not, until `comptime const folded = name`.
 
-A local `const` or a `var` passed to a `comptime func` is `not supported yet`. `const k = 0.5` then `field(k)` is `movl $42, %eax` and `retq`. `const k = 0.5f` and `const flag = true` are that call. `const a = 40i8` then `field(a)` is those two instructions. `200u8`, `40i16`, and `40000u16` are that call. `const n = 4i8` then `var row [n]i32` has `row.len` of 4. `comptime if (n == 4i8)` keeps that arm.
+A local `const` whose initializer is a compile-time value passes a copy of that initializer, the same copy `comptime const q = p` makes. A `var` passed to a `comptime func` is `not supported yet`. `const k = 0.5` then `field(k)` is `movl $42, %eax` and `retq`. `const k = 0.5f` and `const flag = true` are that call. `const a = 40i8` then `field(a)` is those two instructions. `200u8`, `40i16`, and `40000u16` are that call. `const n = 4i8` then `var row [n]i32` has `row.len` of 4. `comptime if (n == 4i8)` keeps that arm.
 
-`const scale = 0.5` on `func take(comptime v f64, n i32)` calls `main.take.spec.d3fe0000000000000` when the file is `main.tlc`. A local `const` on that parameter is `type mismatch`.
+`const scale = 0.5` on `func take(comptime v f64, n i32)` calls `main.take.spec.d3fe0000000000000` when the file is `main.tlc`. A local `const scale = 0.5` on that parameter is the same call.
 
 A `comptime const` whose initializer folds to `i32` is a comptime argument.
 
-A `const` of a struct, a float, an alias, a function, a tuple, or `[]const u8` is not.
+A `const` of a struct, a float, an alias, a function, a tuple, an array literal, or `[]const u8` is one when its initializer is.
 
 A tuple of a folded integer, a `bool`, a constant `[]const u8`, an enumerator, or a `comptime const` is.
 
 A file-scope `const` whose initializer folds to `i32` is an element of that tuple. `const k = 40` then `field((k, 2))` is `movl $42, %eax` and `retq`.
 
-A local `const` and a `var` in that tuple are `not supported yet`.
+A local `const` in that tuple is a copy of its initializer. A `var` in that tuple is `not supported yet`.
 
 `comptime const pair = (40, 2)` names that tuple.
 
@@ -239,7 +239,7 @@ A file-scope `const row = [_]i32{2, 0}` in that tuple is 42. `field((row, 40))` 
 
 `take((row, 0), n)` with `comptime p ([2]Point, i32)` is `type mismatch`.
 
-A local `const` of that array is `not supported yet`.
+A local `const` of that array is a copy of the list.
 
 A runtime `const` of a tuple is `type mismatch`.
 
@@ -283,7 +283,7 @@ A result that is not one of those is `not supported yet`. An enumerator whose un
 
 `emit` is not valid in a `comptime func`.
 
-A local `const` or a `var` passed to a `comptime func` is `not supported yet`. `const k = 0.5` then `field(k)` is `movl $42, %eax` and `retq`. `const k = 0.5f` and `const flag = true` are that call. `const a = 40i8` then `field(a)` is those two instructions. `200u8`, `40i16`, and `40000u16` are that call. `const n = 4i8` then `var row [n]i32` has `row.len` of 4. `comptime if (n == 4i8)` keeps that arm.
+A local `const` whose initializer is a compile-time value passes a copy of that initializer, the same copy `comptime const q = p` makes. A `var` passed to a `comptime func` is `not supported yet`. `const k = 0.5` then `field(k)` is `movl $42, %eax` and `retq`. `const k = 0.5f` and `const flag = true` are that call. `const a = 40i8` then `field(a)` is those two instructions. `200u8`, `40i16`, and `40000u16` are that call. `const n = 4i8` then `var row [n]i32` has `row.len` of 4. `comptime if (n == 4i8)` keeps that arm.
 
 `value := 10` and `value := comptime_func()` are comptime until a store or `&value`. `var value = 10` is not. A store in one `if` arm drops the value after the `if`. A store in a loop drops it for the whole loop. A store in a `switch` drops it for the whole `switch` and after it. At file scope the name stays comptime when no function in the package stores it. `export value := 10` does not.
 
@@ -1881,7 +1881,7 @@ type-arg    = [ "-" ] integer-literal
             | { pointer } base-type [ type-args ]
             | array-length ;
 
-func-type   = [ "?" ] "func" "(" [ func-args ] ")" result ;
+func-type   = [ "extern" "(" "abi" "=" plain-string ")" ] [ "?" ] "func" "(" [ func-args ] ")" result ;
 func-args   = placed-type { "," placed-type } ;
 
 base-type   = "void" | "bool"
@@ -2293,7 +2293,7 @@ A named function with those parameters and that result is accepted as that argum
 
 `Type.name` is that function when it is static.
 
-A cast writes the type, then `(`, as in `i32(n)`, `*i32(p)`, `?*i32(p)`, or `func (i32) i32(p)`.
+A cast writes the type, then `(`, as in `i32(n)`, `*i32(p)`, `?*i32(p)`, or `func (i32) i32(p)`. `void(f())` drops the value.
 
 A built-in name such as `i32` is always that cast.
 
