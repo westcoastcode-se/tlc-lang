@@ -14,7 +14,7 @@ A generic function names its parameters in brackets.
 
 The written type is `N`'s type. `N i64` takes a value up to the `i64` maximum, and `N` is an `i64` in the body: `width<3000000000>()` and `type Buf<N i64> struct { raw [N]u8; }` with `Buf<3000000000>` are that value. `N u8` takes 0 through 255, and `N` is a `u8`. `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and `u64` are those types. A `u64` holds a value up to the `i64` maximum.
 
-A value that does not fit the type is `type mismatch`: `small<300>()` when `small` takes `N u8`, the same as `width<3000000000>()` for `N i32`. A suffix narrower than 32 bits names its own type, so `4i8` binds `N i8` and not `N u8` or `N i32`. `4i64` and `4u32` bind any type that holds 4.
+A negative literal is a value too: `width<-5>()` binds `N i32` to -5, and `width<-2147483648>()` is the smallest `i32`. A value that does not fit the type is `type mismatch`: `small<300>()` when `small` takes `N u8`, the same as `width<3000000000>()` for `N i32`. `small<-1>()` is that error too. A suffix narrower than 32 bits names its own type, so `4i8` binds `N i8` and not `N u8` or `N i32`. `4i64` and `4u32` bind any type that holds 4.
 
 `Buf<200>` and `Buf<200u8>` are one type when `Buf` takes `N u8`.
 

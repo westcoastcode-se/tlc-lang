@@ -12,12 +12,12 @@ These were found by review and have a repro. They are not fixed yet.
 
 ### Checker
 
-- A file-scope `comptime const k = f(2)` used as an array length in a struct field, `type S struct { buf [k]u8; }`, is `not supported yet` twice. Types are resolved before the call runs. A `const` or a `var` that names `k` binds it first.
+- A file-scope `comptime const k = f(2)` used as an array length in a struct field, `type S struct { buf [k]u8; }`, is `not supported yet` when the body of `f` has statements or a parameter that is not `i32`. Types are resolved before that call runs. A body that is one `return` of an `i32` folds first.
 - A C function pointer type that differs from the tlc one has no spelling of its own. A local or a tlc struct field holds it only by inference, `var f = get_cb()`. A generic parameter `func (T) i32` is a tlc type, so a C pointer that passes a struct is `type mismatch` there.
-- A negative literal is not a generic value argument. `width<-5>()` is `expected a type`. A negative constant, `width<m>()`, works.
-- An array length is a literal or a name. `[sizeof(Pair) + 1]u8` is `expected ']'`.
-- `?func` is not allowed as an array element, `[2]?func (i32) i32`, or behind a pointer, `*?func (i32) i32`. The cast form `?func (i32) i32(x)` is `expected an expression`.
-- Deeply nested blocks check in quadratic time. In a release build 2000 nested `if` take 33 ms, 4000 take 98 ms, and 8000 take 0.35 seconds. The nesting limit stays at 10000 levels.
+- A file-scope `const N = 4` without `comptime` is not a struct field length. `type S struct { buf [N]u8; }` is `not supported yet`, reported twice. [Binding](docs/statements/binding.md) says a `const` whose initializer folds is a length. `comptime const N = 4` works.
+- A `comptime` parameter inside a length expression, `func f(comptime n i32)` with `var a [n + 1]i32`, is `not supported yet`. `[n]` alone waits for the call. A generic value parameter, `[N + 1]`, is substituted.
+- A cast to a function pointer accepts an integer: `func (i32) i32(1)` and `?func (i32) i32(n)` are accepted, and a call through that value jumps to that address. [Function pointers](docs/functions/pointer.md) names a data pointer or a function pointer as the operand.
+- A shell around a function pointer in a result, `func f() [2]func (i32) i32`, a tuple element, `([2]func (i32) i32, i32)`, and a parameter of a function type, `func (*func (i32) i32) i32`, is `not supported yet`. A variable, a field, and a parameter of a declared function take those shells.
 - A file-scope value built from a global that holds a large array of defaulted structs is written at start only when it is that global or a place in it: `var c = w`, `var n = w.n`, `{w, w}`, and `Pair{.left = w}`. A `const` copy, `const c = w`, is the whole value in the binary, as C has it, so `pts [100000000]Point` there is `compile-time memory limit exceeded`. A scalar part, `const k = w.n + 1` or `const k = w.pts[9].y`, builds one element. A list element that is neither a struct literal, a nested list, nor such a place, `{make_world(), w}` with a `comptime func`, does the same.
 
 ### Runtime

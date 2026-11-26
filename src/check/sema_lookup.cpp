@@ -15,17 +15,65 @@ void Checker::error(SourceLoc loc, const std::string &message) {
     diags_.error(loc, message);
 }
 
+namespace {
+
+// The scope a new block links to: the one under it when that holds a name, or the one that one links to.
+std::size_t scope_below(const std::vector<Scope> &scopes) {
+    if (scopes.empty()) {
+        return static_cast<std::size_t>(-1);
+    }
+    const std::size_t last = scopes.size() - 1;
+    return scopes[last].symbols.empty() ? scopes[last].below : last;
+}
+
+} // namespace
+
 void Checker::push() {
     ++fold_generation_;
     const int id = scopes_.empty() ? 0 : scopes_.back().function_id;
+    const std::size_t below = scope_below(scopes_);
+    const std::size_t file_top = scopes_.empty() ? static_cast<std::size_t>(-1) : scopes_.back().file_top;
     scopes_.emplace_back();
     scopes_.back().function_id = id;
+    scopes_.back().below = below;
+    scopes_.back().file_top = id == 0 ? scopes_.size() - 1 : file_top;
 }
 
 void Checker::push_function() {
     ++fold_generation_;
+    const std::size_t below = scope_below(scopes_);
+    const std::size_t file_top = scopes_.empty() ? static_cast<std::size_t>(-1) : scopes_.back().file_top;
     scopes_.emplace_back();
     scopes_.back().function_id = ++function_seq_;
+    scopes_.back().below = below;
+    scopes_.back().file_top = file_top;
+}
+
+void Checker::index_local(const std::string &name) {
+    if (scopes_.empty() || scopes_.back().function_id == 0) {
+        return;
+    }
+    std::vector<std::size_t> &slots = local_names_[name];
+    const std::size_t here = scopes_.size() - 1;
+    if (slots.empty() || slots.back() != here) {
+        slots.push_back(here);
+    }
+}
+
+void Checker::unindex_local(const std::string &name) {
+    if (scopes_.empty() || scopes_.back().function_id == 0) {
+        return;
+    }
+    const auto found = local_names_.find(name);
+    if (found == local_names_.end()) {
+        return;
+    }
+    if (!found->second.empty() && found->second.back() == scopes_.size() - 1) {
+        found->second.pop_back();
+    }
+    if (found->second.empty()) {
+        local_names_.erase(found);
+    }
 }
 
 void Checker::pop() {
@@ -37,7 +85,7 @@ void Checker::pop() {
             held_names_.pop_back();
         }
         for (const auto &[name, symbol] : scopes_.back().symbols) {
-            (void)name;
+            unindex_local(name);
             if (symbol.is_local_function) {
                 if (symbol.lists.empty()) {
                     if (!symbol.has_body) {
@@ -352,6 +400,19 @@ Type Checker::deferred_struct_type(const std::string &name, const std::string &p
     return type_invalid();
 }
 
+Type Checker::fn_shells(Type pointer, const std::vector<TypeShell> &shells, SourceLoc loc, bool parameter) {
+    if (shells.empty() || pointer.kind == TypeKind::Invalid) {
+        return pointer;
+    }
+    bool rejected = false;
+    Type type = apply_shells(std::move(pointer), shells, parameter, rejected);
+    if (rejected || type.kind == TypeKind::Invalid) {
+        error(loc, "not supported yet");
+        return type_invalid();
+    }
+    return type;
+}
+
 Type Checker::type_of_var(const VarDecl &var) {
     Type type = type_invalid();
     if (var.is_tuple && var.is_array && var.array_len > 0 && var.indirections == 0) {
@@ -386,9 +447,12 @@ Type Checker::type_of_var(const VarDecl &var) {
         fold_shells(written.shells, written.loc);
         if (type.kind == TypeKind::Invalid && written.type_args.empty()) {
             type = var.is_fn_ptr
-                       ? fn_optional(type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,
-                                        var.indirections, var.fn_params, var.fn_variadic, var.fn_results, var.loc,
-                                        var.ret_optional, var.ret_const_pointee), var.optional)
+                       ? fn_shells(fn_optional(type_of_fn_ptr(var.type_name, var.type_package, var.is_struct, var.is_enum,
+                                                              var.ret_indirections, var.indirections, var.fn_params,
+                                                              var.fn_variadic, var.fn_results, var.loc, var.ret_optional,
+                                                              var.ret_const_pointee),
+                                               var.optional),
+                                   written.shells, var.loc)
                        : object_type(var.type_name, var.indirections, var.is_array, var.array_len, var.loc, false,
                                      var.type_package, var.is_struct, var.is_enum, false, var.optional,
                                      var.const_pointee, false, var.elem_const, var.elem_slice, written.shells, true);
@@ -488,9 +552,12 @@ Type Checker::type_of_param(const Param &param) {
                         written.loc);
         fold_shells(written.shells, written.loc);
         if (param.is_fn_ptr) {
-            type = fn_optional(type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum,
-                                  param.ret_indirections, param.indirections, param.fn_params, param.fn_variadic,
-                                  param.fn_results, param.loc, param.ret_optional, param.ret_const_pointee), param.optional);
+            type = fn_shells(fn_optional(type_of_fn_ptr(param.type_name, param.type_package, param.is_struct,
+                                                        param.is_enum, param.ret_indirections, param.indirections,
+                                                        param.fn_params, param.fn_variadic, param.fn_results, param.loc,
+                                                        param.ret_optional, param.ret_const_pointee),
+                                         param.optional),
+                             written.shells, param.loc, true);
         } else {
             type = object_type(param.type_name, param.indirections, param.is_array, param.array_len, param.loc, true,
                                param.type_package, param.is_struct, param.is_enum, param.is_receiver, param.optional,
@@ -679,9 +746,28 @@ void Checker::check_local_function(const FunctionDecl &fn) {
 }
 
 Symbol *Checker::lookup_scope(const std::string &name) {
-    for (auto it = scopes_.rbegin(); it != scopes_.rend(); ++it) {
-        const auto found = it->symbols.find(name);
-        if (found != it->symbols.end()) {
+    if (scopes_.empty()) {
+        return nullptr;
+    }
+    // A local is the innermost scope that declares it. The file-level scopes are under every local one.
+    if (const auto local = local_names_.find(name); local != local_names_.end() && !local->second.empty()) {
+        const std::size_t index = local->second.back();
+        if (index < scopes_.size()) {
+            const auto found = scopes_[index].symbols.find(name);
+            if (found != scopes_[index].symbols.end()) {
+                return &found->second;
+            }
+        }
+    }
+    constexpr std::size_t none = static_cast<std::size_t>(-1);
+    for (std::size_t index = scopes_.back().file_top; index != none && index < scopes_.size();
+         index = scopes_[index].below) {
+        Scope &scope = scopes_[index];
+        if (scope.symbols.empty()) {
+            continue;
+        }
+        const auto found = scope.symbols.find(name);
+        if (found != scope.symbols.end()) {
             return &found->second;
         }
     }
@@ -1026,7 +1112,9 @@ bool Checker::declare(Symbol symbol, SourceLoc loc) {
         return false;
     }
     note_held_name(symbol);
-    table.emplace(symbol.name, std::move(symbol));
+    const std::string name = symbol.name;
+    table.emplace(name, std::move(symbol));
+    index_local(name);
     return true;
 }
 
@@ -1037,7 +1125,9 @@ bool Checker::shadow(Symbol symbol, SourceLoc loc) {
     (void)loc;
     ++fold_generation_;
     note_held_name(symbol);
-    scopes_.back().symbols.insert_or_assign(symbol.name, std::move(symbol));
+    const std::string name = symbol.name;
+    scopes_.back().symbols.insert_or_assign(name, std::move(symbol));
+    index_local(name);
     return true;
 }
 

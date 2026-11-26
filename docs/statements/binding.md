@@ -594,6 +594,8 @@ retq                             # return
 
 > **Warning:** `comptime const N = 4` can be an array length, `[N]i32`. `comptime const N = 0` is the empty array `[0]i32`. A `const` whose initializer folds to a non-negative `i32` is that length, including one inside a function. A negative length is `array length must be >= 0`. A `var` cannot.
 
+The name keeps the type of its initializer. `comptime const on = true`, `comptime const less = 1 < 2`, and `comptime const on = yes()` when `yes` is a `comptime func` that returns `bool` are `bool`, at file scope and inside a function. `if (on)` and `comptime if (on)` read that value. `comptime const order = pick()` when `pick` returns `Order` is that enumerator, the same as `comptime const order = Order.high`.
+
 An initializer that is not a compile-time constant is `global initializer is not a constant` at file scope.
 
 Inside a function, that initializer is `not supported yet`.
@@ -707,6 +709,8 @@ Assigning it is `type mismatch`.
 `&bias` is `*const f32`.
 
 Copying a `var` into a `comptime const` float is `global initializer is not a constant`.
+
+`comptime const wide = bias(2)` is that `f64` when `bias` is a `comptime func` that returns `f64`. `f32` is the same call. That holds at file scope and inside a function. `const sum = bias(3) + 1.0` and `var sum = bias(3) + 1.0` fold too.
 
 ## Constant arrays, structs, and aliases
 

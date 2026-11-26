@@ -74,7 +74,8 @@ TypedValue CodeGen::emit_addr(const Expr &expr) {
             inner.ptr_array_len = 0;
         }
         // `*Adder` passed a function is that function pointer. `*a` does not load through it.
-        if (inner.value != nullptr && trait_fn_argument(inner)) {
+        // `*p` on `*func (i32) i32` is the stored pointer, one level down.
+        if (inner.value != nullptr && trait_fn_argument(inner) && inner.depth <= 1) {
             TypedValue fn = inner;
             fn.depth = 0;
             return fn;
@@ -506,6 +507,16 @@ TypedValue CodeGen::index_shells(const TypedValue &base, llvm::Value *subscript)
         out.elem_unsigned = base.elem_unsigned;
         out.elem_float = base.elem_float;
         out.enum_id = base.enum_id;
+        // `ops[1]` on `[2]func (i32) i32` is that function pointer. Its signature is the leaf's.
+        out.fn_ty = base.fn_ty;
+        out.fn_ret_depth = base.fn_ret_depth;
+        out.fn_ret_float = base.fn_ret_float;
+        out.fn_ret_bits = base.fn_ret_bits;
+        out.fn_ret_unsigned = base.fn_ret_unsigned;
+        out.fn_ret_char = base.fn_ret_char;
+        out.fn_ret_bool = base.fn_ret_bool;
+        out.fn_ret_struct = base.fn_ret_struct;
+        out.fn_results = base.fn_results;
     };
     auto mark = [&](TypedValue &out, std::vector<TypeShell> shells) {
         out.shells = std::move(shells);
@@ -1145,6 +1156,8 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
         loaded.inner_array_len = addr.inner_array_len;
         // `box.p` when the field is `*T` and `T` is `[2](i32, i32)`. The pointer keeps that array.
         loaded.tuple_parts = addr.tuple_parts;
+        // `box.at` on `*func (i32) i32` keeps the signature of the function pointer it reaches.
+        copy_fn_sig(loaded, addr);
         return loaded;
     }
     if (addr.is_tuple && !addr.tuple_parts.empty()) {
@@ -1177,6 +1190,7 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
         loaded.elem_unsigned = addr.elem_unsigned;
         loaded.elem_float = addr.elem_float;
         loaded.tuple_parts = addr.tuple_parts;
+        copy_fn_sig(loaded, addr);
         return loaded;
     }
     // An array field decays to a pointer to its first element. The length stays so a range can use it.
@@ -1199,6 +1213,8 @@ TypedValue CodeGen::load_field(const TypedValue &addr) {
         }
         // The leaf stays when an inner `[M]` remains. `[2][2]T` indexes that tuple.
         value.tuple_parts = addr.tuple_parts;
+        // `box.ops[i]` on `[2]func (i32) i32` is that function pointer.
+        copy_fn_sig(value, addr);
         return value;
     }
     TypedValue loaded = load_object(addr.value, addr.depth, addr.elem_char, addr.struct_id, addr.elem_void,

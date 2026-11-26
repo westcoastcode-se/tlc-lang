@@ -1,0 +1,4 @@
+compile-error: main.tlc:4:9: error: not supported yet
+stderr:
+main.tlc:4:9: error: not supported yet
+main.tlc:5:9: error: array length must be >= 0

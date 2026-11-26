@@ -1,0 +1,35 @@
+// An array length is any expression that folds: arithmetic on folded names, `sizeof`, and a `comptime func`.
+type Pair struct {
+    a i32;
+    b i32;
+}
+
+comptime const N = 4;
+
+comptime func twice(n i32) i32 {
+    return n * 2;
+}
+
+type Holder struct {
+    buf [N * 2 + 1]u8;
+    rows [N - 1][2]i32;
+    raw [sizeof(Pair) * 2]u8;
+}
+
+func main() i32 {
+    var bytes [sizeof(Pair) + 1]u8;
+    const n = 3;
+    var local [n * 2]i32;
+    var call [twice(N) + 1]i32;
+    var grouped [(1 + 1)][N + 1]i32;
+    var h Holder;
+    // 9 + 6 + 9 + 2 + 5
+    if (bytes.len != 9 || local.len != 6 || call.len != 9 || grouped.len != 2 || grouped[0].len != 5) {
+        return 1;
+    }
+    // 9 + 3 + 16
+    if (h.buf.len != 9 || h.rows.len != 3 || h.raw.len != 16) {
+        return 2;
+    }
+    return 42;
+}

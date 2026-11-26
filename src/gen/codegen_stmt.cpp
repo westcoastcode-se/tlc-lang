@@ -1567,6 +1567,12 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         if (field->isIntegerTy() && value.value->getType()->isIntegerTy()) {
                             return resize_int(value.value, field, value.elem_unsigned);
                         }
+                        // `return 1.5, 2` into `(f32, i32)` and `return 2, 1` into `(f64, i32)` convert as an
+                        // initializer does.
+                        if (field->isFloatingPointTy() && value.depth == 0 &&
+                            (value.value->getType()->isFloatingPointTy() || value.value->getType()->isIntegerTy())) {
+                            return as_stored(value.value, 0, field, value.elem_unsigned || value.elem_bool);
+                        }
                         if (value.value->getType() == field) {
                             return value.value;
                         }
@@ -2036,6 +2042,16 @@ void CodeGen::emit_stmt(const Stmt &stmt) {
                         binding.inner_array_len = low.inner_array_len;
                         binding.shells = low.shells;
                         binding.tuple_parts = low.tuple_parts;
+                        // `[2]func (i32) i32` and `[2]Op`: an element is that function pointer.
+                        binding.fn_ty = low.fn_ty;
+                        binding.fn_ret_depth = low.fn_ret_depth;
+                        binding.fn_ret_float = low.fn_ret_float;
+                        binding.fn_ret_bits = low.fn_ret_bits;
+                        binding.fn_ret_unsigned = low.fn_ret_unsigned;
+                        binding.fn_ret_char = low.fn_ret_char;
+                        binding.fn_ret_bool = low.fn_ret_bool;
+                        binding.fn_ret_struct = low.fn_ret_struct;
+                        binding.fn_results = low.fn_results;
                         if (!hides) {
                             publish(binding);
                         }

@@ -1,0 +1,27 @@
+// A negative integer literal is a value argument: `width<-5>()`. It checks against the parameter's type.
+func width<N i32>() i32 {
+    return N;
+}
+
+func wide<N i64>() i64 {
+    return N;
+}
+
+type Offset<N i32> struct {
+    base i32;
+}
+
+func Offset<N>::apply(self *this) i32 {
+    return self.base + N;
+}
+
+func main() i32 {
+    if (width<-5>() != -5 || width<-2147483648>() != -2147483647 - 1) {
+        return 1;
+    }
+    if (wide<-9223372036854775808>() != -9223372036854775807i64 - 1i64) {
+        return 2;
+    }
+    var o Offset<-3> = {.base = 45};
+    return o.apply();
+}

@@ -160,6 +160,12 @@ struct Symbol {
 
 struct Scope {
     std::unordered_map<std::string, Symbol> symbols;
+    // The nearest scope under this one that held a name when this one opened. A name is only declared in the
+    // innermost scope, so the scopes under this one do not change while it is open. A lookup skips the empty
+    // blocks between, and 10000 nested `if` stay linear.
+    std::size_t below = static_cast<std::size_t>(-1);
+    // The innermost file-level scope at or under this one. A local name is found through `local_names_`.
+    std::size_t file_top = static_cast<std::size_t>(-1);
     // `type Box<T type> struct` in this block. The decl lives in `owned_structs_`.
     // The map dies with the scope, so a later `Box` is not this template.
     std::unordered_map<std::string, StructDecl *> generic_structs;
@@ -305,6 +311,13 @@ class Checker {
     };
 
     std::vector<Scope> scopes_;
+    // A name declared in a function's scopes, and each scope that declares it, innermost last. A lookup reads
+    // the last one, so nested blocks do not walk every scope. A nested check that swaps `scopes_` swaps this too.
+    std::unordered_map<std::string, std::vector<std::size_t>> local_names_;
+    // After a name is added to the innermost scope. A file-level scope is not indexed.
+    void index_local(const std::string &name);
+    // Before a name is erased from the innermost scope.
+    void unindex_local(const std::string &name);
     int function_seq_ = 0;
     // Disambiguates `type Box<T> struct` inside a function from a file-scope `Box`.
     int local_generic_seq_ = 0;
@@ -630,6 +643,9 @@ class Checker {
         }
         return pointer;
     }
+    // `[2]func (i32) i32`, `*func (i32) i32`, and `[]?func (i32) i32`: each written shell around that pointer.
+    // A shell that has no type is `not supported yet`.
+    Type fn_shells(Type pointer, const std::vector<TypeShell> &shells, SourceLoc loc, bool parameter = false);
     Type type_of_fn_ptr(const std::string &ret_name, const std::string &ret_package, bool ret_struct, bool ret_enum,
                         int ret_indirections, int fn_depth, const std::vector<FnParam> &params, bool variadic,
                         const std::vector<FnParam> &results, SourceLoc loc, uint32_t ret_optional = 0,
@@ -1041,6 +1057,8 @@ class Checker {
                       bool elem_slice = false, const std::vector<TypeShell> &shells = {});
     // Fold each array shell's length name. A non-positive length is `not supported yet`.
     void fold_shells(std::vector<TypeShell> &shells, SourceLoc loc);
+    // `[N * 2 + 1]`: each name an array length may be is replaced by its value, and the expression folds.
+    std::optional<int> fold_length_expr(const Expr &expr);
     Type sizeof_operand(const Expr::Sizeof &node);
     // A folded number. `wide` is f64. An integer is neither.
     struct FoldedNumber {
@@ -1377,8 +1395,17 @@ class Checker {
     bool mark_unused_parameters(const std::vector<TypeParam> &params, const std::unordered_set<std::string> &used);
     void reject_function_generics(const FunctionDecl &fn);
     void fold_early_consts(TranslationUnit &unit, uint32_t file_id);
+    // A folded expression whose value is `bool`: `true`, a comparison, `&&`, `||`, `!` of a bool, a ternary of
+    // bools, or the name of such a constant. `comptime const on = 1 < 2` keeps that type.
+    bool folds_to_bool(const Expr &expr, int depth = 0);
+    // The type of a folded file-scope `comptime const`: `bool` or the compile-time `i32`.
+    static Type folded_const_type(const VarDecl &var) { return var.const_bool ? type_bool() : type_int(); }
     // A `comptime const` whose initializer is `sizeof` of a struct. True when one value was stored.
     bool fold_ready_consts();
+    // `comptime const k = twice(2)` before functions are declared, when `twice` is a `comptime func` in this
+    // package whose body is one `return` of an `i32`. Struct fields `[k]u8` wait for that value. Empty when the
+    // call does not fold that way. The call is checked again where `k` is declared.
+    std::optional<int> fold_early_call(const Expr &init);
     void bind_file_const(VarDecl &var);
     // The type of a file-scope `comptime const`. Sets `has_const` when the value folds.
     // Does not declare the name. Invalid means the constant was rejected.

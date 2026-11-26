@@ -1,0 +1,33 @@
+// A `return` converts a number as an initializer does: an integer or an `f64` into `f32`, an integer into `f64`.
+func narrow() f32 {
+    return 1.5;
+}
+
+func whole() f64 {
+    return 2;
+}
+
+func from(d f64) f32 {
+    return d;
+}
+
+func pair(n i32) (f64, f32) {
+    var d = 2.5;
+    return n, d;
+}
+
+func one() ((f32, i32)) {
+    return (1.5, 2);
+}
+
+func main() i32 {
+    // 3 + 4 + 5, then 10 + 5, then 3 + 4, then 2 + 4 + 2.
+    var r = i32(narrow() * 2.0f) + i32(whole() * 2.0) + i32(from(2.5) * 2.0f);
+    var a, b = pair(10);
+    r = r + i32(a) + i32(b * 2.0f);
+    var t = one();
+    r = r + i32(t[0] * 2.0f) + t[1] * 2;
+    var u (f64, i32) = (1, 2);
+    r = r + i32(u[0]) * 2 + u[1] * 2 + 2;
+    return r;
+}

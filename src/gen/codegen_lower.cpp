@@ -1085,7 +1085,8 @@ CodeGen::Lowered CodeGen::lower(uint32_t file, const std::string &name, const st
     out.elem_float = elem_float;
     out.struct_id = sid;
     out.enum_id = have ? base.enum_id : -1;
-    if (indirections == 0 && !is_array) {
+    // `*Op` keeps the signature too. `*p` loads that function pointer.
+    if (!is_array) {
         out.fn_ty = have ? base.fn_ty : nullptr;
         out.fn_ret_depth = have ? base.fn_ret_depth : 0;
         out.fn_ret_float = have && base.fn_ret_float;
@@ -1210,8 +1211,11 @@ CodeGen::Lowered CodeGen::lower_declared(uint32_t file, const VarDecl &var) cons
                                   var.array_len, false);
     }
     if (var.is_fn_ptr) {
-        return lower_fnptr(file, var.type_name, var.type_package, var.is_struct, var.is_enum, var.ret_indirections,
-                           var.indirections, var.fn_params, var.fn_variadic, var.fn_results);
+        Lowered leaf = lower_fnptr(file, var.type_name, var.type_package, var.is_struct, var.is_enum,
+                                   var.ret_indirections, var.indirections, var.fn_params, var.fn_variadic,
+                                   var.fn_results);
+        // `[2]func (i32) i32` and `*func (i32) i32` wrap that pointer.
+        return var.shells.empty() ? leaf : compose_shells(std::move(leaf), var.shells, false);
     }
     Lowered low = lower(file, var.type_name, var.type_package, var.is_struct, var.indirections, var.is_array,
                         var.array_len, false, var.elem_slice, var.shells);
@@ -1358,8 +1362,11 @@ CodeGen::Lowered CodeGen::lower_param_type(uint32_t file, const Param &param) co
         return low;
     }
     if (param.is_fn_ptr) {
-        return lower_fnptr(file, param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
-                           param.indirections, param.fn_params, param.fn_variadic, param.fn_results);
+        Lowered leaf = lower_fnptr(file, param.type_name, param.type_package, param.is_struct, param.is_enum,
+                                   param.ret_indirections, param.indirections, param.fn_params, param.fn_variadic,
+                                   param.fn_results);
+        // `ops [2]func (i32) i32` decays like any array parameter. `[]func` and `*func` stay that shell.
+        return param.shells.empty() ? leaf : compose_shells(std::move(leaf), param.shells, true);
     }
     return lower(file, param.type_name, param.type_package, param.is_struct, param.indirections, param.is_array,
                  param.array_len, true, param.elem_slice, param.shells);

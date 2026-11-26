@@ -31,22 +31,22 @@ comptime const cmp_inferred = mem.memcmp("ab"b, "ac"b);
 var live_cmp = mem.memcmp<u8>("ab"b, "ac"b);
 
 assert(mem.memeql<u8>("hi"b, "hi"b), "eq"b);
-assert(same == 1, "same"b);
-assert(diff == 0, "diff"b);
-assert(longer == 0, "long"b);
-assert(empty == 1, "empty"b);
-assert(slice == 1, "slice"b);
-assert(named == 1, "named"b);
-assert(again == 1, "again"b);
-assert(both == 1, "both"b);
-assert(nul == 1, "nul"b);
-assert(not_ab == 0, "ab"b);
-assert(raw == 1, "raw"b);
-assert(tail == 1, "tail"b);
-assert(head == 1, "head"b);
-assert(whole == 1, "whole"b);
-assert(blank == 1, "blank"b);
-assert(inferred == 1, "infer"b);
+assert(same, "same"b);
+assert(!diff, "diff"b);
+assert(!longer, "long"b);
+assert(empty, "empty"b);
+assert(slice, "slice"b);
+assert(named, "named"b);
+assert(again, "again"b);
+assert(both, "both"b);
+assert(nul, "nul"b);
+assert(!not_ab, "ab"b);
+assert(raw, "raw"b);
+assert(tail, "tail"b);
+assert(head, "head"b);
+assert(whole, "whole"b);
+assert(blank, "blank"b);
+assert(inferred, "infer"b);
 assert(cmp_eq == 0, "ceq"b);
 assert(cmp_lt == -1, "clt"b);
 assert(cmp_gt == 1, "cgt"b);
@@ -67,7 +67,7 @@ func main() i32 {
     var xs = [_]i32{1, 2};
     var ys = [_]i32{1, 3};
     var zs = [_]i32{1, 2};
-    if (!live || live_cmp != -1 || same != 1 || diff != 0 || not_ab != 0 || answer() != 1) {
+    if (!live || live_cmp != -1 || !same || diff || not_ab || answer() != 1) {
         return 0;
     }
     if (mem.memeql<u8>("hi"b, "ha"b) || !mem.memeql<u8>("hi"b, "hi"b)) {

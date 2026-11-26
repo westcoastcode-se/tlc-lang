@@ -1202,10 +1202,10 @@ void Checker::define_trait_fields() {
             Type field_type =
                 field.is_tuple
                     ? type_of_tuple_field(field)
-                    : field.is_fn_ptr ? fn_optional(type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
+                    : field.is_fn_ptr ? fn_shells(fn_optional(type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                        field.ret_indirections, field.indirections, field.fn_params,
                                                        field.fn_variadic, field.fn_results, field.loc, field.ret_optional,
-                                                       field.ret_const_pointee), field.optional)
+                                                       field.ret_const_pointee), field.optional), field.shells, field.loc)
                                       : object_type(field.type_name, field.indirections, field.is_array, field.array_len,
                                                     field.loc, false, field.type_package, field.is_struct, field.is_enum,
                                                     false, field.optional, field.const_pointee, false, field.elem_const,
@@ -1349,6 +1349,63 @@ bool Checker::field_waits(const FieldDecl &field, int self_id) const {
         }
         // `[sizeof(Point)]` waits until `Point` is complete. `sizeof` of this struct does not.
         if (shell.kind != TypeShell::Kind::Array || shell.length_expr == nullptr) {
+            continue;
+        }
+        // `[N * 2 + 1]` and `[sizeof(Point) + 1]` wait for each name and `sizeof` inside them. A `sizeof` of this
+        // struct inside a larger expression has no value yet, so it waits too and is reported.
+        if (!std::holds_alternative<Expr::Sizeof>(shell.length_expr->data)) {
+            const auto inner_waits = [&](const auto &walk, const Expr &part, int depth) -> bool {
+                if (depth > 64) {
+                    return true;
+                }
+                if (const auto *named = std::get_if<Expr::Name>(&part.data)) {
+                    return length_pending(named->text);
+                }
+                if (const auto *measured = std::get_if<Expr::Sizeof>(&part.data)) {
+                    if (measured->on_type && !measured->type_args.empty()) {
+                        return false;
+                    }
+                    const std::string *operand = nullptr;
+                    if (measured->on_type && measured->type_package.empty() && !measured->type_name.empty()) {
+                        operand = &measured->type_name;
+                    } else if (!measured->on_type && measured->expr != nullptr) {
+                        if (const auto *inner = std::get_if<Expr::Name>(&measured->expr->data)) {
+                            operand = &inner->text;
+                        }
+                    }
+                    if (operand == nullptr) {
+                        return false;
+                    }
+                    const int id = find_tag(file_id_, *operand);
+                    if (id < 0) {
+                        return false;
+                    }
+                    return id >= static_cast<int>(structs_.size()) ||
+                           !structs_[static_cast<std::size_t>(id)].complete;
+                }
+                if (const auto *unary = std::get_if<Expr::Unary>(&part.data)) {
+                    return unary->expr != nullptr && walk(walk, *unary->expr, depth + 1);
+                }
+                if (const auto *binary = std::get_if<Expr::Binary>(&part.data)) {
+                    return (binary->lhs != nullptr && walk(walk, *binary->lhs, depth + 1)) ||
+                           (binary->mid != nullptr && walk(walk, *binary->mid, depth + 1)) ||
+                           (binary->rhs != nullptr && walk(walk, *binary->rhs, depth + 1));
+                }
+                if (const auto *cast = std::get_if<Expr::Cast>(&part.data)) {
+                    return cast->expr != nullptr && walk(walk, *cast->expr, depth + 1);
+                }
+                if (const auto *call = std::get_if<Expr::Call>(&part.data)) {
+                    for (const auto &arg : call->args) {
+                        if (arg != nullptr && walk(walk, *arg, depth + 1)) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            };
+            if (inner_waits(inner_waits, *shell.length_expr, 0)) {
+                return true;
+            }
             continue;
         }
         const auto *measured = std::get_if<Expr::Sizeof>(&shell.length_expr->data);
@@ -2097,10 +2154,15 @@ void Checker::define_struct_fields() {
                 }
             }
             FieldDecl &written = const_cast<FieldDecl &>(field);
+            // A field that still waits is reported once below. Resolving its length here would repeat it.
+            const bool waiting = complain_waiting && field_waits(field);
+            const bool saved_quiet = quiet_;
+            quiet_ = quiet_ || waiting;
             prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum,
                             written.indirections, written.optional, written.is_array, written.array_len,
                             written.array_len_name, written.type_args, written.loc);
             fold_shells(written.shells, written.loc);
+            quiet_ = saved_quiet;
             // A by-value cycle has no finite size. Name it. This is not `type mismatch`.
             const int stored = stored_by_value(written);
             std::vector<int> cycle;
@@ -2118,7 +2180,7 @@ void Checker::define_struct_fields() {
                 info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc, field.exported});
                 return;
             }
-            if (complain_waiting && field_waits(field)) {
+            if (waiting) {
                 error(field.loc, "not supported yet");
                 info.fields.push_back(StructInfo::Field{field.name, type_invalid(), field.loc, field.exported});
                 return;
@@ -2126,10 +2188,10 @@ void Checker::define_struct_fields() {
             Type field_type =
                 field.is_tuple
                     ? type_of_tuple_field(field)
-                    : field.is_fn_ptr ? fn_optional(type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
+                    : field.is_fn_ptr ? fn_shells(fn_optional(type_of_fn_ptr(field.type_name, field.type_package, field.is_struct, field.is_enum,
                                                        field.ret_indirections, field.indirections, field.fn_params,
                                                        field.fn_variadic, field.fn_results, field.loc, field.ret_optional,
-                                                       field.ret_const_pointee), field.optional)
+                                                       field.ret_const_pointee), field.optional), field.shells, field.loc)
                                       : object_type(field.type_name, field.indirections, field.is_array, field.array_len,
                                                     field.loc, false, field.type_package, field.is_struct, field.is_enum,
                                                     false, field.optional, field.const_pointee,
@@ -3116,10 +3178,81 @@ Type Checker::spelled_type(const std::string &name, const std::string &package, 
     return with_indirections(type_of_name(name, loc, indirections > 0), indirections, loc, optional, const_pointee);
 }
 
+std::optional<int> Checker::fold_length_expr(const Expr &expr) {
+    std::vector<std::string> names;
+    const auto collect = [&](const auto &walk, const Expr &part, int depth) -> void {
+        if (depth > 64) {
+            return;
+        }
+        if (const auto *named = std::get_if<Expr::Name>(&part.data)) {
+            if (std::find(names.begin(), names.end(), named->text) == names.end()) {
+                names.push_back(named->text);
+            }
+        } else if (const auto *unary = std::get_if<Expr::Unary>(&part.data)) {
+            if (unary->expr != nullptr) {
+                walk(walk, *unary->expr, depth + 1);
+            }
+        } else if (const auto *binary = std::get_if<Expr::Binary>(&part.data)) {
+            for (const Expr *side : {binary->lhs.get(), binary->mid.get(), binary->rhs.get()}) {
+                if (side != nullptr) {
+                    walk(walk, *side, depth + 1);
+                }
+            }
+        } else if (const auto *cast = std::get_if<Expr::Cast>(&part.data)) {
+            if (cast->expr != nullptr) {
+                walk(walk, *cast->expr, depth + 1);
+            }
+        }
+    };
+    collect(collect, expr, 0);
+    std::vector<std::unique_ptr<Expr>> owned;
+    std::vector<std::string> known;
+    for (const std::string &name : names) {
+        const std::optional<int> value = array_length_value(name);
+        if (!value) {
+            continue;
+        }
+        // A length is never negative here. `array_length_value` keeps a negative value for the report below.
+        auto number = std::make_unique<Expr>();
+        Expr::Int literal;
+        literal.loc = expr_loc(expr);
+        literal.value = static_cast<uint64_t>(*value < 0 ? -static_cast<int64_t>(*value) : *value);
+        number->data = std::move(literal);
+        if (*value < 0) {
+            auto negated = std::make_unique<Expr>();
+            Expr::Unary minus;
+            minus.loc = expr_loc(expr);
+            minus.op = TokenKind::Minus;
+            minus.expr = std::move(number);
+            negated->data = std::move(minus);
+            number = std::move(negated);
+        }
+        owned.push_back(std::move(number));
+        known.push_back(name);
+    }
+    if (known.empty()) {
+        return fold_runtime_const(expr);
+    }
+    std::vector<const Expr *> values;
+    for (const auto &item : owned) {
+        values.push_back(item.get());
+    }
+    std::unique_ptr<Expr> copy = clone_expr(expr);
+    replace_names(copy, known, values);
+    if (const std::optional<int> folded = fold_int(*copy)) {
+        return folded;
+    }
+    return fold_runtime_const(*copy);
+}
+
 void Checker::fold_shells(std::vector<TypeShell> &shells, SourceLoc loc) {
     for (TypeShell &shell : shells) {
         if (shell.kind == TypeShell::Kind::Array && shell.length_expr != nullptr) {
-            const std::optional<int> measured = fold_int(*shell.length_expr);
+            // `[N * 2 + 1]` reads a `const` the same way `[N]` does.
+            std::optional<int> measured = fold_int(*shell.length_expr);
+            if (!measured && !std::holds_alternative<Expr::Sizeof>(shell.length_expr->data)) {
+                measured = fold_length_expr(*shell.length_expr);
+            }
             if (measured && *measured >= 0) {
                 shell.length = *measured;
                 shell.length_expr.reset();

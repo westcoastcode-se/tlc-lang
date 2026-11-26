@@ -2823,8 +2823,10 @@ void Checker::check_stmt(const Stmt &stmt) {
                     const bool null_pointer =
                         want.kind == TypeKind::Pointer && got.kind == TypeKind::Nullptr && want.optional;
                     const bool widened = accepts_pointer(got, want);
-                    const bool scalar =
-                        is_scalar(got) && is_scalar(want) && got.alias_id == 0 && want.alias_id == 0;
+                    // Numbers convert as in an initializer: `return 2` and `return 1.5` in a function that
+                    // returns `f32`. A float becomes an integer only through a cast.
+                    const bool scalar = is_numeric(got) && is_numeric(want) && got.alias_id == 0 &&
+                                        want.alias_id == 0 && !(is_float(got) && !is_float(want));
                     // A copy is not const. `return Count(1)` still matches `type Count const i32`.
                     const bool added = allows_added_const(got, want);
                     if (!null_pointer && !widened && !scalar && !accepts_slice(got, want) && !added &&
@@ -3769,9 +3771,11 @@ void Checker::check_stmt(const Stmt &stmt) {
                         init_new_partial_ = saved_new;
                         init_ready = diags_.size() == before;
                         if (same_block) {
+                            unindex_local(var.name);
                             scopes_.back().symbols.erase(var.name);
                         }
                     } else if (same_block) {
+                        unindex_local(var.name);
                         scopes_.back().symbols.erase(var.name);
                     }
                     Symbol symbol;

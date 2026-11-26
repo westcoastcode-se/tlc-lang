@@ -304,7 +304,12 @@ void CodeGen::declare_globals(const PackageNode &node) {
             binding.is_static = var->is_static;
             // The value folds to an immediate. The object exists so `&name` is that address.
             llvm::Type *ty = i32();
-            if (!var->inferred && !var->type_name.empty()) {
+            // `comptime const on = true` is `bool`. The immediate is 0 or 1 and the object is an `i1`.
+            if (var->const_bool) {
+                binding.elem_bool = true;
+                binding.elem_bits = 1;
+                ty = i1();
+            } else if (!var->inferred && !var->type_name.empty()) {
                 const Lowered low = lower_declared(node.file_id, *var);
                 if (llvm::Type *stored = stored_type(low); stored != nullptr && stored->isIntegerTy()) {
                     ty = stored;

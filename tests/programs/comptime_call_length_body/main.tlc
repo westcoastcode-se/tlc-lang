@@ -1,0 +1,17 @@
+// A body with statements runs only after types are resolved. The struct field cannot wait for it.
+comptime func twice(n i32) i32 {
+    var x = n;
+    x = x * 2;
+    return x;
+}
+
+comptime const wide = twice(2);
+
+type Buffer struct {
+    head [wide]u8;
+}
+
+func main() i32 {
+    var b Buffer;
+    return i32(b.head.len);
+}

@@ -192,8 +192,16 @@ std::unique_ptr<Expr> wide_int_expr(uint64_t value, int bits, bool is_unsigned, 
 
 std::unique_ptr<Expr> folded_int(int value, SourceLoc loc) {
     if (value < 0) {
+        // `-2147483648` has no literal of its own in `i32`. It is `-2147483647 - 1`.
         if (value == -2147483647 - 1) {
-            return nullptr;
+            auto expr = std::make_unique<Expr>();
+            Expr::Binary node;
+            node.loc = loc;
+            node.op = TokenKind::Minus;
+            node.lhs = folded_int(-2147483647, loc);
+            node.rhs = folded_int(1, loc);
+            expr->data = std::move(node);
+            return expr;
         }
         auto inner = folded_int(-value, loc);
         if (inner == nullptr) {
@@ -944,6 +952,12 @@ bool Checker::comptime_value(const Expr &expr) {
 std::optional<int> Checker::fold_switch_case(const Expr &expr) {
     if (const std::optional<int> folded = fold_int(expr)) {
         return folded;
+    }
+    // `const e = pick()` when that `comptime func` returns an enumerator. The call kept it.
+    if (const auto *call = std::get_if<Expr::Call>(&expr.data);
+        call != nullptr && call->comptime_struct != nullptr &&
+        std::holds_alternative<Expr::Selector>(call->comptime_struct->data)) {
+        return fold_switch_case(*call->comptime_struct);
     }
     // `const e = Order.equal` then `e == Order.equal`. A local `const` stays out.
     const Expr *cursor = &expr;
@@ -1897,7 +1911,9 @@ std::optional<int> Checker::fold_int_uncached(const Expr &expr) {
                     return symbol->const_value;
                 }
                 // `comptime const ok = yes()` when `yes` returns `bool`. The value is 0 or 1.
-                if (symbol != nullptr && (symbol->is_constant || symbol->held_comptime) && symbol->folded_local &&
+                // A file-scope `comptime const on = true` is that value too.
+                if (symbol != nullptr && (symbol->is_constant || symbol->held_comptime) &&
+                    (symbol->folded_local || (symbol->is_constant && symbol->function_id == 0 && symbol->const_fits)) &&
                     symbol->type.alias_id == 0 && symbol->type.kind == TypeKind::Bool) {
                     return symbol->const_value;
                 }
@@ -2730,8 +2746,9 @@ const Expr *Checker::comptime_tuple_element(const Expr &expr) {
 }
 
 bool Checker::comptime_constant(const Expr &expr) {
+    // A call that kept a struct literal, or ran to an `f64` or `f32`.
     if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
-        return call->comptime_struct != nullptr;
+        return call->comptime_struct != nullptr || call->comptime_float;
     }
     // `pair[0]` is that element. A function does not fold to an integer.
     if (const Expr *element = comptime_tuple_element(expr)) {
@@ -3553,6 +3570,73 @@ std::string Checker::memory_place(SourceLoc loc) const {
     }
     const LineCol at = file->line_col(loc.offset);
     return file->path() + ":" + std::to_string(at.line) + ":" + std::to_string(at.column);
+}
+
+std::optional<int> Checker::fold_early_call(const Expr &init) {
+    const auto *call = std::get_if<Expr::Call>(&init.data);
+    const auto *callee = call == nullptr || call->callee == nullptr ? nullptr
+                                                                     : std::get_if<Expr::Name>(&call->callee->data);
+    if (callee == nullptr || !call->type_args.empty() || graph_ == nullptr) {
+        return std::nullopt;
+    }
+    // One `comptime func` with that name. An overload or a generic is left to the later check.
+    const FunctionDecl *fn = nullptr;
+    for (const uint32_t id : files_in_package(file_id_)) {
+        const PackageNode *node = find_node(id);
+        if (node == nullptr) {
+            continue;
+        }
+        for (const TopDecl &decl : node->unit.decls) {
+            const auto *item = std::get_if<FunctionDecl>(&decl.data);
+            if (item == nullptr || item->name != callee->text || !item->method_struct.empty()) {
+                continue;
+            }
+            if (fn != nullptr || (id != file_id_ && item->is_static)) {
+                return std::nullopt;
+            }
+            fn = item;
+        }
+    }
+    if (fn == nullptr || !fn->is_comptime || fn->is_macro || fn->variadic || !fn->type_params.empty() ||
+        fn->params.size() != call->args.size() || comptime_folding_.contains(fn)) {
+        return std::nullopt;
+    }
+    const Expr *value = single_i32_return(*fn);
+    if (value == nullptr) {
+        return std::nullopt;
+    }
+    std::vector<std::unique_ptr<Expr>> owned;
+    std::vector<std::string> names;
+    std::vector<const Expr *> exprs;
+    for (std::size_t i = 0; i < fn->params.size(); ++i) {
+        const Param &param = fn->params[i];
+        // An `i32` parameter takes a folded integer. Another type waits for the later check.
+        const bool plain = param.type_name == "i32" && param.type_package.empty() && param.indirections == 0 &&
+                           param.optional == 0 && !param.is_array && !param.is_struct && !param.is_enum &&
+                           !param.is_fn_ptr && param.shells.empty() && !param.elem_slice;
+        if (!plain || call->args[i] == nullptr || std::holds_alternative<Expr::Bool>(call->args[i]->data)) {
+            return std::nullopt;
+        }
+        // `add(twice(3), 1)` folds the inner call the same way.
+        std::optional<int> number = fold_int(*call->args[i]);
+        if (!number && std::holds_alternative<Expr::Call>(call->args[i]->data)) {
+            number = fold_early_call(*call->args[i]);
+        }
+        if (!number) {
+            return std::nullopt;
+        }
+        owned.push_back(folded_int(*number, expr_loc(*call->args[i])));
+        names.push_back(param.name);
+    }
+    for (const auto &item : owned) {
+        exprs.push_back(item.get());
+    }
+    comptime_folding_.insert(fn);
+    std::unique_ptr<Expr> rewritten = clone_expr(*value);
+    replace_names(rewritten, names, exprs);
+    const std::optional<int> folded = fold_int(*rewritten);
+    comptime_folding_.erase(fn);
+    return folded;
 }
 
 std::optional<int> Checker::fold_comptime_call(const Expr::Call &call) {
@@ -5989,13 +6073,16 @@ bool Checker::recheck_comptime_copy(FunctionDecl &wrapper, bool force) {
     struct FileScopes {
         Checker &self;
         std::vector<Scope> saved;
+        // The caller's locals are out of scope here. The file-level prefix has no index entries.
+        std::unordered_map<std::string, std::vector<std::size_t>> saved_locals;
         std::size_t prefix = 0;
         // The caller's held names are restored with its scopes. A nested pop would erase them.
         std::vector<std::pair<std::size_t, std::string>> saved_held;
         HeldLog saved_log;
         explicit FileScopes(Checker &checker)
-            : self(checker), saved(std::move(checker.scopes_)), saved_held(checker.held_names_),
-              saved_log(checker.take_held_log()) {
+            : self(checker), saved(std::move(checker.scopes_)), saved_locals(std::move(checker.local_names_)),
+              saved_held(checker.held_names_), saved_log(checker.take_held_log()) {
+            self.local_names_.clear();
             while (prefix < saved.size() && saved[prefix].function_id == 0) {
                 ++prefix;
             }
@@ -6010,6 +6097,7 @@ bool Checker::recheck_comptime_copy(FunctionDecl &wrapper, bool force) {
                 saved[i] = std::move(self.scopes_[i]);
             }
             self.scopes_ = std::move(saved);
+            self.local_names_ = std::move(saved_locals);
             self.held_names_ = std::move(saved_held);
             self.give_held_log(std::move(saved_log));
         }

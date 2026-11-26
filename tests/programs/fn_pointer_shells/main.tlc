@@ -1,0 +1,79 @@
+// A function pointer is an array element, a slice element, and a pointee, plain or `?func`. A struct field and a
+// parameter take the same shells. `?func (i32) i32(x)` is the cast.
+func inc(x i32) i32 {
+    return x + 1;
+}
+
+func twice(x i32) i32 {
+    return x * 2;
+}
+
+type Op func (i32) i32;
+
+type Hooks struct {
+    ops [2]func (i32) i32;
+    maybe [2]?func (i32) i32;
+    at *func (i32) i32;
+}
+
+var table [2]func (i32) i32 = {inc, twice};
+
+func apply(ops [2]func (i32) i32, x i32) i32 {
+    return ops[0](x) + ops[1](x);
+}
+
+func each(ops []func (i32) i32, x i32) i32 {
+    var sum = 0;
+    for (i := 0; i < ops.len; i++) {
+        sum = sum + ops[i](x);
+    }
+    return sum;
+}
+
+func through(p *func (i32) i32) i32 {
+    return (*p)(1);
+}
+
+func main() i32 {
+    var ops [2]func (i32) i32 = {inc, twice};
+    // 11 + 20, then 2 + 2.
+    if (apply(ops, 10) != 31 || each(ops[:], 1) != 4) {
+        return 1;
+    }
+    var f func (i32) i32 = twice;
+    var p *func (i32) i32 = &f;
+    var q = &ops[0];
+    if ((*p)(5) != 10 || (*q)(5) != 6 || through(&f) != 2) {
+        return 2;
+    }
+    // A store through the pointer changes the function pointer it reaches.
+    *p = inc;
+    *q = twice;
+    if (f(5) != 6 || ops[0](5) != 10) {
+        return 8;
+    }
+    var maybe [2]?func (i32) i32 = {null, inc};
+    if (maybe[0] != null || maybe[1] == null || maybe[1]!(1) != 2) {
+        return 3;
+    }
+    var mp *?func (i32) i32 = &maybe[1];
+    if (*mp == null) {
+        return 4;
+    }
+    var h Hooks = {.ops = {twice, inc}, .maybe = {inc, null}, .at = &f};
+    if (h.ops[0](3) != 6 || h.maybe[0]!(3) != 4 || h.maybe[1] != null || (*h.at)(4) != 5) {
+        return 5;
+    }
+    // An alias of a function type is the same element.
+    var named [2]Op = {inc, twice};
+    var first = named[0];
+    if (first(1) != 2 || named[1](4) != 8) {
+        return 6;
+    }
+    var cast = ?func (i32) i32(inc);
+    var none = ?func (i32) i32(null);
+    if (cast == null || none != null) {
+        return 7;
+    }
+    return table[1](20) + cast!(1);
+}

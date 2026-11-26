@@ -1,0 +1,25 @@
+// A `comptime const` whose initializer calls a `comptime func` with one `return` is an array length in a
+// struct field. Types are resolved before functions are declared, so that body folds first.
+comptime func twice(n i32) i32 {
+    return n * 2;
+}
+
+comptime func add(a i32, b i32) i32 {
+    return a + b;
+}
+
+comptime const base = 10;
+comptime const wide = twice(base);
+comptime const more = add(twice(twice(1)), base + 3);
+
+type Buffer struct {
+    head [wide]u8;
+    tail [more]u8;
+    rows [2][wide]i32;
+}
+
+func main() i32 {
+    var b Buffer;
+    // 20 + 17 + 2 + 3
+    return i32(b.head.len + b.tail.len + b.rows.len) + 3;
+}

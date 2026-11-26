@@ -2,6 +2,7 @@
 #include "parse/parser.hpp"
 #include "parse/parse_util.hpp"
 
+#include <limits>
 #include <utility>
 
 namespace tlc {
@@ -729,8 +730,9 @@ Parser::PointerPrefix Parser::parse_pointer_prefix() {
         }
         bool opt = false;
         if (check(TokenKind::Question)) {
-            // `?func (...)` is the optional function pointer. `parse_func_type` reads that `?`.
-            if (peek(1).kind == TokenKind::KwFunc && prefix.count == 0) {
+            // `?func (...)` is the optional function pointer. `parse_func_type` reads that `?`, also after a
+            // star: `*?func (i32) i32`.
+            if (peek(1).kind == TokenKind::KwFunc) {
                 break;
             }
             if (peek(1).kind != TokenKind::Star) {
@@ -795,6 +797,11 @@ Parser::PlacedType Parser::parse_tuple_type() {
 }
 
 ResultSlot Parser::slot_from_type(const PlacedType &type) const {
+    // `func f() [2]func (i32) i32` and `([2]func (i32) i32, i32)`: a shell around a function pointer is a
+    // variable, a field, or a parameter only.
+    if (type.is_fn_ptr && !type.shells.empty()) {
+        diags_.error(type.loc, "not supported yet");
+    }
     ResultSlot slot;
     slot.type_name = type.type_name;
     slot.type_package = type.type_package;
@@ -849,7 +856,7 @@ Parser::PlacedType Parser::parse_placed_type(bool allow_const, bool allow_fn_dec
                 ++ahead;
             }
         }
-        if (peek(ahead).kind == TokenKind::LBracket) {
+        if (peek(ahead).kind == TokenKind::LBracket || at_func_type(ahead)) {
             return parse_go_type();
         }
     }
@@ -980,24 +987,25 @@ Parser::PlacedType Parser::parse_go_type(bool allow_value_const) {
             return;
         }
         // A length is an `i64`: `[3000000000]u8` and `[8i64]u8`. An unsigned, `i8`, or `i16` suffix is not one.
-        if (check(TokenKind::IntLiteral) && array_length_literal(peek())) {
+        if (check(TokenKind::IntLiteral) && array_length_literal(peek()) && peek(1).kind == TokenKind::RBracket) {
             shell.kind = TypeShell::Kind::Array;
             shell.length = static_cast<int64_t>(peek().int_value);
             ++pos_;
             expect(TokenKind::RBracket, "expected ']'");
             return;
         }
-        if (check(TokenKind::Identifier)) {
+        if (check(TokenKind::Identifier) && peek(1).kind == TokenKind::RBracket) {
             shell.kind = TypeShell::Kind::Array;
             shell.length_name = peek().text;
             ++pos_;
             expect(TokenKind::RBracket, "expected ']'");
             return;
         }
-        // `[sizeof(Point)]`. The length is that size once the type is complete.
-        if (check(TokenKind::KwSizeof)) {
+        // `[sizeof(Point)]` and `[sizeof(Pair) + 1]`. Any expression is the length once it folds. `sizeof` of a
+        // struct waits until that struct is complete.
+        if (!check(TokenKind::Semicolon) && !check(TokenKind::LBrace) && !eof()) {
             shell.kind = TypeShell::Kind::Array;
-            shell.length_expr = std::shared_ptr<Expr>(parse_unary());
+            shell.length_expr = std::shared_ptr<Expr>(parse_expr());
             expect(TokenKind::RBracket, "expected ']'");
             return;
         }
@@ -1061,11 +1069,21 @@ Parser::PlacedType Parser::parse_go_type(bool allow_value_const) {
             type.shells.push_back(std::move(shell));
             continue;
         }
+        // `[2]func (i32) i32`, `*func (i32) i32`, and `[]?func (i32) i32`. The function pointer is the leaf and
+        // every written `[N]`, `[]`, and `*` is a shell around it.
         if (at_func_type()) {
-            if (prefix.count > 0 || !type.shells.empty()) {
-                diags_.error(type.loc, "not supported yet");
+            PlacedType fn = parse_func_type();
+            for (int star = 0; star < prefix.count; ++star) {
+                TypeShell shell;
+                shell.kind = TypeShell::Kind::Pointer;
+                shell.optional = (prefix.optional & (1u << star)) != 0;
+                shell.const_pointee = (prefix.const_pointee & (1u << star)) != 0;
+                type.shells.push_back(shell);
             }
-            return parse_func_type();
+            fn.loc = type.loc;
+            fn.shells = std::move(type.shells);
+            project(fn);
+            return fn;
         }
         // `[]const u8` marks the element. `kind const Type` marks the field value.
         // `var name const Type` marks the value when `allow_value_const` is set.
@@ -1452,6 +1470,10 @@ static FnParam fn_param_from_result(const ResultSlot &slot) {
 }
 
 FnParam Parser::fn_param_from(const PlacedType &type) const {
+    // `func ([2]func (i32) i32) i32` is the same gap as a result.
+    if (type.is_fn_ptr && !type.shells.empty()) {
+        diags_.error(type.loc, "not supported yet");
+    }
     FnParam param;
     param.type_name = type.type_name;
     param.type_package = type.type_package;
@@ -1701,7 +1723,7 @@ bool Parser::angle_list_at(std::size_t start, std::size_t &after) const {
             ++parens;
             break;
         case TokenKind::Minus:
-            // `width<-5>` reaches the argument parser, which reports it.
+            // `width<-5>` is a negative value argument. A `-` before anything else is a comparison.
             if (peek(ahead + 1).kind != TokenKind::IntLiteral) {
                 return false;
             }
@@ -1916,6 +1938,23 @@ TypeArg Parser::parse_one_type_arg() {
         }
         arg.is_value = true;
         arg.value_expr = std::shared_ptr<Expr>(std::move(expr));
+        return arg;
+    }
+    // `width<-5>()`. A minus and an integer literal are one negative value. The checker decides whether it fits
+    // the parameter: `N i32` takes it, `N u8` does not.
+    if (check(TokenKind::Minus) && peek(1).kind == TokenKind::IntLiteral) {
+        arg.is_value = true;
+        const Token &number = peek(1);
+        if (number.int_value <= 9223372036854775808ULL) {
+            arg.has_value = true;
+            arg.value = number.int_value == 9223372036854775808ULL
+                            ? std::numeric_limits<int64_t>::min()
+                            : -static_cast<int64_t>(number.int_value);
+            arg.value_suffix = number.suffix;
+        } else {
+            diags_.error(number.loc, "type mismatch");
+        }
+        pos_ += 2;
         return arg;
     }
     if (check(TokenKind::IntLiteral)) {

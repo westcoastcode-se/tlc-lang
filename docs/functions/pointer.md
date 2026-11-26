@@ -228,6 +228,8 @@ A function pointer has a value, so a variable of that type needs an initializer.
 
 `?func (i32) i32` is a function pointer that may be `null`. It follows the rules of `?*T` in [Narrowing](../expressions/narrowing.md). A call `cb(v)` needs a null check that narrows `cb`, as in `if (cb != null) { cb(v); }`, and is `type mismatch` without one. `cb!(v)` asserts that one call. Under `--debug` a null `cb` there panics with `panic: null pointer`. A `func` value converts to a `?func` with the same signature. A `?func` does not convert to a `func`, and `var h func (i32) i32 = cb` is `type mismatch: expected *func(i32) i32, found ?*func(i32) i32`. A variable, a field, a parameter, and a result can be `?func`.
 
+A function pointer, plain or `?func`, is also an array element, a slice element, and a pointee: `[2]func (i32) i32`, `[]func (i32) i32`, `*func (i32) i32`, `[2]?func (i32) i32`, and `*?func (i32) i32`. A variable, a file-scope variable, a field, and a parameter take those shells. A result, a tuple element, and a parameter inside a function type, such as `func f() [2]func (i32) i32`, are `not supported yet`. `ops[1](10)` calls an element, `(*p)(10)` calls through the pointer, and `&ops[0]` is `*func (i32) i32`. `[2]Op` is the same array when `Op` is an alias of that function type. `?func (i32) i32(x)` is the cast to the optional pointer, and `?func (i32) i32(null)` is null.
+
 ```c
 func twice(v i32) i32 {
     return v * 2;

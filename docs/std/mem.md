@@ -106,11 +106,11 @@ Omitting `[u8]` infers `u8` when both arguments are constant strings.
 
 A false comparison fails the assert, and the diagnostic is the message.
 
-`const same = mem.memeql<u8>("hi", "hi")` is the integer `1`.
+`const same = mem.memeql<u8>("hi", "hi")` and `comptime const same = mem.memeql<u8>("hi", "hi")` are the `bool` `true`.
 
-`const diff = mem.memeql<u8>("hi", "ha")` is `0`.
+`const diff = mem.memeql<u8>("hi", "ha")` is `false`.
 
-`var live = mem.memeql<u8>("hi", "hi")` is a `bool`.
+`var live = mem.memeql<u8>("hi", "hi")` is a `bool` too.
 
 `const order = mem.memcmp<u8>("ab", "ac")` is the integer `-1`.
 

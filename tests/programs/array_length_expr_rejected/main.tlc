@@ -1,0 +1,7 @@
+// A length that reads a `var` does not fold. A negative one is reported as a length.
+func main() i32 {
+    var n = 3;
+    var a [n + 1]i32;
+    var b [2 - 3]i32;
+    return 0;
+}

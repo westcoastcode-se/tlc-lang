@@ -810,6 +810,9 @@ void note_type_arg(Used &used, const Shadow &shadow, const TypeArg &arg) {
     note_value(used, shadow, arg.array_len_name);
     for (const TypeShell &shell : arg.shells) {
         note_value(used, shadow, shell.length_name);
+        if (shell.length_expr != nullptr) {
+            note_expr(used, shadow, *shell.length_expr);
+        }
     }
     for (const TypeArg &nested : arg.args) {
         note_type_arg(used, shadow, nested);
@@ -822,6 +825,9 @@ void note_fn_param(Used &used, const Shadow &shadow, const FnParam &param) {
     }
     for (const TypeShell &shell : param.shells) {
         note_value(used, shadow, shell.length_name);
+        if (shell.length_expr != nullptr) {
+            note_expr(used, shadow, *shell.length_expr);
+        }
     }
     for (const TypeArg &arg : param.type_args) {
         note_type_arg(used, shadow, arg);
@@ -841,6 +847,9 @@ void note_slot(Used &used, const Shadow &shadow, const ResultSlot &slot) {
     note_value(used, shadow, slot.array_len_name);
     for (const TypeShell &shell : slot.shells) {
         note_value(used, shadow, shell.length_name);
+        if (shell.length_expr != nullptr) {
+            note_expr(used, shadow, *shell.length_expr);
+        }
     }
     for (const TypeArg &arg : slot.type_args) {
         note_type_arg(used, shadow, arg);
@@ -863,6 +872,9 @@ void note_field(Used &used, const Shadow &shadow, const FieldDecl &field) {
     note_value(used, shadow, field.array_len_name);
     for (const TypeShell &shell : field.shells) {
         note_value(used, shadow, shell.length_name);
+        if (shell.length_expr != nullptr) {
+            note_expr(used, shadow, *shell.length_expr);
+        }
     }
     for (const TypeArg &arg : field.type_args) {
         note_type_arg(used, shadow, arg);
@@ -891,6 +903,9 @@ void note_param(Used &used, const Shadow &shadow, const Param &param) {
     note_value(used, shadow, param.array_len_name);
     for (const TypeShell &shell : param.shells) {
         note_value(used, shadow, shell.length_name);
+        if (shell.length_expr != nullptr) {
+            note_expr(used, shadow, *shell.length_expr);
+        }
     }
     for (const TypeArg &arg : param.type_args) {
         note_type_arg(used, shadow, arg);
@@ -913,6 +928,9 @@ void note_var(Used &used, const Shadow &shadow, const VarDecl &var) {
     note_value(used, shadow, var.array_len_name);
     for (const TypeShell &shell : var.shells) {
         note_value(used, shadow, shell.length_name);
+        if (shell.length_expr != nullptr) {
+            note_expr(used, shadow, *shell.length_expr);
+        }
     }
     for (const TypeArg &arg : var.type_args) {
         note_type_arg(used, shadow, arg);
@@ -939,6 +957,9 @@ void note_typedef(Used &used, const TypedefDecl &item) {
     note_value(used, shadow, item.array_len_name);
     for (const TypeShell &shell : item.shells) {
         note_value(used, shadow, shell.length_name);
+        if (shell.length_expr != nullptr) {
+            note_expr(used, shadow, *shell.length_expr);
+        }
     }
     for (const TypeArg &arg : item.type_args) {
         note_type_arg(used, shadow, arg);
@@ -1017,6 +1038,9 @@ void note_expr_node(Used &used, const Shadow &shadow, const Node &node) {
         }
         for (const TypeShell &shell : node.shells) {
             note_value(used, shadow, shell.length_name);
+            if (shell.length_expr != nullptr) {
+                note_expr(used, shadow, *shell.length_expr);
+            }
         }
         if (node.expr != nullptr) {
             note_expr(used, shadow, *node.expr);
@@ -1048,6 +1072,9 @@ void note_expr_node(Used &used, const Shadow &shadow, const Node &node) {
         note_value(used, shadow, node.elem_array_len_name);
         for (const TypeShell &shell : node.elem_shells) {
             note_value(used, shadow, shell.length_name);
+            if (shell.length_expr != nullptr) {
+                note_expr(used, shadow, *shell.length_expr);
+            }
         }
         for (const TypeArg &arg : node.type_args) {
             note_type_arg(used, shadow, arg);
@@ -1473,6 +1500,46 @@ bool early_int_const(const VarDecl &var) {
 
 } // namespace
 
+bool Checker::folds_to_bool(const Expr &expr, int depth) {
+    if (depth > 64) {
+        return false;
+    }
+    if (std::holds_alternative<Expr::Bool>(expr.data)) {
+        return true;
+    }
+    if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
+        return unary->op == TokenKind::Bang && !unary->postfix && unary->expr != nullptr &&
+               folds_to_bool(*unary->expr, depth + 1);
+    }
+    if (const auto *binary = std::get_if<Expr::Binary>(&expr.data)) {
+        if (binary->mid != nullptr) {
+            return folds_to_bool(*binary->mid, depth + 1);
+        }
+        switch (binary->op) {
+        case TokenKind::EqEq:
+        case TokenKind::BangEq:
+        case TokenKind::Lt:
+        case TokenKind::Gt:
+        case TokenKind::Le:
+        case TokenKind::Ge:
+        case TokenKind::AmpAmp:
+        case TokenKind::PipePipe:
+            return true;
+        default:
+            return false;
+        }
+    }
+    if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
+        return cast->type_name == "bool" && cast->type_package.empty() && cast->indirections == 0 &&
+               cast->optional == 0 && !cast->is_fn_ptr && cast->shells.empty() && cast->type_args.empty();
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&expr.data)) {
+        const Symbol *symbol = lookup(named->text);
+        return symbol != nullptr && symbol->type.kind == TypeKind::Bool;
+    }
+    return false;
+}
+
 void Checker::fold_early_consts(TranslationUnit &unit, uint32_t file_id) {
     file_id_ = file_id;
     push();
@@ -1491,10 +1558,11 @@ void Checker::fold_early_consts(TranslationUnit &unit, uint32_t file_id) {
         }
         var->has_const = true;
         var->const_value = *value;
+        var->const_bool = var->inferred ? folds_to_bool(*var->init) : var->type_name == "bool";
         const_values_[file_id][var->name] = ConstBinding{*value, var->is_static};
         Symbol symbol;
         symbol.name = var->name;
-        symbol.type = type_int();
+        symbol.type = folded_const_type(*var);
         symbol.is_constant = true;
         ++fold_generation_;
         symbol.const_value = *value;
@@ -1514,13 +1582,48 @@ bool Checker::fold_ready_consts() {
             auto *var = std::get_if<VarDecl>(&decl.data);
             if (var == nullptr || !var->is_comptime || var->has_const || var->name.empty() || var->init == nullptr ||
                 !var->owner.empty() || !early_int_const(*var) ||
-                !std::holds_alternative<Expr::Sizeof>(var->init->data)) {
+                (!std::holds_alternative<Expr::Sizeof>(var->init->data) &&
+                 !std::holds_alternative<Expr::Call>(var->init->data))) {
                 continue;
             }
-            // `sizeof(Point)` waits until that struct has a size. A failure stays quiet.
+            // `sizeof(Point)` waits until that struct has a size. `twice(2)` folds when the body is one
+            // `return`. A failure stays quiet.
             const bool saved_quiet = quiet_;
             quiet_ = true;
-            const std::optional<int> value = fold_int(*var->init);
+            std::optional<int> value;
+            if (std::holds_alternative<Expr::Call>(var->init->data)) {
+                // `twice(m + 1)` reads constants that already folded. Names are not declared yet, so this
+                // scope holds them while the call folds.
+                push();
+                for (const uint32_t id : files_in_package(file)) {
+                    const PackageNode *node = find_node(id);
+                    const TranslationUnit *source = node != nullptr ? &node->unit : (id == 0 ? primary_unit_ : nullptr);
+                    if (source == nullptr) {
+                        continue;
+                    }
+                    for (const TopDecl &item : source->decls) {
+                        const auto *known = std::get_if<VarDecl>(&item.data);
+                        if (known == nullptr || !known->is_comptime || !known->has_const || known->name.empty() ||
+                            !known->owner.empty() || (id != file && known->is_static) ||
+                            lookup_scope(known->name) != nullptr) {
+                            continue;
+                        }
+                        Symbol symbol;
+                        symbol.name = known->name;
+                        symbol.type = folded_const_type(*known);
+                        symbol.is_constant = true;
+                        ++fold_generation_;
+                        symbol.const_value = known->const_value;
+                        symbol.const_fits = true;
+                        ++fold_generation_;
+                        declare(std::move(symbol), known->loc);
+                    }
+                }
+                value = fold_early_call(*var->init);
+                pop();
+            } else {
+                value = fold_int(*var->init);
+            }
             quiet_ = saved_quiet;
             if (!value) {
                 continue;
@@ -2675,6 +2778,14 @@ void Checker::substitute_type(const std::vector<TypeParam> &params, const std::v
     }
     if (shells != nullptr) {
         for (TypeShell &shell : *shells) {
+            // `[N + 1]` substitutes `N` in a copy. The template keeps its own expression.
+            if (shell.kind == TypeShell::Kind::Array && shell.length_expr != nullptr &&
+                !std::holds_alternative<Expr::Sizeof>(shell.length_expr->data)) {
+                std::shared_ptr<Expr> copy(clone_expr(*shell.length_expr));
+                substitute_expr(params, bounds, *copy);
+                shell.length_expr = std::move(copy);
+                continue;
+            }
             if (shell.kind != TypeShell::Kind::Array || shell.length_name.empty()) {
                 continue;
             }
@@ -3005,21 +3116,41 @@ void Checker::substitute_expr(const std::vector<TypeParam> &params, const std::v
                         suffix.bits = std::stoi(bound->value_type.substr(1));
                     }
                     if (value < 0) {
-                        if (value == (suffix.bits == 64 ? INT64_MIN : -2147483648LL)) {
-                            error(loc, "not supported yet");
+                        // The smallest value has no literal of its own: `width<-2147483648>()` is
+                        // `-2147483647 - 1`, and the `i64` one the same at 64 bits.
+                        const bool lowest = value == (suffix.bits == 64 ? INT64_MIN : -2147483648LL);
+                        const auto negative = [&](uint64_t magnitude) {
+                            Expr::Int inner;
+                            inner.loc = loc;
+                            inner.value = magnitude;
+                            inner.suffix = suffix;
+                            auto literal = std::make_unique<Expr>();
+                            literal->data = std::move(inner);
+                            Expr::Unary unary;
+                            unary.loc = loc;
+                            unary.op = TokenKind::Minus;
+                            unary.expr = std::move(literal);
+                            auto out = std::make_unique<Expr>();
+                            out->data = std::move(unary);
+                            return out;
+                        };
+                        if (lowest) {
+                            Expr::Int one;
+                            one.loc = loc;
+                            one.value = 1;
+                            one.suffix = suffix;
+                            auto rhs = std::make_unique<Expr>();
+                            rhs->data = std::move(one);
+                            Expr::Binary binary;
+                            binary.loc = loc;
+                            binary.op = TokenKind::Minus;
+                            binary.lhs = negative(static_cast<uint64_t>(-(value + 1)));
+                            binary.rhs = std::move(rhs);
+                            expr.data = std::move(binary);
                             return;
                         }
-                        Expr::Int inner;
-                        inner.loc = loc;
-                        inner.value = static_cast<uint64_t>(-value);
-                        inner.suffix = suffix;
-                        auto literal = std::make_unique<Expr>();
-                        literal->data = std::move(inner);
-                        Expr::Unary unary;
-                        unary.loc = loc;
-                        unary.op = TokenKind::Minus;
-                        unary.expr = std::move(literal);
-                        expr.data = std::move(unary);
+                        std::unique_ptr<Expr> made = negative(static_cast<uint64_t>(-value));
+                        expr.data = std::move(made->data);
                         return;
                     }
                     Expr::Int literal;

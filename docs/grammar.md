@@ -1854,15 +1854,16 @@ Each length is one array of the inner type.
 
 ```ebnf
 pointer     = [ "?" ] "*" [ "const" ] ;
-go-type     = func-type
+go-type     = { pointer } func-type
             | tuple-type
             | { pointer } base-type [ type-args ]
             | array-type ;
 array-type  = { pointer } "[" array-length "]" array-rest [ "const" ] base-type [ type-args ]
-            | { pointer } "[" array-length "]" array-rest pointer { pointer } base-type [ type-args ] ;
+            | { pointer } "[" array-length "]" array-rest pointer { pointer } base-type [ type-args ]
+            | { pointer } "[" array-length "]" array-rest { pointer } func-type ;
 array-rest  = { "[" array-length "]" | pointer "[" array-length "]" } ;
 
-placed-type = func-type
+placed-type = { pointer } func-type
             | tuple-type
             | { pointer } base-type [ type-args ]
             | go-type ;
@@ -1870,9 +1871,9 @@ placed-type = func-type
 tuple-type  = "(" placed-type ")"
             | "(" placed-type "," placed-type { "," placed-type } [ "," ] ")" ;
 
-array-length = [ integer-literal | identifier ] ;
+array-length = [ expression ] ;
 type-args   = "<" type-arg { "," type-arg } ">" ;
-type-arg    = integer-literal
+type-arg    = [ "-" ] integer-literal
             | "sizeof" unary
             | identifier "(" [ argument-list ] ")"
             | identifier "." identifier "(" [ argument-list ] ")"
@@ -1901,6 +1902,10 @@ A type argument may be `sizeof`.
 `sizeof n` is that value.
 
 `alignof` in a type argument is `expected a type`.
+
+An array length is an expression that folds to a non-negative integer: a literal, a folded name, `sizeof`, a `comptime func` call, or arithmetic on those, such as `[sizeof(Pair) + 1]u8` and `[N * 2 + 1]u8`. A length that does not fold is `not supported yet`. A negative one is `array length must be >= 0`.
+
+`-` followed by an integer literal is one negative value argument: `width<-5>()`. A value that does not fit the parameter, `count<-1>()` when `count` takes `N u8`, is `type mismatch`.
 
 `width<sizeof(i32) + 1>()` is `expected an expression`. `+` is not part of a type list, so `<` is a comparison.
 

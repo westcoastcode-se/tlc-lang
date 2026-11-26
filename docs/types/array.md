@@ -194,7 +194,9 @@ retq                             # return
 
 Inside a function, `const n = 4` then `var row [n]i32` is `[4]i32`.
 
-`comptime const N = sizeof(Point)` is a field length once `Point` is complete. `type Holder struct { buf [N]u8; }` is 8 bytes when `Point` holds two `i32` fields. `buf [sizeof(Point)]u8` is that same length. Inside `Point`, `buf [sizeof(Point)]u8` is the size of the other fields. `sizeof(Point)` after that struct is complete includes `buf`.
+A length is any expression that folds: `[sizeof(Pair) + 1]u8`, `[N * 2 + 1]u8`, `[twice(N) + 1]i32`, and `[(1 + 1)][N + 1]i32`. `type G<N i32> struct { buf [N + 1]u8; }` and `func pad<N i32>()` with `[N * 2 + 1]i32` substitute `N` first. A length that reads a `var` is `not supported yet`. `comptime const N = sizeof(Point)` is a field length once `Point` is complete. `type Holder struct { buf [N]u8; }` is 8 bytes when `Point` holds two `i32` fields. `buf [sizeof(Point)]u8` is that same length. Inside `Point`, `buf [sizeof(Point)]u8` is the size of the other fields. `sizeof(Point)` after that struct is complete includes `buf`.
+
+`comptime const wide = twice(10)` is a field length when `twice` is a `comptime func` in the same package whose body is one `return` of an `i32` and whose parameters are `i32`: `type Buffer struct { head [wide]u8; }`. An argument may be a folded constant or another such call, `add(twice(1), base + 3)`. Field types are resolved before functions are declared, so a body with statements runs too late for a field. That field is `not supported yet`. Inside a function, `var row [wide]i32` takes any `comptime const` that folds.
 
 ```c
 func main() i32 {

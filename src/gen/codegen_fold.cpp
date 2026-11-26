@@ -449,6 +449,10 @@ std::optional<CodeGen::FoldedNumber> CodeGen::fold_number(const Expr &expr, std:
         }
         return FoldedNumber{parsed, true, true};
     }
+    // `bias(2) + 1.0`. The checker ran that `comptime func`. Same rule as `Checker::fold_number`.
+    if (const auto *call = std::get_if<Expr::Call>(&expr.data); call != nullptr && call->comptime_float) {
+        return FoldedNumber{call->comptime_float_value, true, call->comptime_float_wide};
+    }
     if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
         if (unary->op == TokenKind::KwUnsafe && unary->expr != nullptr) {
             return fold_number(*unary->expr, seen);

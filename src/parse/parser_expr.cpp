@@ -295,11 +295,11 @@ bool Parser::skip_placed_type(std::size_t &ahead) const {
 }
 
 bool Parser::starts_func_cast() const {
-    // The cast form starts at `func`. `?func (...)(x)` is not a cast.
-    if (check(TokenKind::Question) || !at_func_type()) {
+    // The cast form starts at `func` or `?func`. `?func (i32) i32(x)` is the optional function pointer.
+    if (!at_func_type()) {
         return false;
     }
-    std::size_t ahead = 1;
+    std::size_t ahead = check(TokenKind::Question) ? 2 : 1;
     if (!skip_balanced(ahead, TokenKind::LParen, TokenKind::RParen)) {
         return false;
     }

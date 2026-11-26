@@ -2338,6 +2338,10 @@ llvm::Constant *CodeGen::const_initializer(const Expr &expr, const Binding &dest
         }
         return nullptr;
     };
+    // `const k = bias()` when that `comptime func` returns `f64` or `f32`. The checker ran it.
+    if (const auto *call = std::get_if<Expr::Call>(&cursor->data); call != nullptr && call->comptime_float) {
+        return dest.elem_float ? llvm::ConstantFP::get(float_ty, call->comptime_float_value) : nullptr;
+    }
     if (const auto *literal = std::get_if<Expr::Float>(&cursor->data)) {
         if (!dest.elem_float) {
             return nullptr;

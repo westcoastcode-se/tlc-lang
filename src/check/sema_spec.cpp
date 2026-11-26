@@ -14,6 +14,8 @@ bool same_default_shape(const FunctionDecl &lhs, const FunctionDecl &rhs);
 
 void Checker::check_isolated(uint32_t file, const FunctionDecl &fn) {
     auto saved_scopes = std::move(scopes_);
+    auto saved_locals = std::move(local_names_);
+    local_names_.clear();
     // The nested check pops its own scopes. The caller's held names survive it.
     auto saved_held = std::move(held_names_);
     held_names_.clear();
@@ -67,6 +69,7 @@ void Checker::check_isolated(uint32_t file, const FunctionDecl &fn) {
     check_function(fn);
     pop();
     scopes_ = std::move(saved_scopes);
+    local_names_ = std::move(saved_locals);
     held_names_ = std::move(saved_held);
     give_held_log(std::move(saved_log));
     file_id_ = saved_file;
@@ -753,6 +756,8 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         }
         if (origin == nullptr || !origin->is_union || origin->tag_name.empty()) {
             std::vector<Scope> saved_scopes = std::move(scopes_);
+            auto saved_locals = std::move(local_names_);
+            local_names_.clear();
             // The nested check pops its own scopes. The caller's held names survive it.
             auto saved_held = std::move(held_names_);
             held_names_.clear();
@@ -763,6 +768,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
                 for (const auto &[static_name, symbol] : found->second) {
                     note_held_name(symbol);
                     scopes_.back().symbols.emplace(static_name, symbol);
+                    index_local(static_name);
                 }
             }
             for (const FieldDecl &field : fields) {
@@ -783,6 +789,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             }
             pop();
             scopes_ = std::move(saved_scopes);
+            local_names_ = std::move(saved_locals);
             held_names_ = std::move(saved_held);
             give_held_log(std::move(saved_log));
         }
@@ -864,6 +871,8 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
     if (!spec.is_union || spec.tag_name.empty()) {
         // The value is checked in the struct's file, not in the call that instantiates it.
         std::vector<Scope> saved_scopes = std::move(scopes_);
+        auto saved_locals = std::move(local_names_);
+        local_names_.clear();
         // The nested check pops its own scopes. The caller's held names survive it.
         auto saved_held = std::move(held_names_);
         held_names_.clear();
@@ -874,6 +883,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
             for (const auto &[name, symbol] : found->second) {
                 note_held_name(symbol);
                 scopes_.back().symbols.emplace(name, symbol);
+                index_local(name);
             }
         }
         for (const FieldDecl &field : spec.fields) {
@@ -894,6 +904,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         }
         pop();
         scopes_ = std::move(saved_scopes);
+        local_names_ = std::move(saved_locals);
         held_names_ = std::move(saved_held);
         give_held_log(std::move(saved_log));
     }

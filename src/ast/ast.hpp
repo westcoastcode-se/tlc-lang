@@ -711,6 +711,8 @@ struct VarDecl {
     // `var name const Type` and `const Type name`. The value is constant and the variable has an address.
     bool is_const = false;
     bool has_const = false;
+    // `comptime const on = true` folds to 0 or 1 like an integer, and the name stays `bool`.
+    bool const_bool = false;
     // `var g = 250u8` at file scope binds `u8`. The checker sets the width, 8 or 16, and codegen stores
     // the global at that width. Zero keeps the inferred type.
     int narrow_bits = 0;

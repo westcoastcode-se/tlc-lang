@@ -415,6 +415,10 @@ void CodeGen::prepare_structs() {
                     low = lower_fnptr(file, field.type_name, field.type_package, field.is_struct, field.is_enum,
                                       field.ret_indirections, field.indirections, field.fn_params, field.fn_variadic,
                                       field.fn_results);
+                    // `ops [2]func (i32) i32` and `at *func (i32) i32` wrap that pointer.
+                    if (!field.shells.empty()) {
+                        low = compose_shells(std::move(low), field.shells, false);
+                    }
                 } else {
                     low = lower(file, field.type_name, field.type_package, field.is_struct, field.indirections,
                                 field.is_array, field.array_len, false, field.elem_slice, field.shells);

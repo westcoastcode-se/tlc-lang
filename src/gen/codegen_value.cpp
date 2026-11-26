@@ -232,13 +232,27 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                         return peeled;
                     }
                     // `*Adder` passed a function is that function pointer. `*a` does not load through it.
-                    if (trait_fn_argument(inner)) {
+                    // `*p` on `*func (i32) i32` is a pointer one level above the function pointer. It loads.
+                    if (trait_fn_argument(inner) && inner.depth <= 1) {
                         TypedValue fn = inner;
                         fn.depth = 0;
                         return fn;
                     }
-                    return load_object(inner.value, inner.depth - 1, inner.elem_char, inner.struct_id, inner.elem_void,
-                                       inner.elem_bool, inner.elem_bits, inner.elem_unsigned, inner.elem_float);
+                    TypedValue loaded = load_object(inner.value, inner.depth - 1, inner.elem_char, inner.struct_id,
+                                                    inner.elem_void, inner.elem_bool, inner.elem_bits,
+                                                    inner.elem_unsigned, inner.elem_float);
+                    if (inner.fn_ty != nullptr && inner.depth == 2) {
+                        loaded.fn_ty = inner.fn_ty;
+                        loaded.fn_ret_depth = inner.fn_ret_depth;
+                        loaded.fn_ret_float = inner.fn_ret_float;
+                        loaded.fn_ret_bits = inner.fn_ret_bits;
+                        loaded.fn_ret_unsigned = inner.fn_ret_unsigned;
+                        loaded.fn_ret_char = inner.fn_ret_char;
+                        loaded.fn_ret_bool = inner.fn_ret_bool;
+                        loaded.fn_ret_struct = inner.fn_ret_struct;
+                        loaded.fn_results = inner.fn_results;
+                    }
+                    return loaded;
                 }
                 if (node.op == TokenKind::PlusPlus || node.op == TokenKind::MinusMinus) {
                     if (node.expr == nullptr) {
@@ -378,6 +392,10 @@ TypedValue CodeGen::emit_rvalue(const Expr &expr) {
                     // `&row` keeps the tuple so `*p` can load it, and `&p` when `p` already points at one.
                     if (!addr.tuple_parts.empty()) {
                         pointer.tuple_parts = addr.tuple_parts;
+                    }
+                    // `&f` and `&ops[0]` when the place is a function pointer. `(*p)(1)` calls that signature.
+                    if (addr.fn_ty != nullptr && addr.depth == 1) {
+                        copy_fn_sig(pointer, addr);
                     }
                     return pointer;
                 }

@@ -1,0 +1,3 @@
+compile-error: main.tlc:11:5: error: not supported yet
+stderr:
+main.tlc:11:5: error: not supported yet

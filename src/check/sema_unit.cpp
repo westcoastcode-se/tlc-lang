@@ -36,7 +36,7 @@ void Checker::store_assoc_const(uint32_t file, VarDecl &var) {
     entry.exported = var.exported;
     entry.is_const = true;
     if (var.has_const) {
-        entry.type = type_int();
+        entry.type = folded_const_type(var);
         entry.has_const = true;
         entry.const_value = var.const_value;
     } else if (got.kind == TypeKind::Invalid) {
@@ -799,7 +799,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 // Folded before typedefs, so `[N]i32` can use it. A later const keeps its own type.
                 if (written.has_const) {
                     const_values_[file_id_][written.name] = ConstBinding{written.const_value, written.is_static};
-                    define_constant(written, type_int(), written.const_value);
+                    define_constant(written, folded_const_type(written), written.const_value);
                     continue;
                 }
                 pending_consts.push_back(&written);
@@ -1398,7 +1398,8 @@ Type Checker::check_file_const(VarDecl &written) {
         }
         written.has_const = true;
         written.const_value = *value;
-        return type_int();
+        written.const_bool = got.kind == TypeKind::Bool;
+        return folded_const_type(written);
     }
     if (got.kind == TypeKind::Float) {
         if (!accept_file_scalar(written, got)) {
@@ -1450,6 +1451,15 @@ Type Checker::check_file_const(VarDecl &written) {
     if (got.kind == TypeKind::Pointer && comptime_address(*written.init)) {
         return got;
     }
+    // `comptime const k = Order.c` and `comptime const k = pick()` name that enumerator, as a `const` does.
+    if (got.kind == TypeKind::Enum && got.alias_id == 0) {
+        if (!fold_switch_case(*written.init)) {
+            error(written.loc, "global initializer is not a constant");
+            return type_invalid();
+        }
+        got.is_const = true;
+        return got;
+    }
     if (!stored_const_type(got)) {
         error(written.loc, "type mismatch");
         return type_invalid();
@@ -1465,7 +1475,7 @@ void Checker::bind_file_const(VarDecl &written) {
     Type got = check_file_const(written);
     if (written.has_const) {
         const_values_[file_id_][written.name] = ConstBinding{written.const_value, written.is_static};
-        define_constant(written, type_int(), written.const_value);
+        define_constant(written, folded_const_type(written), written.const_value);
         return;
     }
     // A failed initializer already reported its error. The name is still declared, with the invalid type,
@@ -1776,9 +1786,9 @@ bool Checker::reads_startup_global(const Expr &expr, uint32_t file) const {
 
 bool Checker::nested_startup_call(const Expr &expr) {
     if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {
-        // A `comptime func`, `row.len()`, and a folded `mem.memeql` are constants.
+        // A `comptime func`, including one that ran to a float, `row.len()`, and a folded `mem.memeql` are constants.
         return !fold_int(expr) && !fold_wide_int(expr) && call->comptime_struct == nullptr && !call->comptime_text &&
-               !call->comptime_failed && !fold_mem_compare(*call);
+               !call->comptime_float && !call->comptime_failed && !fold_mem_compare(*call);
     }
     if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
         return unary->expr != nullptr && nested_startup_call(*unary->expr);
@@ -2106,8 +2116,9 @@ bool Checker::constant_operand(const Expr &expr) {
                           std::is_same_v<T, Expr::Nullptr>) {
                 return true;
             } else if constexpr (std::is_same_v<T, Expr::Call>) {
-                // The call kept a struct literal. A string is not a constant operand on its own.
-                return node.comptime_struct != nullptr;
+                // The call kept a struct literal, or ran to an `f64` or `f32`. A string is not a constant
+                // operand on its own.
+                return node.comptime_struct != nullptr || node.comptime_float;
             } else if constexpr (std::is_same_v<T, Expr::Sizeof>) {
                 return fold_int(expr).has_value();
             } else if constexpr (std::is_same_v<T, Expr::Binary>) {
@@ -2487,6 +2498,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
                 if (diags_.size() == before) {
                     // A folding call is the constant in the global. A store would write read-only memory.
                     // An i32 or a bool folds to an integer. A struct is the kept literal. A string is the bytes.
+                    // A float is the value the call ran to.
                     // `"hi"[i]` when `i` is a `var`, and `"hello"[1:9][0]`, are not that integer.
                     const bool unfolded_string_index = [&]() {
                         if (!var->is_const_decl || var->is_comptime || var->init == nullptr ||
@@ -2521,7 +2533,7 @@ void Checker::check_globals(const TranslationUnit &unit) {
                         const auto *call = std::get_if<Expr::Call>(&cursor->data);
                         const bool folded = fold_int(*var->init).has_value() ||
                                             (call != nullptr && (call->comptime_struct != nullptr || call->comptime_text ||
-                                                                 call->comptime_failed));
+                                                                 call->comptime_float || call->comptime_failed));
                         if (!folded) {
                             error(var->loc, "global initializer is not a constant");
                         }
@@ -2763,7 +2775,7 @@ void Checker::publish_exports(const TranslationUnit &unit, uint32_t file_id) {
                 }
                 Symbol symbol;
                 symbol.name = var->name;
-                symbol.type = type_int();
+                symbol.type = folded_const_type(*var);
                 symbol.is_constant = true;
                 ++fold_generation_;
                 symbol.const_value = var->const_value;
@@ -2930,6 +2942,7 @@ void Checker::bind_imports(const PackageNode &node) {
         symbol.is_package = true;
         symbol.package_file = target->file_id;
         table.emplace(binding, std::move(symbol));
+        index_local(binding);
     }
 }
 

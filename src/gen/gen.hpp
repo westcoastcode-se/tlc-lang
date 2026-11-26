@@ -469,6 +469,16 @@ void copy_element(To &to, const From &from) {
     to.elem_slice = from.elem_slice;
     to.shells = from.shells;
     to.tuple_parts = from.tuple_parts;
+    // `*p` on `*func (i32) i32` and `ops[i]` on `[]Op`: the leaf is a function pointer with this signature.
+    to.fn_ty = from.fn_ty;
+    to.fn_ret_depth = from.fn_ret_depth;
+    to.fn_ret_float = from.fn_ret_float;
+    to.fn_ret_bits = from.fn_ret_bits;
+    to.fn_ret_unsigned = from.fn_ret_unsigned;
+    to.fn_ret_char = from.fn_ret_char;
+    to.fn_ret_bool = from.fn_ret_bool;
+    to.fn_ret_struct = from.fn_ret_struct;
+    to.fn_results = from.fn_results;
 }
 
 // How an extern function passes one struct on x86-64 System V.
@@ -1105,6 +1115,11 @@ class CodeGen {
                             field = field->getType()->getPrimitiveSizeInBits() < want->getPrimitiveSizeInBits()
                                         ? builder_.CreateFPExt(field, want)
                                         : builder_.CreateFPTrunc(field, want);
+                        } else if (field->getType()->isIntegerTy() && want->isFloatingPointTy()) {
+                            // `(1, 2)` into `(f64, i32)`. An integer becomes a float, as in an initializer.
+                            field = source_unsigned || field->getType()->isIntegerTy(1)
+                                        ? builder_.CreateUIToFP(field, want)
+                                        : builder_.CreateSIToFP(field, want);
                         } else if (field->getType()->isPointerTy() && want->isArrayTy()) {
                             // `(nums, 4)` holds the address of `[N]T`. The tuple slot stores the array.
                             field = builder_.CreateLoad(want, field);
@@ -1411,6 +1426,16 @@ class CodeGen {
             loaded.alias_owner = binding.alias_owner;
             loaded.alias_file = binding.alias_file;
             loaded.local_array = binding.local_array;
+            // `[]func (i32) i32`: an element is that function pointer.
+            loaded.fn_ty = binding.fn_ty;
+            loaded.fn_ret_depth = binding.fn_ret_depth;
+            loaded.fn_ret_float = binding.fn_ret_float;
+            loaded.fn_ret_bits = binding.fn_ret_bits;
+            loaded.fn_ret_unsigned = binding.fn_ret_unsigned;
+            loaded.fn_ret_char = binding.fn_ret_char;
+            loaded.fn_ret_bool = binding.fn_ret_bool;
+            loaded.fn_ret_struct = binding.fn_ret_struct;
+            loaded.fn_results = binding.fn_results;
             return loaded;
         }
         if (binding.is_array) {
