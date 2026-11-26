@@ -1,0 +1,25 @@
+// A generic alias may name a pointer, an array, or a slice. Each use is a distinct alias, as written out.
+type Point struct { x i32; y i32; }
+type Ptr<T type> *T;
+type Row<T type> [4]T;
+type Buf<N i32> [N]u8;
+type Grid<T type, N i32> [N][N]T;
+type Maybe<T type> ?*T;
+type Items<T type> []T;
+func first(r Row<i32>) i32 { return r[0]; }
+func main() i32 {
+    var n = 40;
+    var p = Ptr<i32>(&n);
+    var r Row<i32> = {1, 2, 3, 4};
+    var b Buf<3>;
+    var g Grid<i32, 2> = {{1, 2}, {3, 4}};
+    var pt = Point{.x = 1, .y = 2};
+    var pp = Ptr<Point>(&pt);
+    var m Maybe<i32> = null;
+    var items Items<i32> = r[:];
+    var total = *p + r[3] - 2 + i32(b.len) - 3 + g[1][1] - 4 + pp.y - 2 + first(r) - 1 + i32(items.len) - 4;
+    if (m == null) {
+        total += 2;
+    }
+    return total - 2;
+}

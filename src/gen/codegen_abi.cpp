@@ -299,15 +299,7 @@ ExternLayout CodeGen::extern_layout(const FunctionDecl &fn, uint32_t file) const
     }
     std::vector<llvm::Type *> params;
     llvm::Type *result = returns_void || many ? llvm::Type::getVoidTy(context_)
-                                              : (ret_fnptr ? stored_type(lower_fnptr(file, fn.results.front().type_name,
-                                                                                     fn.results.front().type_package,
-                                                                                     fn.results.front().is_struct,
-                                                                                     fn.results.front().is_enum,
-                                                                                     fn.results.front().ret_indirections,
-                                                                                     fn.results.front().indirections,
-                                                                                     fn.results.front().fn_params,
-                                                                                     fn.results.front().fn_variadic,
-                                                                                     fn.results.front().fn_results))
+                                              : (ret_fnptr ? stored_type(lower_fn_slot(file, fn.results.front()))
                                                            : stored_type(ret));
     if (layout.sret) {
         params.push_back(ptr_type());

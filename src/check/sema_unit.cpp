@@ -798,7 +798,7 @@ void Checker::declare_globals(const TranslationUnit &unit) {
                 VarDecl &written = const_cast<VarDecl &>(*var);
                 // Folded before typedefs, so `[N]i32` can use it. A later const keeps its own type.
                 if (written.has_const) {
-                    const_values_[file_id_][written.name] = ConstBinding{written.const_value, written.is_static};
+                    const_values_[file_id_][written.name] = ConstBinding{written.const_value, written.is_static, written.const_bool};
                     define_constant(written, folded_const_type(written), written.const_value);
                     continue;
                 }
@@ -1024,7 +1024,9 @@ Type Checker::file_array_initializer(VarDecl &var, const Type *declared) {
     }
     const auto *init = std::get_if<Expr::Init>(&var.init->data);
     const bool literal = init != nullptr && init->array_literal;
-    const bool values = init != nullptr && !init->is_tuple && init->fields.empty() && !init->elements.empty();
+    // `{0...}` and `{}` are the zero array, the same as no initializer.
+    const bool values = init != nullptr && !init->is_tuple && init->fields.empty() &&
+                        (!init->elements.empty() || (!init->array_literal && init->type_name.empty()));
     Type want = type_invalid();
     if (!var.inferred) {
         if (declared != nullptr) {
@@ -1116,7 +1118,8 @@ Type Checker::file_array_initializer(VarDecl &var, const Type *declared) {
         const FileConst kind = file_constant(value, seen, !(var.is_const_decl && var.is_comptime));
         if (kind == FileConst::Unfolded) {
             unfolded = true;
-        } else if (kind == FileConst::No) {
+        } else if (kind == FileConst::No && !(element.kind != TypeKind::Array && const_parts(value, 0))) {
+            // `{K, K * 2}` with `const K = 4` folds, the same as `var k = K * 2`. A part of a `var` does not.
             runtime = true;
         }
         (void)element;
@@ -1177,6 +1180,39 @@ bool Checker::accept_file_scalar(const VarDecl &var, const Type &type) {
     }
     error(var.loc, kind == FileConst::Unfolded ? "not supported yet" : "global initializer is not a constant");
     return false;
+}
+
+bool Checker::const_parts(const Expr &expr, int depth) {
+    if (depth > 64) {
+        return false;
+    }
+    if (constant_operand(expr)) {
+        return true;
+    }
+    if (const auto *unary = std::get_if<Expr::Unary>(&expr.data)) {
+        const bool value_op = unary->op == TokenKind::Plus || unary->op == TokenKind::Minus ||
+                              unary->op == TokenKind::Bang || unary->op == TokenKind::Tilde;
+        return value_op && !unary->postfix && unary->expr != nullptr && const_parts(*unary->expr, depth + 1);
+    }
+    if (const auto *binary = std::get_if<Expr::Binary>(&expr.data)) {
+        return binary->lhs != nullptr && binary->rhs != nullptr && const_parts(*binary->lhs, depth + 1) &&
+               (binary->mid == nullptr || const_parts(*binary->mid, depth + 1)) && const_parts(*binary->rhs, depth + 1);
+    }
+    if (const auto *cast = std::get_if<Expr::Cast>(&expr.data)) {
+        return cast->expr != nullptr && cast->indirections == 0 && !cast->is_fn_ptr && cast->shells.empty() &&
+               const_parts(*cast->expr, depth + 1);
+    }
+    const auto *named = std::get_if<Expr::Name>(&expr.data);
+    if (named == nullptr) {
+        return false;
+    }
+    const Symbol *symbol = lookup(named->text);
+    if (symbol != nullptr && symbol->is_constant) {
+        return true;
+    }
+    const VarDecl *source = global_var(named->text);
+    return source != nullptr && source->is_const_decl && source->init != nullptr && !source->is_extern &&
+           const_parts(*source->init, depth + 1);
 }
 
 bool Checker::reads_globals(const Expr &expr) {
@@ -1474,7 +1510,7 @@ Type Checker::check_file_const(VarDecl &written) {
 void Checker::bind_file_const(VarDecl &written) {
     Type got = check_file_const(written);
     if (written.has_const) {
-        const_values_[file_id_][written.name] = ConstBinding{written.const_value, written.is_static};
+        const_values_[file_id_][written.name] = ConstBinding{written.const_value, written.is_static, written.const_bool};
         define_constant(written, folded_const_type(written), written.const_value);
         return;
     }
@@ -1987,6 +2023,17 @@ bool Checker::accept_array_copy(VarDecl &var) {
 
 bool Checker::constant_slice_expr(const Expr &expr, std::unordered_set<std::string> &seen) {
     if (std::holds_alternative<Expr::String>(expr.data)) {
+        return true;
+    }
+    // `[_]i32{1, 2, 3}` is a private array of its own. Each element is a file-scope constant, as in `var row [2]i32`.
+    if (const auto *list = std::get_if<Expr::Init>(&expr.data); list != nullptr && list->array_literal) {
+        for (const auto &element : list->elements) {
+            std::unordered_set<std::string> names;
+            if (element == nullptr ||
+                (file_constant(*element, names, true) != FileConst::Yes && !const_parts(*element, 0))) {
+                return false;
+            }
+        }
         return true;
     }
     if (const auto *call = std::get_if<Expr::Call>(&expr.data)) {

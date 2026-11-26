@@ -1,0 +1,7 @@
+func count(comptime n i32) i32 {
+    var a [n + 1]i32;
+    return i32(a.len);
+}
+func main() i32 {
+    return count(-2);
+}

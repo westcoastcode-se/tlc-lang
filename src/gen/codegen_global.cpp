@@ -159,10 +159,7 @@ void CodeGen::declare_functions(const PackageNode &node) {
         const ResultSlot *ret_slot = ret_fnptr ? &acc.fn->results.front() : nullptr;
         const Lowered ret = returns_void || many
                                 ? Lowered{}
-                                : (ret_fnptr ? lower_fnptr(node.file_id, ret_slot->type_name, ret_slot->type_package,
-                                                          ret_slot->is_struct, ret_slot->is_enum, ret_slot->ret_indirections,
-                                                          ret_slot->indirections, ret_slot->fn_params, ret_slot->fn_variadic,
-                                                          ret_slot->fn_results)
+                                : (ret_fnptr ? lower_fn_slot(node.file_id, *ret_slot)
                                              : lower(node.file_id, acc.fn->return_type, acc.fn->type_package, acc.fn->is_struct,
                                                      acc.fn->indirections, false, 0, false));
         if (function_is_generic(node.file_id, *acc.fn)) {

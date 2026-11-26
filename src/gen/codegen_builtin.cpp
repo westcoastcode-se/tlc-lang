@@ -718,6 +718,46 @@ void CodeGen::store_new_element(llvm::Value *raw, llvm::Value *index, const Lowe
 
 void CodeGen::fill_new_buffer(llvm::Value *raw, llvm::Value *count, const Lowered &low, const Expr::Init &init,
                               bool repeat) {
+    // `new [n][2]i32{{4, 6}...}` and `new [_][2]i32{{1, 2}, {3, 4}}`. Each element is an array, written as a brace
+    // list or copied from another array.
+    if (auto *row = llvm::dyn_cast_or_null<llvm::ArrayType>(low.type); row != nullptr && !low.is_slice) {
+        if (repeat) {
+            if (init.elements.size() != 1 || init.elements.front() == nullptr || count == nullptr) {
+                error(init.loc, "type mismatch");
+                return;
+            }
+            llvm::AllocaInst *once = alloca_typed(row, "new.row");
+            store_array(once, row, *init.elements.front(), expr_loc(*init.elements.front()));
+            if (terminated()) {
+                return;
+            }
+            llvm::Value *bits = builder_.CreateLoad(row, once);
+            llvm::AllocaInst *step = alloca_typed(len_ty(), "new.i");
+            builder_.CreateStore(const_len(0), step);
+            llvm::BasicBlock *cond = llvm::BasicBlock::Create(context_, "new.rep", function_);
+            llvm::BasicBlock *body = llvm::BasicBlock::Create(context_, "new.rep.body", function_);
+            llvm::BasicBlock *done = llvm::BasicBlock::Create(context_, "new.rep.done", function_);
+            builder_.CreateBr(cond);
+            builder_.SetInsertPoint(cond);
+            llvm::Value *index = builder_.CreateLoad(len_ty(), step);
+            builder_.CreateCondBr(builder_.CreateICmpSLT(index, to_len(count)), body, done);
+            builder_.SetInsertPoint(body);
+            builder_.CreateStore(bits, builder_.CreateInBoundsGEP(row, raw, llvm::ArrayRef<llvm::Value *>{index}));
+            builder_.CreateStore(builder_.CreateAdd(index, const_len(1)), step);
+            builder_.CreateBr(cond);
+            builder_.SetInsertPoint(done);
+            return;
+        }
+        int index = 0;
+        for (const auto &element : init.elements) {
+            if (element != nullptr && !terminated()) {
+                llvm::Value *slot = builder_.CreateInBoundsGEP(row, raw, llvm::ArrayRef<llvm::Value *>{const_i32(index)});
+                store_array(slot, row, *element, expr_loc(*element));
+            }
+            ++index;
+        }
+        return;
+    }
     if (repeat) {
         if (init.elements.size() != 1 || init.elements.front() == nullptr || count == nullptr) {
             error(init.loc, "type mismatch");
@@ -921,6 +961,32 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
             }
             store_init_fields(init->struct_id, raw, *init);
         }
+    } else if (buffer && size != 0 && low.type->isArrayTy() && low.struct_id >= 0 && low.depth == 0 &&
+               low.struct_id < static_cast<int>(structs_.size())) {
+        // `new [n][2]Point` writes the field values into each struct of each row.
+        std::unordered_set<int> probe;
+        if (struct_has_default(low.struct_id, probe)) {
+            if (llvm::Constant *image = default_struct(low.struct_id)) {
+                const auto wrap = [&](const auto &self, llvm::Type *type) -> llvm::Constant * {
+                    if (type == image->getType()) {
+                        return image;
+                    }
+                    auto *array = llvm::dyn_cast<llvm::ArrayType>(type);
+                    if (array == nullptr) {
+                        return nullptr;
+                    }
+                    llvm::Constant *inner = self(self, array->getElementType());
+                    if (inner == nullptr) {
+                        return nullptr;
+                    }
+                    return llvm::ConstantArray::get(
+                        array, std::vector<llvm::Constant *>(static_cast<std::size_t>(array->getNumElements()), inner));
+                };
+                if (llvm::Constant *row = wrap(wrap, low.type)) {
+                    store_each_element(raw, element_count, low.type, row);
+                }
+            }
+        }
     } else if (struct_object && size != 0) {
         if (buffer) {
             std::unordered_set<int> probe;
@@ -958,6 +1024,18 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
         result.array_len = -1;
         result.elem_slice = low.is_slice;
         result.inner_array_len = low.is_array ? low.array_len : low.inner_array_len;
+        // `new [n][2][2]i32` is `[][2][2]i32`, the same element a written slice of that type has.
+        if (!node.shells.empty()) {
+            std::vector<TypeShell> whole = node.shells;
+            TypeShell header;
+            header.kind = TypeShell::Kind::Slice;
+            whole.insert(whole.begin(), header);
+            const Lowered slice = lower(current_file_, node.type_name, node.type_package, node.is_struct,
+                                        node.indirections, false, 0, false, false, whole);
+            copy_element(result, slice);
+            result.depth = slice.depth;
+            result.elem_slice = slice.elem_slice;
+        }
         if (have_slice != nullptr && empty_slice != nullptr && empty_block != nullptr && !terminated()) {
             llvm::BasicBlock *filled = builder_.GetInsertBlock();
             builder_.CreateBr(have_slice);
@@ -984,6 +1062,26 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
         result.shells.insert(result.shells.begin(), shell);
         result.ptr_to_array = result.shells.size() >= 2 && result.shells[1].kind == TypeShell::Kind::Array;
         result.ptr_array_len = result.ptr_to_array ? result.shells[1].length : 0;
+        return result;
+    }
+    if (node.count_inferred && !node.shells.empty()) {
+        // `new [_][2]i32{...}` is `*[2][2]i32`, the same as a written pointer to that array.
+        std::vector<TypeShell> whole = node.shells;
+        TypeShell pointer;
+        pointer.kind = TypeShell::Kind::Pointer;
+        TypeShell array;
+        array.kind = TypeShell::Kind::Array;
+        array.length = list_len;
+        whole.insert(whole.begin(), array);
+        whole.insert(whole.begin(), pointer);
+        const Lowered target = lower(current_file_, node.type_name, node.type_package, node.is_struct,
+                                     node.indirections, false, 0, false, false, whole);
+        copy_element(result, target);
+        result.depth = target.depth;
+        result.ptr_to_array = target.ptr_to_array;
+        result.ptr_array_len = target.ptr_array_len;
+        result.inner_array_len = target.inner_array_len;
+        result.elem_slice = target.elem_slice;
         return result;
     }
     if (node.count_inferred) {

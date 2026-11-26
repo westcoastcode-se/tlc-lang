@@ -130,11 +130,7 @@ CodeGen::Lowered CodeGen::trait_fn_lowered(uint32_t file, const std::string &tra
                                   method.results.front().array_len > 0 && !method.results.front().is_fn_ptr;
         const Lowered ret =
             method.results.size() == 1 && method.results.front().is_fn_ptr
-                ? lower_fnptr(current_file_, method.results.front().type_name, method.results.front().type_package,
-                              method.results.front().is_struct, method.results.front().is_enum,
-                              method.results.front().ret_indirections, method.results.front().indirections,
-                              method.results.front().fn_params, method.results.front().fn_variadic,
-                              method.results.front().fn_results)
+                ? lower_fn_slot(current_file_, method.results.front())
                 : lower(current_file_, method.return_type, method.type_package, method.is_struct, method.indirections,
                         result_array, result_array ? method.results.front().array_len : 0, false);
         out.fn_ret_depth = ret.depth;

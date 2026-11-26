@@ -1,0 +1,18 @@
+// A file-scope `const` whose initializer folds is a struct field length, the same as inside a function.
+const N = 4;
+const M = N * 2;
+const W u8 = 3;
+
+type Buf struct {
+    head [N]u8;
+    rest [M]i32;
+    tail [W + 1]i16;
+}
+
+func main() i32 {
+    var b Buf;
+    var local [N]i32;
+    // The lengths are 4 + 8 + 4 + 4 = 20. `Buf` is 4 + 32 + 8 = 44 bytes.
+    var total = b.head.len + b.rest.len + b.tail.len + local.len;
+    return i32(total) + i32(sizeof(Buf)) - 22;
+}

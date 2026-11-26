@@ -1,0 +1,12 @@
+type Op func (i32) i32;
+func inc(n i32) i32 { return n + 1; }
+func main() i32 {
+    var n = 5;
+    var a = func (i32) i32(1);
+    var b = ?func (i32) i32(n);
+    var c = Op(7i64);
+    var ok = Op(*void(inc));
+    var ok2 = ?func (i32) i32(null);
+    var ok3 = func (i32) i32(inc);
+    return ok(41);
+}

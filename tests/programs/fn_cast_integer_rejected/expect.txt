@@ -1,0 +1,5 @@
+compile-error: main.tlc:5:13: error: type mismatch
+stderr:
+main.tlc:5:13: error: type mismatch
+main.tlc:6:13: error: type mismatch
+main.tlc:7:13: error: type mismatch

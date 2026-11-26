@@ -539,9 +539,28 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
         node.count_inferred = inferred;
         return make_expr(std::move(node));
     }
-    // `new [n][m]T` and `new [n][]T` allocate an element that is itself an array or a slice.
-    // The element of `new` is one named type. Report the form once instead of a cascade.
-    if (check(TokenKind::LBracket) && (count || inferred)) {
+    // `new [n][m]T` and `new [n][]T` allocate an element that is itself an array or a slice. The element is
+    // one written type, and its constructors are the shells.
+    bool element_written = false;
+    if (check(TokenKind::LBracket) && (count || inferred) && node.indirections == 0) {
+        const SourceLoc at = peek().loc;
+        const PlacedType element = parse_go_type();
+        if (element.is_fn_ptr || element.is_tuple || !element.type_args.empty() || element.type_name.empty()) {
+            // A function pointer, a tuple, or a generic struct as the element of an array element is not this form.
+            diags_.error(at, "not supported yet");
+            node.count = std::move(count);
+            node.count_inferred = inferred;
+            return make_expr(std::move(node));
+        }
+        node.type_name = element.type_name;
+        node.type_package = element.type_package;
+        node.is_struct = element.is_struct;
+        node.indirections = element.indirections;
+        node.optional = element.optional;
+        node.const_pointee = element.const_pointee;
+        node.shells = element.shells;
+        element_written = true;
+    } else if (check(TokenKind::LBracket) && (count || inferred)) {
         error_here("not supported yet");
         int bracket = 0;
         while (!eof() && !check(TokenKind::Semicolon) && !(bracket == 0 && check(TokenKind::RParen))) {
@@ -556,16 +575,7 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
         node.count_inferred = inferred;
         return make_expr(std::move(node));
     }
-    if (!check(TokenKind::Identifier)) {
-        error_here("expected a type");
-        node.count = std::move(count);
-        node.count_inferred = inferred;
-        return make_expr(std::move(node));
-    }
-    node.type_name = peek().text;
-    ++pos_;
-    if (eat(TokenKind::Dot)) {
-        node.type_package = node.type_name;
+    if (!element_written) {
         if (!check(TokenKind::Identifier)) {
             error_here("expected a type");
             node.count = std::move(count);
@@ -574,9 +584,20 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
         }
         node.type_name = peek().text;
         ++pos_;
-    }
-    if (check(TokenKind::Lt)) {
-        node.type_args = parse_type_args();
+        if (eat(TokenKind::Dot)) {
+            node.type_package = node.type_name;
+            if (!check(TokenKind::Identifier)) {
+                error_here("expected a type");
+                node.count = std::move(count);
+                node.count_inferred = inferred;
+                return make_expr(std::move(node));
+            }
+            node.type_name = peek().text;
+            ++pos_;
+        }
+        if (check(TokenKind::Lt)) {
+            node.type_args = parse_type_args();
+        }
     }
     // `new Point{.x = 1}` writes the named fields after the block is reserved.
     // `new [n]Point{{.x = 1}...}` repeats one element. `new [_]Point{{.x = 1}, {.y = 2}}` lists them.

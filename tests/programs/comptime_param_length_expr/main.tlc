@@ -1,0 +1,28 @@
+// A `comptime` parameter inside a length expression waits for the call, the same as `[n]`.
+func count(comptime n i32) i32 {
+    var a [n + 1]i32;
+    var b [n]i32;
+    return i32(a.len + b.len);
+}
+
+comptime func twice(comptime n i32) i32 {
+    var a [n * 2]i32;
+    return i32(a.len);
+}
+
+func fill(comptime n i32, value i32) [n + 1]i32 {
+    var out [n + 1]i32 = {0...};
+    for (var i = 0; i < n + 1; i += 1) {
+        out[i] = value;
+    }
+    return out;
+}
+
+func main() i32 {
+    // 4 + 3 = 7, 11 + 10 = 21, 8.
+    if (count(3) + count(10) + twice(4) != 36) {
+        return 1;
+    }
+    var r = fill(2, 13);
+    return r[0] + r[1] + r[2] + i32(r.len);
+}

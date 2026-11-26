@@ -1955,9 +1955,7 @@ bool CodeGen::infer_global(uint32_t file, const Expr &expr, Lowered &out) const 
         }
         const FunctionDecl &fn = *binding.decl;
         if (fn.results.size() == 1 && fn.results.front().is_fn_ptr) {
-            const ResultSlot &slot = fn.results.front();
-            return lower_fnptr(file, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.ret_indirections,
-                               slot.indirections, slot.fn_params, slot.fn_variadic, slot.fn_results);
+            return lower_fn_slot(file, fn.results.front());
         }
         if (fn.results.size() == 1 && fn.results.front().is_tuple && fn.results.front().indirections == 0) {
             // `*T` when `T` is `[2](i32, i32)` is that pointer. A bare tuple is the value.

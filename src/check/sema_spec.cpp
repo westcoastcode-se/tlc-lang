@@ -423,6 +423,13 @@ std::string Checker::specialize_tuple_alias(const TypedefDecl &templ, uint32_t o
     register_one_typedef(spec);
     Type made;
     const bool ok = package_typedef(owner, spec_name, made);
+    if (ok && made.alias_id > 0) {
+        std::string shown = templ.name + "<";
+        for (std::size_t i = 0; i < bounds.size(); ++i) {
+            shown += (i == 0 ? "" : ", ") + spec_arg_desc(bounds[i]);
+        }
+        alias_display_[made.alias_id] = shown + ">";
+    }
     if (ok) {
         // Codegen lays this out as a concrete tuple alias. The template itself is not one.
         PendingAppend appended;

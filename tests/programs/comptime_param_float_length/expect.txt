@@ -1,0 +1,4 @@
+compile-error: main.tlc:3:9: error: not supported yet
+stderr:
+main.tlc:3:9: error: not supported yet
+main.tlc:9:9: error: not supported yet

@@ -2522,6 +2522,28 @@ std::optional<CodeGen::SlicePieces> CodeGen::slice_pieces(const Expr &expr, std:
         pieces.length = static_cast<int32_t>(text->text.size());
         return pieces;
     }
+    if (const auto *list = std::get_if<Expr::Init>(&expr.data); list != nullptr && list->array_literal) {
+        // `var s []i32 = [_]i32{1, 2, 3}` at file scope. The elements live in a private array of their own.
+        const std::optional<Lowered> low = lower_array_literal(current_file_, *list);
+        auto *array_ty = low ? llvm::dyn_cast_or_null<llvm::ArrayType>(low->type) : nullptr;
+        if (array_ty == nullptr) {
+            return std::nullopt;
+        }
+        Binding flags;
+        apply_low(flags, *low);
+        llvm::Constant *data = fill_array(*list, array_ty, flags, true);
+        if (data == nullptr || data->getType() != array_ty) {
+            return std::nullopt;
+        }
+        auto *global =
+            new llvm::GlobalVariable(module_, array_ty, false, llvm::GlobalValue::PrivateLinkage, data, ".slice");
+        SlicePieces pieces;
+        pieces.element = array_ty->getElementType();
+        pieces.pointer = llvm::ConstantExpr::getInBoundsGetElementPtr(
+            array_ty, global, llvm::ArrayRef<llvm::Constant *>{const_i32(0), const_i32(0)});
+        pieces.length = static_cast<int32_t>(array_ty->getNumElements());
+        return pieces;
+    }
     if (const auto *index = std::get_if<Expr::Index>(&expr.data)) {
         // `numbers[i:j]` is the header of that array, shifted by `i` elements.
         // A missing low bound is 0. A missing high bound is the base length.

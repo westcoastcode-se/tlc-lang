@@ -1,0 +1,10 @@
+// A file-scope array element built from `const` names folds, the same as `var k = K * 2`.
+const K = 4;
+const M = K + 1;
+
+var a [4]i32 = {K, K * 2, -M, M * M - K};
+const fl [2]f64 = {f64(K), 0.5};
+
+func main() i32 {
+    return a[0] + a[1] + a[2] + a[3] + i32(fl[0] + fl[1] * 2.0) + 9;
+}

@@ -52,7 +52,14 @@ std::string DiagnosticEngine::render() const {
 std::string DiagnosticEngine::render(std::size_t limit) const {
     std::string out;
     std::size_t shown = 0;
+    const Diagnostic *last = nullptr;
     for (const Diagnostic &item : items_) {
+        // Two passes over one declaration can report the same thing. The copy right after it is not printed.
+        if (last != nullptr && last->loc.file == item.loc.file && last->loc.offset == item.loc.offset &&
+            last->message == item.message) {
+            continue;
+        }
+        last = &item;
         if (shown == limit) {
             out += "error: too many errors\n";
             break;

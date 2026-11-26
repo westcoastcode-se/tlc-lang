@@ -132,7 +132,22 @@ bool Checker::tuple_holds_fn(const Type &type) const {
         return false;
     }
     for (const Type &part : type.results) {
-        if (part.kind == TypeKind::Function || fn_pointer(part) || tuple_holds_fn(part)) {
+        // `([2]func (i32) i32, i32)` and `(*func (i32) i32, i32)` hold a function through the shell.
+        // A pointer can lead back to this tuple, so only an array leads into a nested one.
+        const Type *leaf = &part;
+        bool through_pointer = false;
+        for (int depth = 0; depth < 64; ++depth) {
+            if (leaf->kind == TypeKind::Array && leaf->element != nullptr) {
+                leaf = leaf->element.get();
+            } else if (leaf->kind == TypeKind::Pointer && leaf->pointee != nullptr && !fn_pointer(*leaf) &&
+                       leaf->pointee->kind != TypeKind::Function) {
+                leaf = leaf->pointee.get();
+                through_pointer = true;
+            } else {
+                break;
+            }
+        }
+        if (leaf->kind == TypeKind::Function || fn_pointer(*leaf) || (!through_pointer && tuple_holds_fn(*leaf))) {
             return true;
         }
     }
@@ -208,9 +223,17 @@ Type Checker::type_of_fn_param(const FnParam &param, SourceLoc loc, bool paramet
         prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum,
                         written.ret_indirections, written.ret_optional, is_array, array_len, array_len_name,
                         written.type_args, loc);
-        return fn_optional(type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum, param.ret_indirections,
-                              param.indirections, param.params, param.variadic, param.results, loc, param.ret_optional,
-                              param.ret_const_pointee), param.optional);
+        Type pointer = fn_optional(type_of_fn_ptr(param.type_name, param.type_package, param.is_struct, param.is_enum,
+                                                  param.ret_indirections, param.indirections, param.params,
+                                                  param.variadic, param.results, loc, param.ret_optional,
+                                                  param.ret_const_pointee),
+                                   param.optional);
+        // `func ([2]func (i32) i32) i32` and `func (*func (i32) i32) i32`. The shells wrap the pointer.
+        if (written.shells.empty()) {
+            return pointer;
+        }
+        fold_shells(written.shells, loc);
+        return fn_shells(std::move(pointer), written.shells, loc, parameter);
     }
     prepare_written(written.type_name, written.type_package, written.is_struct, written.is_enum, written.indirections,
                     written.optional, written.is_array, written.array_len, array_len_name, written.type_args, loc);
@@ -263,8 +286,8 @@ Type Checker::type_of_fn_ptr(const std::string &ret_name, const std::string &ret
         }
         result = type_tuple(std::move(parts));
     } else if (results.size() == 1 && results.front().is_fn_ptr) {
-        // `func (i32) func (i32) i32`. The result is that pointer, not the flattened name.
-        result = type_of_fn_param(results.front(), loc);
+        // `func (i32) func (i32) i32`. The result is that pointer, not the flattened name. `[2]func` stays an array.
+        result = type_of_fn_param(results.front(), loc, false);
     } else {
         // Same result spelling as a function result, so `void` and a bare struct tag stay valid.
         result = ret_struct || ret_enum || !ret_package.empty()
@@ -613,9 +636,13 @@ Type Checker::type_of_result(const ResultSlot &slot, SourceLoc loc, bool allow_i
                     true);
     fold_shells(written.shells, loc);
     if (slot.is_fn_ptr) {
-        return fn_optional(type_of_fn_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum, slot.ret_indirections,
-                              slot.indirections, slot.fn_params, slot.fn_variadic, slot.fn_results, loc,
-                              slot.ret_optional, slot.ret_const_pointee), slot.optional);
+        Type pointer = fn_optional(type_of_fn_ptr(slot.type_name, slot.type_package, slot.is_struct, slot.is_enum,
+                                                  slot.ret_indirections, slot.indirections, slot.fn_params,
+                                                  slot.fn_variadic, slot.fn_results, loc, slot.ret_optional,
+                                                  slot.ret_const_pointee),
+                                   slot.optional);
+        // `func f() [2]func (i32) i32` and the tuple element `([2]func (i32) i32, i32)`.
+        return written.shells.empty() ? pointer : fn_shells(std::move(pointer), written.shells, loc);
     }
     if (slot.is_array || !written.shells.empty()) {
         return object_type(slot.type_name, slot.indirections, true, slot.array_len, loc, false, slot.type_package,

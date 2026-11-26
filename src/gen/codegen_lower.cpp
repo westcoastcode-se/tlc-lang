@@ -225,6 +225,10 @@ CodeGen::Lowered CodeGen::lower_result(uint32_t file, const ResultSlot &slot) co
         return lower_tuple_shaped(file, slot.tuple_parts, slot.shells, slot.indirections, slot.optional, slot.is_array,
                                   slot.array_len, false);
     }
+    // `func f() [2]func (i32) i32`. `type_name` is the result of that function, not this slot.
+    if (slot.is_fn_ptr) {
+        return lower_fn_slot(file, slot);
+    }
     // A slice is `array_len < 0`. A sized array keeps its length. Zero is not an array.
     const bool array = slot.is_array && !slot.is_fn_ptr && slot.array_len != 0;
     return lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections, array,
@@ -270,11 +274,7 @@ llvm::FunctionType *CodeGen::function_type(const FunctionDecl &fn, uint32_t file
             return lower_tuple_parts(file, fn.results.front().tuple_parts);
         }
         if (fn.results.size() == 1 && fn.results.front().is_fn_ptr) {
-            return lower_fnptr(file, fn.results.front().type_name, fn.results.front().type_package,
-                               fn.results.front().is_struct, fn.results.front().is_enum,
-                               fn.results.front().ret_indirections, fn.results.front().indirections,
-                               fn.results.front().fn_params, fn.results.front().fn_variadic,
-                               fn.results.front().fn_results);
+            return lower_fn_slot(file, fn.results.front());
         }
         if (shaped) {
             return lower_result(file, fn.results.front());
@@ -587,11 +587,7 @@ bool CodeGen::make_tuple_alias(uint32_t file, const TypedefDecl &item, Alias &ou
     for (const ResultSlot &slot : item.tuple_parts) {
         // A part may itself be a tuple, an array of one, or a pointer to one. `lower_result` lowers each
         // the same way a variable of that part does, so the alias and `var x ((i32, f64), f64)` agree.
-        const Lowered part =
-            slot.is_fn_ptr ? lower_fnptr(file, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum,
-                                         slot.ret_indirections, slot.indirections, slot.fn_params, slot.fn_variadic,
-                                         slot.fn_results)
-                           : lower_result(file, slot);
+        const Lowered part = slot.is_fn_ptr ? lower_fn_slot(file, slot) : lower_result(file, slot);
         llvm::Type *type = stored_type(part);
         if (type == nullptr || !type->isSized()) {
             return false;
@@ -1112,9 +1108,7 @@ CodeGen::Lowered CodeGen::lower_tuple_parts(uint32_t file, const std::vector<Res
         const Lowered part =
             slot.is_tuple ? lower_result(file, slot)
             : slot.is_fn_ptr
-                ? lower_fnptr(file, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum,
-                              slot.ret_indirections, slot.indirections, slot.fn_params, slot.fn_variadic,
-                              slot.fn_results)
+                ? lower_fn_slot(file, slot)
                 : lower(file, slot.type_name, slot.type_package, slot.is_struct, slot.indirections, slot.is_array,
                         slot.array_len, false, slot.elem_slice, slot.shells);
         llvm::Type *type = stored_type(part);
@@ -1231,6 +1225,13 @@ CodeGen::Lowered CodeGen::lower_declared(uint32_t file, const VarDecl &var) cons
     return low;
 }
 
+CodeGen::Lowered CodeGen::lower_fn_slot(uint32_t file, const ResultSlot &slot, bool parameter) const {
+    Lowered leaf = lower_fnptr(file, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum,
+                               slot.ret_indirections, slot.indirections, slot.fn_params, slot.fn_variadic,
+                               slot.fn_results);
+    return slot.shells.empty() ? leaf : compose_shells(std::move(leaf), slot.shells, parameter);
+}
+
 CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name, const std::string &ret_package,
                                       bool ret_struct, bool ret_enum, int ret_indirections, int fn_depth,
                                       const std::vector<FnParam> &params, bool variadic,
@@ -1256,8 +1257,11 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
             return tuple;
         }
         if (part.is_fn_ptr) {
-            return lower_fnptr(file, part.type_name, part.type_package, part.is_struct, part.is_enum,
-                               part.ret_indirections, part.indirections, part.params, part.variadic, part.results);
+            Lowered leaf = lower_fnptr(file, part.type_name, part.type_package, part.is_struct, part.is_enum,
+                                       part.ret_indirections, part.indirections, part.params, part.variadic,
+                                       part.results);
+            // `func (*func (i32) i32) i32` and `func ([2]func (i32) i32) i32`. A parameter array decays.
+            return part.shells.empty() ? leaf : compose_shells(std::move(leaf), part.shells, parameter);
         }
         const bool slice = part.is_array && part.array_len < 0;
         return lower(file, part.type_name, part.type_package, part.is_struct, part.indirections, slice,
@@ -1308,6 +1312,14 @@ CodeGen::Lowered CodeGen::lower_fnptr(uint32_t file, const std::string &ret_name
             fields.push_back(stored_type(lower_part(lower_part, part, false)));
         }
         out.fn_ty = llvm::FunctionType::get(llvm::StructType::get(context_, fields), args, variadic);
+        out.fn_results = results;
+        return out;
+    }
+    if (results.size() == 1 && results.front().is_fn_ptr && !results.front().shells.empty()) {
+        // `func () [2]func (i32) i32` returns that array, the same type a declared function returns.
+        const Lowered ret = lower_part(lower_part, results.front(), false);
+        out.fn_ty = llvm::FunctionType::get(stored_type(ret), args, variadic);
+        out.fn_ret_depth = ret.depth;
         out.fn_results = results;
         return out;
     }

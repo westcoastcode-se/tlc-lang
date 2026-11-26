@@ -350,6 +350,8 @@ class Checker {
     std::unordered_map<uint32_t, std::unordered_map<std::string, Type>> typedefs_;
     // alias_names_[id] is the source name of a `type Name T`. Index 0 is unused.
     std::vector<std::string> alias_names_{""};
+    // A message spells `Pair<i32>`, the alias as written, where `alias_names_` holds `Pair.spec.i32`.
+    std::unordered_map<int, std::string> alias_display_;
     // alias_file_[id] is the file that wrote that alias. Index 0 is unused.
     std::vector<uint32_t> alias_file_{0};
     // The type an alias names, one step. The outer alias id is not on this type.
@@ -1335,6 +1337,8 @@ class Checker {
     struct ConstBinding {
         int value = 0;
         bool is_static = false;
+        // `comptime const on = true` folds to 1 and is no array length.
+        bool is_bool = false;
     };
 
     TranslationUnit *primary_unit_ = nullptr;
@@ -1351,6 +1355,15 @@ class Checker {
     // `type Seq<T type> trait`. The decl stays in the unit. A use `Seq<i32>` builds one trait.
     std::unordered_map<uint32_t, std::unordered_map<std::string, const TraitDecl *>> trait_templates_;
     std::unordered_map<uint32_t, std::unordered_map<std::string, ConstBinding>> const_values_;
+    // A file-scope `const N = 4` without `comptime`, folded before types so `buf [N]u8` in a struct field is
+    // that length. The name stays a runtime `const`, so only a length reads this table.
+    std::unordered_map<uint32_t, std::unordered_map<std::string, ConstBinding>> early_lengths_;
+    enum class ConstTableRef { Early, Values };
+    // The binding of `name` in this file, or a non-static one in another file of the package.
+    const ConstBinding *file_binding(ConstTableRef table, const std::string &name) const;
+    std::optional<int> early_length(const std::string &name) const;
+    // A file-scope constant that folded to a `bool`, seen before the globals are declared.
+    bool early_bool(const std::string &name) const;
     std::deque<OwnedFn> deferred_methods_;
     // `func Vec<T>::get<U type>` after `Vec` is specialized. `U` is still open.
     // Pointers into this deque stay valid. Codegen does not emit these copies.
@@ -1557,6 +1570,8 @@ class Checker {
     FileConst file_constant(const Expr &expr, std::unordered_set<std::string> &seen, bool allow_var);
     // A file-scope `f32` or `f64`. A `var` may copy another global's initializer.
     bool accept_file_scalar(const VarDecl &var, const Type &type);
+    // `K * 2` and `f64(K)` built from literals and file-scope `const` names only.
+    bool const_parts(const Expr &expr, int depth);
     // `expr` is built from constants and places in file-scope variables, `w.f + 1.0` and `f64(row[at])`.
     bool reads_globals(const Expr &expr);
     const VarDecl *global_var(const std::string &name);

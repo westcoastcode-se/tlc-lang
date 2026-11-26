@@ -1584,6 +1584,14 @@ Checked check_buffer(const std::string &path, const std::string &text, const std
 
     for (std::size_t index = 0; index < diags.items().size(); ++index) {
         const Diagnostic &item = diags.items()[index];
+        // The same report twice in a row is shown once, as on the command line.
+        if (index > 0) {
+            const Diagnostic &before = diags.items()[index - 1];
+            if (before.loc.file == item.loc.file && before.loc.offset == item.loc.offset &&
+                before.message == item.message) {
+                continue;
+            }
+        }
         if (index >= parsed && !broken.empty()) {
             if (std::find(broken.begin(), broken.end(), item.loc.file) != broken.end()) {
                 continue;

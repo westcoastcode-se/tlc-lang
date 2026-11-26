@@ -1,0 +1,1 @@
+compile-error: main.tlc:2:9: error: array length must be >= 0

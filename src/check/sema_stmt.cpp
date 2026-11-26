@@ -3751,7 +3751,11 @@ void Checker::check_stmt(const Stmt &stmt) {
                     const bool outer = !var.is_const_decl && !same_block && lookup(var.name) != nullptr;
                     const bool sees_previous = same_block || outer;
                     const auto *list = var.init == nullptr ? nullptr : std::get_if<Expr::Init>(&var.init->data);
-                    const bool array_list = var.is_array && !var.ptr_to_array && list != nullptr && !list->elements.empty();
+                    // `{0...}` alone stores zero in every element. `{}` stores none.
+                    const bool array_list =
+                        var.is_array && !var.ptr_to_array && list != nullptr &&
+                        (!list->elements.empty() ||
+                         (list->fields.empty() && !list->array_literal && list->type_name.empty()));
                     const bool slice = var.is_array && !var.ptr_to_array && var.array_len < 0;
                     const bool array_value = var.is_array && !var.ptr_to_array && var.array_len > 0 &&
                                              var.init != nullptr && list == nullptr;
@@ -3957,6 +3961,17 @@ bool Checker::expr_mentions_name(const Expr &expr, const std::string &name) cons
         expr.data);
 }
 
+namespace {
+
+// `comptime n f64` and `comptime p *i32` are never a length, so `[n]i32` does not wait for them.
+bool integer_param(const Param &param) {
+    return param.type_name != "f32" && param.type_name != "f64" && param.type_name != "bool" &&
+           param.indirections == 0 && param.optional == 0 && !param.is_array && !param.is_tuple &&
+           !param.is_struct && param.shells.empty();
+}
+
+} // namespace
+
 bool Checker::length_waits(const std::string &name) {
     if (name.empty()) {
         return false;
@@ -3973,7 +3988,7 @@ bool Checker::length_waits(const std::string &name) {
     }
     for (const Param &param : checking_.back()->params) {
         if (param.name == name) {
-            return true;
+            return integer_param(param);
         }
     }
     return false;
@@ -3991,7 +4006,7 @@ bool Checker::value_name_waits(const std::string &name) {
     }
     for (const Param &param : checking_.back()->params) {
         if (param.is_comptime && param.name == name) {
-            return true;
+            return integer_param(param);
         }
     }
     return false;
@@ -4077,6 +4092,44 @@ bool Checker::bind_array_lengths(Stmt &stmt, const std::vector<std::string> &nam
         // `comptime const k = n` then `[k]T`. The recheck folds `k`.
         wrote = true;
     };
+    // `[n + 1]i32` once the call wrote `n`. The expression is shared with the template, so the copy only drops
+    // its own pointer.
+    auto apply_expr = [&](TypeShell &shell, SourceLoc loc) {
+        if (negative || std::holds_alternative<Expr::Sizeof>(shell.length_expr->data)) {
+            return;
+        }
+        std::vector<std::string> used;
+        std::vector<const Expr *> values;
+        for (std::size_t i = 0; i < names.size() && i < exprs.size(); ++i) {
+            if (exprs[i] != nullptr && expr_mentions_name(*shell.length_expr, names[i])) {
+                used.push_back(names[i]);
+                values.push_back(exprs[i]);
+            }
+        }
+        if (used.empty()) {
+            return;
+        }
+        std::unique_ptr<Expr> copy = clone_expr(*shell.length_expr);
+        replace_names(copy, used, values);
+        std::optional<int> value = fold_int(*copy);
+        if (!value) {
+            value = fold_length_expr(*copy);
+        }
+        if (!value) {
+            // `comptime const k = n` then `[k + 1]T`. The recheck folds `k`.
+            shell.length_expr = std::shared_ptr<Expr>(std::move(copy));
+            wrote = true;
+            return;
+        }
+        if (*value < 0) {
+            error(loc, kArrayLength);
+            negative = true;
+            return;
+        }
+        shell.length = *value;
+        shell.length_expr.reset();
+        wrote = true;
+    };
     auto walk = [&](auto &&self, Stmt &node) -> void {
         if (negative) {
             return;
@@ -4094,7 +4147,9 @@ bool Checker::bind_array_lengths(Stmt &stmt, const std::vector<std::string> &nam
                     for (VarDecl &var : item.vars) {
                         apply(var.array_len, var.array_len_name, var.loc);
                         for (TypeShell &shell : var.shells) {
-                            if (shell.kind == TypeShell::Kind::Array) {
+                            if (shell.kind == TypeShell::Kind::Array && shell.length_expr != nullptr) {
+                                apply_expr(shell, var.loc);
+                            } else if (shell.kind == TypeShell::Kind::Array) {
                                 apply(shell.length, shell.length_name, var.loc);
                             }
                         }

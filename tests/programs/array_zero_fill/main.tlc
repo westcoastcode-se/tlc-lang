@@ -1,0 +1,22 @@
+// `{0...}` alone stores zero in every element of an array. `{}` stores none.
+type Point struct { x i32 = 5; y i32; }
+
+var g [3]i32 = {0...};
+var h [2]Point = {0...};
+var k [3]i32 = {};
+
+func main() i32 {
+    var a [4]Point = {0...};
+    var b [2][3]i32 = {0...};
+    var c [2]?*i32 = {0...};
+    var d [3]f64 = {0...};
+    var e [0]i32 = {};
+    var f [2]i32 = {};
+    f[0] = 1;
+    f[1] = 2;
+    var total = a[3].x + a[0].y + b[1][2] + g[2] + h[1].x + k[2] + i32(d[2]) + f[0] + f[1] + i32(e.len);
+    if (c[1] == null) {
+        total += 39;
+    }
+    return total;
+}

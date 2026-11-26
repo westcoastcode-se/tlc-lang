@@ -1,0 +1,5 @@
+compile-error: main.tlc:9:22: error: type mismatch: expected Ptr<i32>, found *i32
+stderr:
+main.tlc:9:22: error: type mismatch: expected Ptr<i32>, found *i32
+main.tlc:11:22: error: type mismatch: expected Row<i32>, found [4]i32
+main.tlc:12:22: error: type mismatch: expected *i32, found Ptr<i32>

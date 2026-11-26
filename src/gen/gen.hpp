@@ -1648,6 +1648,8 @@ class CodeGen {
     Lowered lower_fnptr(uint32_t file, const std::string &ret_name, const std::string &ret_package, bool ret_struct,
                         bool ret_enum, int ret_indirections, int fn_depth, const std::vector<FnParam> &params,
                         bool variadic, const std::vector<FnParam> &results) const;
+    // A function pointer result or tuple element with its shells, `[2]func (i32) i32` or `*func (i32) i32`.
+    Lowered lower_fn_slot(uint32_t file, const ResultSlot &slot, bool parameter = false) const;
     Lowered lower_param_type(uint32_t file, const Param &param) const;
     // A by-value tuple, including `type Duo (i32, i32)`. A pointer, an array, and a
     // nested tuple element stay one argument. `extern(abi="c")` does not ask.

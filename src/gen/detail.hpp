@@ -52,8 +52,8 @@ inline TypedValue decay_outer_array(TypedValue array) {
     return array;
 }
 
-template <typename Sig>
-void copy_fn_sig(TypedValue &out, const Sig &src) {
+template <typename Out, typename Sig>
+void copy_fn_sig(Out &out, const Sig &src) {
     out.fn_ty = src.fn_ty;
     out.fn_ret_depth = src.fn_ret_depth;
     out.fn_ret_float = src.fn_ret_float;

@@ -116,7 +116,7 @@ A bracket list on `type` is type parameters when `struct`, `trait`, `union`, a t
 
 `type Name<T type> enum` is not a form and is reported as `not supported yet`. `type Num<T type> union` is that union. `Num<i32>` names it.
 
-`type Name<T type> i32` and `type Name<T type> (i32)` are `unused parameter` because `T` is not used. `type Name<T type> *T` is `not supported yet`.
+`type Name<T type> i32`, `type Name<T type> (i32)`, and `type Name<T type> *i32` are `unused parameter` because `T` is not used.
 
 `type Pair<T type> (i32, i32)` and `type MyAlias<T type> Vec<i32>` are that error. A method on the alias counts, and so does an associated variable. Repeating the parameter list does not.
 
@@ -133,6 +133,12 @@ A cast confirms the type: `Name<i32>(42)` and `i32(n)`. `var n Name<i32> = 42` a
 `Name<Vec<i32>>` is a different type from `Vec<i32>`. `Name<*i32>` is that pointer. `Name<[4]i32>` is that array, and `Name<[]i32>` is that slice.
 
 `Name<Duo>` is a different type from `Duo` and from `Name<Pair>`. `(T)` is a tuple of one element, so `type Name<T type> (T)` is an alias of that tuple and uses `T`. `Name<i32>((42))` names it, and `n[0]` reads the element.
+
+### An alias of a pointer or an array
+
+`type Ptr<T type> *T`, `type Maybe<T type> ?*T`, `type Row<T type> [4]T`, `type Items<T type> []T`, and `type Buf<N i32> [N]u8` name that pointer, array, or slice once the arguments are written. `type Grid<T type, N i32> [N][N]T` takes both. `type MyAlias<T type> *Vec<T>` points at that specialization.
+
+Each use is an alias, the same as the alias written out: `Ptr<i32>` follows `type Ptr *i32`. `var p Ptr<i32> = &n` is `type mismatch: expected Ptr<i32>, found *i32`, and `Ptr<i32>(&n)` converts. `Row<i32>` is a different type from `[4]i32`. `r[3]`, `b.len`, and `pp.y` read through the alias.
 
 ### An alias of a specialization
 

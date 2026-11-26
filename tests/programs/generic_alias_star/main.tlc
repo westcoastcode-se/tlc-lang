@@ -5,5 +5,7 @@ type Vec<T type> struct {
 type MyAlias<T type> *Vec<T>;
 
 func main() i32 {
-    return 0;
+    var v = Vec<i32>{.n = 42};
+    var p = MyAlias<i32>(&v);
+    return p.n;
 }

@@ -3066,13 +3066,18 @@ void Checker::register_tuple_alias_template(const TypedefDecl &item) {
             }
         }
     }
-    if ((!item.is_tuple || item.tuple_parts.empty()) && !application && !parameter) {
+    // `type Ptr<T type> *T`, `type Row<T type> [4]T`, and `type Buf<N i32> [N]u8`. Each use is the alias that
+    // substitution writes, the same as `type Ptr *i32` written out.
+    const bool shaped = !item.is_tuple && !item.is_fn_ptr && !item.type_name.empty() &&
+                        (item.indirections > 0 || item.is_array || !item.shells.empty());
+    if ((!item.is_tuple || item.tuple_parts.empty()) && !application && !parameter && !shaped) {
         error(item.loc, "not supported yet");
         return;
     }
     for (const TypeParam &param : item.type_params) {
-        // `N i32` is only a type application, `Buf<N>`. A trait constraint stays rejected.
-        if (param.is_pack || param.is_trait || (!param.is_type && !param.is_value) || (param.is_value && !application)) {
+        // `N i32` is a type application, `Buf<N>`, or a length, `[N]u8`. A trait constraint stays rejected.
+        if (param.is_pack || param.is_trait || (!param.is_type && !param.is_value) ||
+            (param.is_value && !application && !shaped)) {
             error(item.loc, "not supported yet");
             return;
         }
@@ -3552,7 +3557,37 @@ Type Checker::object_type_unchecked(const std::string &name, int indirections, b
         bool waiting = false;
         bool ordinary = false;
         bool failed = false;
+        // `[n + 1]` waits on each name it reads, the same way `[n]` waits on its name.
+        auto expr_waits = [&](const Expr &length) {
+            std::vector<std::string> names;
+            if (!pending_comptime_index_.empty()) {
+                names.push_back(pending_comptime_index_);
+            }
+            if (!checking_.empty() && checking_.back() != nullptr) {
+                for (const Param &param : checking_.back()->params) {
+                    names.push_back(param.name);
+                }
+            }
+            for (const std::string &name : names) {
+                if (name.empty() || !expr_mentions_name(length, name)) {
+                    continue;
+                }
+                if (length_waits(name)) {
+                    waiting = true;
+                } else if (baked_comptime_params() && value_name_waits(name)) {
+                    waiting = true;
+                    ordinary = true;
+                } else if (!variable && value_name_waits(name) && !checking_.empty() &&
+                           checking_.back() != nullptr && comptime_param_template(*checking_.back())) {
+                    waiting = true;
+                }
+            }
+        };
         for (const TypeShell &shell : shells) {
+            if (shell.kind == TypeShell::Kind::Array && shell.length_name.empty() && shell.length_expr != nullptr) {
+                expr_waits(*shell.length_expr);
+                continue;
+            }
             if (shell.kind != TypeShell::Kind::Array || shell.length_name.empty()) {
                 continue;
             }
@@ -3642,6 +3677,11 @@ Checker::TypeFacts Checker::classify_type_facts(const Type &type) const {
 
 std::string Checker::type_desc(const Type &type, bool display) const {
     if (type.alias_id > 0 && static_cast<std::size_t>(type.alias_id) < alias_names_.size()) {
+        if (display) {
+            if (const auto shown = alias_display_.find(type.alias_id); shown != alias_display_.end()) {
+                return shown->second;
+            }
+        }
         return alias_names_[static_cast<std::size_t>(type.alias_id)];
     }
     // `typeof` without `import "builtin"` is still named `Type`.

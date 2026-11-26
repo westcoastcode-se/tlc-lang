@@ -1103,6 +1103,26 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         }
         return load_object(call.abi_slot, 0, false, call.abi_struct_id, false, false, 0, false, false);
     }
+    // `func ops() [2]func (i32) i32` and `[]func (i32) i32`, called by name or through a pointer. Each element is a
+    // function pointer with that signature.
+    auto fn_shelled = [&]() -> std::optional<Lowered> {
+        if (call.decl != nullptr) {
+            if (call.decl->results.size() == 1 && call.decl->results.front().is_fn_ptr &&
+                !call.decl->results.front().shells.empty()) {
+                return lower_fn_slot(current_file_, call.decl->results.front());
+            }
+            return std::nullopt;
+        }
+        if (call.fn_results.size() == 1 && call.fn_results.front().is_fn_ptr &&
+            !call.fn_results.front().shells.empty()) {
+            const FnParam &part = call.fn_results.front();
+            Lowered leaf = lower_fnptr(current_file_, part.type_name, part.type_package, part.is_struct, part.is_enum,
+                                       part.ret_indirections, part.indirections, part.params, part.variadic,
+                                       part.results);
+            return compose_shells(std::move(leaf), part.shells, false);
+        }
+        return std::nullopt;
+    };
     if (inst->getType() == slice_type()) {
         TypedValue result{inst, call.depth, call.elem_char, call.struct_id, false, call.elem_void, call.elem_bool,
                           call.elem_bits, call.elem_unsigned};
@@ -1110,6 +1130,11 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         result.array_len = -1;
         result.elem_float = call.elem_float;
         result.enum_id = call.enum_id;
+        if (const std::optional<Lowered> low = fn_shelled()) {
+            copy_element(result, *low);
+            result.depth = low->depth;
+            return result;
+        }
         auto stamp_alias = [&](const std::string &name, const std::string &package, bool is_struct, int indirections,
                                bool elem_slice, const std::vector<TypeShell> &shells) {
             const Lowered low = lower(current_file_, name, package, is_struct, indirections, false, 0, false, elem_slice,
@@ -1186,6 +1211,16 @@ TypedValue CodeGen::emit_prepared(const PreparedCall &call) {
         // A decayed array, as a local one is: the length is the outer dimension.
         result.array_len = static_cast<int>(array_ty->getNumElements());
         // The address is the first row. Shells after the outer array are that row, as on a local.
+        if (const std::optional<Lowered> low = fn_shelled()) {
+            copy_element(result, *low);
+            result.shells.clear();
+            if (!low->shells.empty() && low->shells.front().kind == TypeShell::Kind::Array) {
+                result.shells.assign(low->shells.begin() + 1, low->shells.end());
+            }
+            result.depth = low->depth + 1;
+            result.array_type = array_ty;
+            return result;
+        }
         if (call.decl != nullptr && call.decl->results.size() == 1) {
             const std::vector<TypeShell> &shells = call.decl->results.front().shells;
             if (!shells.empty() && shells.front().kind == TypeShell::Kind::Array) {
@@ -1389,9 +1424,18 @@ void CodeGen::attach_returned_fn(TypedValue &value, const FunctionDecl *decl) co
         return;
     }
     const ResultSlot &slot = decl->results.front();
-    const Lowered ret = lower_fnptr(current_file_, slot.type_name, slot.type_package, slot.is_struct, slot.is_enum,
-                                     slot.ret_indirections, slot.indirections, slot.fn_params, slot.fn_variadic,
-                                     slot.fn_results);
+    const Lowered ret = lower_fn_slot(current_file_, slot);
+    if (!slot.shells.empty()) {
+        // `func ops() [2]func (i32) i32`. The value is that array, and each element carries the signature.
+        copy_element(value, ret);
+        value.depth = ret.depth;
+        value.is_array = ret.is_array;
+        value.array_len = ret.array_len;
+        value.is_slice = ret.is_slice;
+        value.ptr_to_array = ret.ptr_to_array;
+        value.ptr_array_len = ret.ptr_array_len;
+        return;
+    }
     value.depth = ret.depth;
     value.elem_char = false;
     value.elem_void = false;

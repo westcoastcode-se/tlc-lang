@@ -76,6 +76,8 @@ A `?*T` field that is left out is null when the field has no value.
 
 `new [0]T` is an empty slice. `.len` is 0. The call does not allocate.
 
+The element may itself be an array or a slice. `new [n][4]i32` yields `[][4]i32`, `new [n][]i32` yields `[][]i32`, and `new [n][2][2]i32` yields `[][2][2]i32`. A length in the element is any length a written type takes, such as `[K]` for a folded `const`. `new [n][2]i32{{4, 6}...}` stores that row in every element, and `new [_][2]i32{{1, 2}, {3, 4}}` yields `*[2][2]i32`. `new [n][2]Point` stores each field of each struct. An element that holds a `*T`, `new [n][2]*i32`, is `type mismatch`, the same as `new [n]*i32`. A function pointer, a tuple, or a generic struct inside that element, `new [n][2]func (i32) i32`, is `not supported yet`.
+
 The count is any integer. The length of the slice is that count as an `i64`, so `new [3000000000]u8` is that many bytes.
 
 A negative constant, including a negative `i64`, is `type mismatch`. A negative count that is not a constant calls `builtin.panic("count must be positive")`.

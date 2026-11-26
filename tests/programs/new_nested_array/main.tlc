@@ -1,5 +1,9 @@
 func main() i32 {
     var n = 2;
     var rows = new [n][2]i32;
-    return 0;
+    rows[1][1] = 40;
+    rows[0][0] = 2;
+    var total = rows[1][1] + rows[0][0];
+    delete rows;
+    return total;
 }

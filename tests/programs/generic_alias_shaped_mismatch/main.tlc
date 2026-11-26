@@ -1,0 +1,14 @@
+// `Ptr<i32>` is its own type, the same as `type Ptr *i32` written out. A cast converts.
+type Ptr<T type> *T;
+type Row<T type> [4]T;
+
+func take_ptr(p *i32) i32 { return *p; }
+
+func main() i32 {
+    var n = 40;
+    var a Ptr<i32> = &n;
+    var plain [4]i32 = {1, 2, 3, 4};
+    var c Row<i32> = plain;
+    var f = take_ptr(Ptr<i32>(&n));
+    return 0;
+}

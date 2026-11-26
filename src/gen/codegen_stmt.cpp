@@ -1349,6 +1349,10 @@ void CodeGen::emit_for_each(const Stmt::For &node) {
     item.elem_bits = slot_bits;
     item.elem_unsigned = slot_unsigned;
     item.elem_float = slot_float;
+    // `for (var f : ops)` over `[2]func (i32) i32` or `[]func (i32) i32`. Each element is that function pointer.
+    if (!want_ref && !struct_value && base.fn_ty != nullptr) {
+        copy_fn_sig(item, base);
+    }
     scopes_.back()[node.each_name] = item;
     llvm::BasicBlock *cond_block = llvm::BasicBlock::Create(context_, "each.cond", function_);
     llvm::BasicBlock *body_block = llvm::BasicBlock::Create(context_, "each.body", function_);

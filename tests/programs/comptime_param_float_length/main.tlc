@@ -1,0 +1,16 @@
+// A `comptime` parameter that is not an integer is no array length. The call is not compiled and run with it.
+func last(comptime n f64) i32 {
+    var r [n]i32;
+    r[0] = 1;
+    return r[0];
+}
+
+comptime func first(n f64) i32 {
+    var r [n]i32;
+    r[0] = 1;
+    return r[0];
+}
+
+func main() i32 {
+    return last(3.0) + first(3e9);
+}

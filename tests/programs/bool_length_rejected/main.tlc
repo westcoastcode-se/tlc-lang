@@ -1,0 +1,10 @@
+const on = true;
+comptime const yes = true;
+
+type A struct { a [on]u8; }
+type B struct { b [yes]u8; }
+
+func main() i32 {
+    var c [yes]i32;
+    return 0;
+}

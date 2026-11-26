@@ -1,0 +1,22 @@
+// A file-scope slice of an array literal points at a private array of its own.
+type Point struct { x i32 = 3; y i32; }
+
+const K = 4;
+var n = 3;
+
+var s []i32 = [_]i32{10, 20, 12};
+const c []const i32 = [_]i32{1, 2};
+var t []i32 = [_]i32{5, 6, 7}[1:];
+var pts []Point = [_]Point{{.y = 1}, {.x = 5, .y = 2}};
+var rows [][2]i32 = [_][2]i32{{1, 2}, {3, 4}};
+var ks []i32 = [_]i32{K, K * 2};
+var copied []i32 = [_]i32{n, 2};
+
+func main() i32 {
+    s[0] = 9;
+    n = 100;
+    var total = s[0] + s[1] + s[2] + c[1] + i32(t.len) + t[0];  // 9 + 20 + 12 + 2 + 2 + 6 = 51
+    total += pts[0].x + pts[1].x + pts[1].y + rows[1][0];       // 3 + 5 + 2 + 3 = 13
+    total += ks[1] + copied[0];                                  // 8 + 3 = 11
+    return total - 33;
+}

@@ -1,0 +1,51 @@
+// A function pointer with shells is a result and a parameter inside a function type.
+func inc(n i32) i32 { return n + 1; }
+func dbl(n i32) i32 { return n * 2; }
+
+var table [2]func (i32) i32 = {inc, dbl};
+var maybe [2]?func (i32) i32 = {inc, null};
+
+func ops() [2]func (i32) i32 { return table; }
+func slice() []func (i32) i32 { return table[:]; }
+func first() *func (i32) i32 { return &table[0]; }
+func opt() [2]?func (i32) i32 { return maybe; }
+
+func sum(row []func (i32) i32, n i32) i32 {
+    var total = 0;
+    for (var f : row) {
+        total += f(n);
+    }
+    return total;
+}
+
+func call(p *func (i32) i32, n i32) i32 { return (*p)(n); }
+
+type Holder struct { n i32; }
+
+func Holder::pick(self this) [2]func (i32) i32 { return table; }
+
+func main() i32 {
+    var total = 0;
+    total += ops()[1](3);          // 6
+    total += slice()[0](1);        // 2
+    total += (*first())(2);        // 3
+    var o = opt();
+    if (o[1] == null) {
+        total += 1;                // 1
+    }
+    var fs = ops();
+    total += fs[0](3);             // 4
+    var make func () [2]func (i32) i32 = ops;
+    total += make()[0](4);         // 5
+    var add func ([]func (i32) i32, i32) i32 = sum;
+    total += add(table[:], 5);     // 6 + 10 = 16
+    var through func (*func (i32) i32, i32) i32 = call;
+    var f func (i32) i32 = dbl;
+    total += through(&f, 1);       // 2
+    var h = Holder{.n = 1};
+    total += h.pick()[1](1);       // 2
+    for (var g : fs) {
+        total += g(0);             // 1 + 0
+    }
+    return total;
+}

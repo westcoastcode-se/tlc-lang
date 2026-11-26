@@ -797,11 +797,6 @@ Parser::PlacedType Parser::parse_tuple_type() {
 }
 
 ResultSlot Parser::slot_from_type(const PlacedType &type) const {
-    // `func f() [2]func (i32) i32` and `([2]func (i32) i32, i32)`: a shell around a function pointer is a
-    // variable, a field, or a parameter only.
-    if (type.is_fn_ptr && !type.shells.empty()) {
-        diags_.error(type.loc, "not supported yet");
-    }
     ResultSlot slot;
     slot.type_name = type.type_name;
     slot.type_package = type.type_package;
@@ -1470,10 +1465,6 @@ static FnParam fn_param_from_result(const ResultSlot &slot) {
 }
 
 FnParam Parser::fn_param_from(const PlacedType &type) const {
-    // `func ([2]func (i32) i32) i32` is the same gap as a result.
-    if (type.is_fn_ptr && !type.shells.empty()) {
-        diags_.error(type.loc, "not supported yet");
-    }
     FnParam param;
     param.type_name = type.type_name;
     param.type_package = type.type_package;

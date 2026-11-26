@@ -725,6 +725,18 @@ Type Checker::check_init(Expr::Init &init, const Type &want) {
             }
         }
     }
+    // `{0...}` stores zero in every element of an array. `{}` stores none, the same as a short list.
+    if (init.elements.empty() && init.fields.empty() && !init.is_tuple && init.type_name.empty() &&
+        !init.array_literal && dest.kind == TypeKind::Array && dest.element != nullptr && !is_slice(dest) &&
+        dest.length >= 0) {
+        if (init.zero_rest && dest.length > 0 && needs_nonnull_pointer(*dest.element)) {
+            error(init.loc, "type mismatch");
+        }
+        if (!init.zero_rest && dest.length != 0 && !init_allow_partial_) {
+            error(init.loc, "uninitialized");
+        }
+        return dest;
+    }
     if (!init.elements.empty()) {
         auto check_elements = [&]() {
             for (const auto &element : init.elements) {

@@ -274,6 +274,6 @@ A bound may be a compile-time integer, as in `numbers[N:numbers.len]`. A range o
 
 `var view = pair()` and `var view []i32 = pair()` run `pair` before `main` when that call is the whole initializer. `var text = "hi"` and `const label = "hi"` store that slice in the binary.
 
-An array literal is reported as `global initializer is not a constant`. A bound that does not fold, and a call that is not the whole initializer, such as `pair()[0:2]`, are reported as `global initializer is not a constant`.
+`var view []i32 = [_]i32{1, 2}` stores the elements in a private array of their own and the header in the binary. `[_]i32{5, 6, 7}[1:]` is a range of that array. Each element follows the rule of a file-scope array element: a literal, a `const` such as `K * 2`, or a `var` name, whose start value is copied. `[_]i32{give()}` is `global initializer is not a constant`. A bound that does not fold, and a call that is not the whole initializer, such as `pair()[0:2]`, are reported as `global initializer is not a constant`.
 
 [Index](../README.md) · [Previous: sizeof](sizeof.md) · [Next: The Type type](type.md) · [Assembly](../cost.md) · [Grammar](../grammar.md)

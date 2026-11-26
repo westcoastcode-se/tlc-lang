@@ -1543,13 +1543,40 @@ bool Checker::folds_to_bool(const Expr &expr, int depth) {
 void Checker::fold_early_consts(TranslationUnit &unit, uint32_t file_id) {
     file_id_ = file_id;
     push();
+    std::vector<std::pair<Symbol, SourceLoc>> runtime_lengths;
     for (TopDecl &decl : unit.decls) {
         auto *var = std::get_if<VarDecl>(&decl.data);
-        if (var == nullptr || !var->is_comptime || var->has_const || var->name.empty() || var->init == nullptr ||
-            !var->owner.empty()) {
+        if (var == nullptr || var->has_const || var->name.empty() || var->init == nullptr || !var->owner.empty()) {
             continue;
         }
-        if (!early_int_const(*var)) {
+        const bool runtime = var->is_const_decl && !var->is_comptime && !var->is_extern && var->unpack_count == 0;
+        if ((!var->is_comptime && !runtime) || !early_int_const(*var)) {
+            continue;
+        }
+        if (runtime) {
+            // `const N = 4` stays runtime storage. The checker folds it again with the other globals. Here it is
+            // only a length, and a later `const M = N * 2` reads it. A `comptime const` does not see it.
+            push();
+            for (const auto &[known, at] : runtime_lengths) {
+                declare(Symbol(known), at);
+            }
+            const bool saved_quiet = quiet_;
+            quiet_ = true;
+            const std::optional<int> value = fold_int(*var->init);
+            quiet_ = saved_quiet;
+            const bool is_bool = var->inferred ? folds_to_bool(*var->init) : var->type_name == "bool";
+            pop();
+            if (!value) {
+                continue;
+            }
+            early_lengths_[file_id][var->name] = ConstBinding{*value, var->is_static, is_bool};
+            Symbol symbol;
+            symbol.name = var->name;
+            symbol.type = is_bool ? type_bool() : type_int();
+            symbol.is_constant = true;
+            symbol.const_value = *value;
+            symbol.const_fits = true;
+            runtime_lengths.emplace_back(std::move(symbol), var->loc);
             continue;
         }
         const std::optional<int> value = fold_int(*var->init);
@@ -1559,7 +1586,7 @@ void Checker::fold_early_consts(TranslationUnit &unit, uint32_t file_id) {
         var->has_const = true;
         var->const_value = *value;
         var->const_bool = var->inferred ? folds_to_bool(*var->init) : var->type_name == "bool";
-        const_values_[file_id][var->name] = ConstBinding{*value, var->is_static};
+        const_values_[file_id][var->name] = ConstBinding{*value, var->is_static, var->const_bool};
         Symbol symbol;
         symbol.name = var->name;
         symbol.type = folded_const_type(*var);
@@ -1630,7 +1657,7 @@ bool Checker::fold_ready_consts() {
             }
             var->has_const = true;
             var->const_value = *value;
-            const_values_[file][var->name] = ConstBinding{*value, var->is_static};
+            const_values_[file][var->name] = ConstBinding{*value, var->is_static, var->const_bool};
             any = true;
         }
         file_id_ = saved;
@@ -1682,12 +1709,61 @@ std::optional<int> Checker::lookup_const_value(const std::string &name) {
     return std::nullopt;
 }
 
+const Checker::ConstBinding *Checker::file_binding(const ConstTableRef table, const std::string &name) const {
+    const auto &chosen = table == ConstTableRef::Early ? early_lengths_ : const_values_;
+    auto find_binding = [&](uint32_t file, bool allow_static) -> const ConstBinding * {
+        const auto unit = chosen.find(file);
+        if (unit == chosen.end()) {
+            return nullptr;
+        }
+        const auto found = unit->second.find(name);
+        if (found == unit->second.end() || (found->second.is_static && !allow_static)) {
+            return nullptr;
+        }
+        return &found->second;
+    };
+    if (const ConstBinding *local = find_binding(file_id_, true)) {
+        return local;
+    }
+    for (const uint32_t id : files_in_package(file_id_)) {
+        if (id != file_id_) {
+            if (const ConstBinding *found = find_binding(id, false)) {
+                return found;
+            }
+        }
+    }
+    return nullptr;
+}
+
+std::optional<int> Checker::early_length(const std::string &name) const {
+    const ConstBinding *found = file_binding(ConstTableRef::Early, name);
+    if (found == nullptr || found->is_bool) {
+        return std::nullopt;
+    }
+    return found->value;
+}
+
+bool Checker::early_bool(const std::string &name) const {
+    const ConstBinding *found = file_binding(ConstTableRef::Values, name);
+    return found != nullptr && found->is_bool;
+}
+
 std::optional<int> Checker::array_length_value(const std::string &name) {
+    const Symbol *symbol = lookup(name);
+    // `comptime const on = true` folds to 1. A `bool` is no length, in a struct field as in a function.
+    if (symbol == nullptr ? early_bool(name) : symbol->type.kind == TypeKind::Bool) {
+        return std::nullopt;
+    }
     if (const std::optional<int> value = lookup_const_value(name)) {
         return value;
     }
     // `value := n` inside a `comptime func` is that integer once the call substitutes `n`.
-    const Symbol *symbol = lookup(name);
+    // Struct fields are resolved before the globals are declared. `const N = 4` is that length already.
+    if (symbol == nullptr) {
+        if (const std::optional<int> value = early_length(name)) {
+            return value;
+        }
+    }
     if (symbol != nullptr && symbol->held_comptime && symbol->folded_local && int_constant(*symbol)) {
         return symbol->const_value;
     }

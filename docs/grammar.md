@@ -2163,7 +2163,8 @@ postfix-op  = "(" [ argument-list ] ")"
             | "--"
             | struct-init ;
 argument-list = expression { "," expression } ;
-new-expr    = "new" [ "(" expression ")" ] [ new-count ] { pointer } [ identifier "." ] ( integer-name | float-name | identifier ) [ type-args ] [ new-init ] ;
+new-expr    = "new" [ "(" expression ")" ] [ new-count ] { pointer } [ identifier "." ] ( integer-name | float-name | identifier ) [ type-args ] [ new-init ]
+            | "new" [ "(" expression ")" ] new-count array-type [ new-init ] ;
 new-count   = "[" expression "]" | "[" "_" "]" ;
 new-init    = struct-init | element-list ;
 element-list = "{" [ element { "," element } [ "," ] ] "}" ;

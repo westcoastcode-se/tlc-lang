@@ -2962,6 +2962,14 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                 // A pointer converts to and from a signed `i32` or an `i64`, the width of an address.
                 const bool source_int = same_type(source_rep, type_int()) || same_type(source_rep, type_i64());
                 const bool target_int = same_type(target_rep, type_int()) || same_type(target_rep, type_i64());
+                // `func (i32) i32(raw)` takes a data pointer or another function pointer. An integer is no address
+                // to call.
+                if (target.kind == TypeKind::Pointer && target.pointee != nullptr &&
+                    target.pointee->kind == TypeKind::Function && source.kind != TypeKind::Pointer &&
+                    source.kind != TypeKind::Nullptr) {
+                    error(node.loc, "type mismatch");
+                    return type_invalid();
+                }
                 if ((target.kind == TypeKind::Pointer && source.kind == TypeKind::Pointer) ||
                     (target.kind == TypeKind::Pointer && source_int) ||
                     (target.kind == TypeKind::Pointer && source.kind == TypeKind::Nullptr) ||
@@ -3259,6 +3267,17 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                               node.loc, node.optional, node.const_pointee);
                         // `new ?*[2]i32`. The shells wrap that leaf, the same way a written type does.
                         if (object.kind != TypeKind::Invalid && !node.shells.empty()) {
+                            // `new [n][K]i32` reads `K` as any other length does.
+                            fold_shells(written.shells, written.loc);
+                            for (const TypeShell &shell : written.shells) {
+                                if (shell.kind == TypeShell::Kind::Array &&
+                                    (shell.length < 0 || !shell.length_name.empty() || shell.length_expr != nullptr)) {
+                                    if (shell.length != -2) {
+                                        error(node.loc, "not supported yet");
+                                    }
+                                    return type_invalid();
+                                }
+                            }
                             bool rejected = false;
                             object = apply_shells(std::move(object), node.shells, false, rejected);
                             if (rejected) {
