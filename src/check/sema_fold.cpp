@@ -3692,7 +3692,12 @@ bool Checker::early_runnable(const FunctionDecl &fn) const {
 std::optional<int> Checker::early_run(const FunctionDecl &fn, std::vector<std::pair<std::string, int>> env) {
     // Statements of `i32`, `bool`, and arrays of `i32`. Anything else leaves the call to the later check.
     enum class Flow { Next, Break, Continue, Return, Fail };
-    if (early_depth_ >= 64) {
+    // One budget for this evaluation and every call it makes. `fib(40)` is one step per statement
+    // across the whole tree, not a fresh budget in each call.
+    if (early_depth_ == 0) {
+        early_steps_ = 0;
+    }
+    if (early_depth_ >= 64 || early_steps_ > 100000) {
         return std::nullopt;
     }
     ++early_depth_;
@@ -3700,7 +3705,6 @@ std::optional<int> Checker::early_run(const FunctionDecl &fn, std::vector<std::p
         int &depth;
         ~Depth() { --depth; }
     } depth_guard{early_depth_};
-    int steps = 0;
     int result = 0;
     std::vector<std::pair<std::string, std::vector<int>>> arrays;
     const bool saved_quiet = quiet_;
@@ -3938,7 +3942,7 @@ std::optional<int> Checker::early_run(const FunctionDecl &fn, std::vector<std::p
         return true;
     };
     auto run = [&](auto &&self, const Stmt &stmt) -> Flow {
-        if (++steps > 100000) {
+        if (++early_steps_ > 100000) {
             return Flow::Fail;
         }
         return std::visit(
@@ -4055,7 +4059,7 @@ std::optional<int> Checker::early_run(const FunctionDecl &fn, std::vector<std::p
                         if (flow == Flow::Return || flow == Flow::Fail) {
                             return flow;
                         }
-                        if (++steps > 100000) {
+                        if (++early_steps_ > 100000) {
                             return Flow::Fail;
                         }
                     }
@@ -4103,7 +4107,7 @@ std::optional<int> Checker::early_run(const FunctionDecl &fn, std::vector<std::p
                                 return Flow::Fail;
                             }
                         }
-                        if (++steps > 100000) {
+                        if (++early_steps_ > 100000) {
                             env.resize(depth);
                             return Flow::Fail;
                         }

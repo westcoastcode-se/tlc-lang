@@ -1,0 +1,22 @@
+// A `var` in a pattern arm stays in the switch. The next case can see it.
+type ShapeType enum { Circle, Rectangle, Empty };
+type Shape union(ShapeType) {
+    Circle struct { radius i32; };
+    Rectangle struct { width i32; height i32; };
+    Empty struct {};
+};
+func score(s Shape) i32 {
+    switch (s) {
+    case Circle(c):
+        var extra = c.radius;
+    case Rectangle(r):
+        return extra + r.width;
+    case Empty:
+        return 0;
+    }
+    return -1;
+}
+func main() i32 {
+    var s Shape = {.Rectangle = {.width = 4, .height = 1}};
+    return score(s);
+}

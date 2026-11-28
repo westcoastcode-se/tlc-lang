@@ -868,6 +868,8 @@ struct Stmt {
         bool is_comptime = false;
         // `emit var x = 1;` inside a macro. The binding is pasted with a name of its own.
         bool emit = false;
+        // `case Circle(c):` The checker drops the name at the next `case`.
+        bool case_binding = false;
         // Set by the checker. `var e = 250u8` binds a `u8`, so codegen allocates 8 bits, not the promoted
         // `i32`. 0 is every other binding. Codegen reads this instead of guessing from the emitted value.
         mutable int narrow_bits = 0;

@@ -1,0 +1,12 @@
+// The ordinary list is the callee. The C list is not.
+func show(n i32) i32 {
+    return n + 1;
+}
+extern(abi="c") func show(s *const u8) i32;
+comptime func pick() i32 {
+    return show(40);
+}
+func main() i32 {
+    comptime const k = pick();
+    return k;
+}

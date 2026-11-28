@@ -125,7 +125,7 @@ retq                             # return
 
 ## Matching an arm
 
-`switch (shape)` on a tagged union matches the active arm. `case Circle(c):` runs when the tag is `ShapeType.Circle`, and `c` is a `const` copy of `shape.Circle` for the statements up to the next `case`. `case Empty:` matches an arm with no binding, and `case ShapeType.Circle:` is the same test written with the enumerator. `default:` and `break` work as in any `switch`, and a case without `break` falls into the next one.
+`switch (shape)` on a tagged union matches the active arm. `case Circle(c):` runs when the tag is `ShapeType.Circle`, and `c` is a `const` copy of `shape.Circle` for the statements up to the next `case`. The next `case` cannot name `c`. A `var` declared in the arm stays in the `switch`, as it does in any `switch`. `case Empty:` matches an arm with no binding, and `case ShapeType.Circle:` is the same test written with the enumerator. `default:` and `break` work as in any `switch`, and a case without `break` falls into the next one.
 
 `switch (make(5))` evaluates the value once. A store into the binding, `c.radius = 5`, is `type mismatch`; write `shape.Circle.radius = 5` to change the union. `case Circle(1)` is `expected an identifier`. A name that is not an arm, `case Triangle(t)`, is `undeclared identifier`.
 

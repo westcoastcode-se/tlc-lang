@@ -1,0 +1,20 @@
+// The copy of the union does not hide a local the programmer wrote.
+type ShapeType enum { Circle, Empty };
+type Shape union(ShapeType) {
+    Circle struct { radius i32; };
+    Empty struct {};
+};
+func f(s Shape) i32 {
+    var match__1 = 7;
+    switch (s) {
+    case Circle(c):
+        return c.radius + match__1;
+    case Empty:
+        return match__1;
+    }
+    return 0;
+}
+func main() i32 {
+    var s Shape = {.Circle = {.radius = 4}};
+    return f(s);
+}

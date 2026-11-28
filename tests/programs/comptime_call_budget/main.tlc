@@ -1,0 +1,14 @@
+// `fib(40)` is more than 100000 steps once every recursive call counts.
+comptime func fib(n i32) i32 {
+    if (n < 2) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+type Buf struct {
+    a [fib(40)]u8;
+}
+func main() i32 {
+    var b Buf;
+    return i32(b.a.len);
+}

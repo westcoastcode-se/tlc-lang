@@ -824,6 +824,16 @@ void Checker::note_local_slice(Symbol &symbol, const Expr *init) {
     }
 }
 
+bool Checker::comptime_runnable(const FunctionDecl &fn) const {
+    if (fn.is_comptime) {
+        return true;
+    }
+    // An ordinary function with a body runs in the same compiled call. A C function, a function the
+    // compiler supplies, a macro, and a comptime parameter template do not.
+    return fn.body != nullptr && !fn.extern_c && !fn.is_extern && !fn.extern_compiler && !fn.is_macro &&
+           fn.type_params.empty() && !comptime_param_template(fn);
+}
+
 Checker::ComptimeCallee Checker::comptime_callee_kind(const Expr::Call &call) {
     if (call.callee == nullptr) {
         return ComptimeCallee::Unknown;
@@ -860,27 +870,30 @@ Checker::ComptimeCallee Checker::comptime_callee_kind(const Expr::Call &call) {
         return ComptimeCallee::Unknown;
     }
     bool saw = false;
-    bool runnable = true;
+    bool any_run = false;
+    bool any_stop = false;
     for (const FnList &list : symbol->lists) {
         if (list.decl == nullptr) {
             continue;
         }
         saw = true;
-        if (list.decl->is_comptime) {
-            return ComptimeCallee::Comptime;
-        }
-        // An ordinary function with a body runs in the same compiled call. A C function, a function the
-        // compiler supplies, a macro, and a comptime parameter template do not.
-        const FunctionDecl &fn = *list.decl;
-        if (fn.body == nullptr || fn.extern_c || fn.is_extern || fn.extern_compiler || fn.is_macro ||
-            !fn.type_params.empty() || comptime_param_template(fn)) {
-            runnable = false;
+        if (comptime_runnable(*list.decl)) {
+            any_run = true;
+        } else {
+            any_stop = true;
         }
     }
-    if (saw && runnable && !symbol->is_local_function) {
+    if (!saw || symbol->is_local_function) {
+        return saw ? ComptimeCallee::Runtime : ComptimeCallee::Unknown;
+    }
+    // Several lists: the call selects one. An `extern` list does not reject the ordinary one.
+    if (any_run && any_stop) {
+        return ComptimeCallee::Unknown;
+    }
+    if (any_run) {
         return ComptimeCallee::Comptime;
     }
-    return saw ? ComptimeCallee::Runtime : ComptimeCallee::Unknown;
+    return ComptimeCallee::Runtime;
 }
 
 const FunctionDecl *Checker::comptime_callee(const Expr::Call &call) {
@@ -3216,8 +3229,74 @@ bool Checker::rewrite_union_match(Stmt &stmt) {
         return false;
     }
     // Only a switch whose subject is a tagged union is a match. The type is read quietly first.
+    // A failure during that read must not stick: `comptime_failed` would make the real check return
+    // `type_invalid()` and drop the diagnostic, and the call would then be emitted.
+    struct CallSnap {
+        Expr::Call *call = nullptr;
+        bool failed = false;
+        bool ran = false;
+        bool broken = false;
+    };
+    std::vector<CallSnap> snaps;
+    const auto collect_calls = [&](auto &&self, Expr &expr) -> void {
+        std::visit(
+            [&](auto &node) {
+                using T = std::decay_t<decltype(node)>;
+                const auto child = [&](std::unique_ptr<Expr> &slot) {
+                    if (slot != nullptr) {
+                        self(self, *slot);
+                    }
+                };
+                if constexpr (std::is_same_v<T, Expr::Call>) {
+                    CallSnap snap;
+                    snap.call = &node;
+                    snap.failed = node.comptime_failed;
+                    snap.ran = node.comptime_ran;
+                    snap.broken = broken_calls_.contains(&node);
+                    snaps.push_back(snap);
+                    child(node.callee);
+                    for (std::unique_ptr<Expr> &arg : node.args) {
+                        child(arg);
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::Unary> || std::is_same_v<T, Expr::Cast> ||
+                                     std::is_same_v<T, Expr::Sizeof> || std::is_same_v<T, Expr::Typeof>) {
+                    child(node.expr);
+                } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                    child(node.lhs);
+                    child(node.rhs);
+                    child(node.mid);
+                } else if constexpr (std::is_same_v<T, Expr::Assign>) {
+                    child(node.lhs);
+                    child(node.rhs);
+                } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                    child(node.base);
+                } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                    child(node.base);
+                    child(node.index);
+                    child(node.end);
+                } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                    for (Expr::FieldInit &field : node.fields) {
+                        child(field.value);
+                    }
+                    for (std::unique_ptr<Expr> &element : node.elements) {
+                        child(element);
+                    }
+                } else if constexpr (std::is_same_v<T, Expr::New>) {
+                    child(node.allocator);
+                    child(node.count);
+                    child(node.init);
+                } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                    child(node.allocator);
+                    child(node.expr);
+                }
+            },
+            expr.data);
+    };
+    collect_calls(collect_calls, *sw->cond);
     const bool saved_quiet = quiet_;
     const int saved_errors = quiet_errors_;
+    const std::string saved_note = quiet_note_;
+    const std::string saved_fault = recheck_fault_;
     const AssignState saved_assign = assign_;
     const AssignState saved_true = cond_true_;
     const AssignState saved_false = cond_false_;
@@ -3225,9 +3304,21 @@ bool Checker::rewrite_union_match(Stmt &stmt) {
     const Type subject = check_expr(*sw->cond, true);
     quiet_ = saved_quiet;
     quiet_errors_ = saved_errors;
+    quiet_note_ = saved_note;
+    recheck_fault_ = saved_fault;
     assign_ = saved_assign;
     cond_true_ = saved_true;
     cond_false_ = saved_false;
+    for (const CallSnap &snap : snaps) {
+        if (snap.call == nullptr || snap.failed || !snap.call->comptime_failed) {
+            continue;
+        }
+        snap.call->comptime_failed = false;
+        snap.call->comptime_ran = snap.ran;
+        if (!snap.broken) {
+            broken_calls_.erase(snap.call);
+        }
+    }
     if (subject.kind != TypeKind::Struct || subject.struct_id < 0 ||
         subject.struct_id >= static_cast<int>(structs_.size())) {
         return false;
@@ -3265,8 +3356,9 @@ bool Checker::rewrite_union_match(Stmt &stmt) {
         }
         return false;
     };
-    // `switch (shape)` reads `shape` once. The arms read this copy.
-    const std::string held = "match__" + std::to_string(++match_count_);
+    // `switch (shape)` reads `shape` once. The arms read this copy. A `.` is not an identifier,
+    // so the name cannot hide a local the programmer wrote.
+    const std::string held = ".match" + std::to_string(++match_count_);
     std::vector<std::unique_ptr<Stmt>> rebuilt;
     std::vector<std::unique_ptr<Stmt>> &items = body->statements;
     for (std::size_t i = 0; i < items.size(); ++i) {
@@ -3313,13 +3405,14 @@ bool Checker::rewrite_union_match(Stmt &stmt) {
         tag->data = std::move(member);
         kase->value = std::move(tag);
         if (!binding.empty() && binding != "_") {
-            Stmt::Block arm_block;
-            arm_block.loc = at;
+            // The binding is the case statement. The user's statements stay in the switch body, so a
+            // `var` there has the same scope as in any `switch`. The name ends at the next `case`.
             Stmt::Bind bind;
             bind.loc = binding_loc;
             bind.names.push_back(binding);
             bind.name_locs.push_back(binding_loc);
             bind.is_const = true;
+            bind.case_binding = true;
             auto payload = std::make_unique<Expr>();
             Expr::Selector read;
             read.loc = binding_loc;
@@ -3329,19 +3422,13 @@ bool Checker::rewrite_union_match(Stmt &stmt) {
             bind.value = std::move(payload);
             auto bind_stmt = std::make_unique<Stmt>();
             bind_stmt->data = std::move(bind);
-            arm_block.statements.push_back(std::move(bind_stmt));
-            if (kase->stmt != nullptr) {
-                arm_block.statements.push_back(std::move(kase->stmt));
+            std::unique_ptr<Stmt> first = std::move(kase->stmt);
+            kase->stmt = std::move(bind_stmt);
+            rebuilt.push_back(std::move(item));
+            if (first != nullptr) {
+                rebuilt.push_back(std::move(first));
             }
-            // The statements up to the next case belong to this arm, so the binding covers them.
-            while (i + 1 < items.size() && items[i + 1] != nullptr &&
-                   !std::holds_alternative<Stmt::Case>(items[i + 1]->data)) {
-                arm_block.statements.push_back(std::move(items[i + 1]));
-                ++i;
-            }
-            auto block_stmt = std::make_unique<Stmt>();
-            block_stmt->data = std::move(arm_block);
-            kase->stmt = std::move(block_stmt);
+            continue;
         }
         rebuilt.push_back(std::move(item));
     }
@@ -3920,6 +4007,17 @@ void Checker::check_stmt(const Stmt &stmt) {
                 }
                 check_switch(node);
             } else if constexpr (std::is_same_v<T, Stmt::Case>) {
+                // `case Circle(c):` ends at this case. A `var` declared in the previous arm stays.
+                if (!scopes_.empty()) {
+                    auto &symbols = scopes_.back().symbols;
+                    for (auto it = symbols.begin(); it != symbols.end();) {
+                        if (it->second.case_binding) {
+                            it = symbols.erase(it);
+                        } else {
+                            ++it;
+                        }
+                    }
+                }
                 if (FlowFrame *sw = init_switch_frame()) {
                     const AssignState entry = sw->entry;
                     if (!assign_.unreachable) {
@@ -4184,6 +4282,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                         symbol.type = type_invalid();
                         symbol.is_var = node.is_var && !node.is_const;
                         symbol.is_immutable = node.is_const;
+                        symbol.case_binding = node.case_binding;
                         symbol.function_id = scopes_.empty() ? 0 : scopes_.back().function_id;
                         const SourceLoc loc = index < node.name_locs.size() ? node.name_locs[index] : node.loc;
                         symbol.loc = loc;
@@ -4312,6 +4411,7 @@ void Checker::check_stmt(const Stmt &stmt) {
                     symbol.is_auto = true;
                     symbol.is_var = node.is_var && !node.is_const;
                     symbol.is_immutable = node.is_const;
+                    symbol.case_binding = node.case_binding;
                     if (node.is_const) {
                         symbol.type.is_const = true;
                     }

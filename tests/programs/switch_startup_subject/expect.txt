@@ -1,0 +1,1 @@
+compile-error: set at start, not at compile time

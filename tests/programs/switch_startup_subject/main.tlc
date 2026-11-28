@@ -1,0 +1,19 @@
+// A `switch` condition is still checked. A start-time read is not folded away.
+func make() i32 {
+    return 3;
+}
+
+var g = make();
+
+comptime func peek() i32 {
+    return g;
+}
+
+func main() i32 {
+    switch (peek()) {
+    case 0:
+        return 1;
+    default:
+        return 2;
+    }
+}

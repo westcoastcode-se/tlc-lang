@@ -1482,7 +1482,8 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         return mem_compare_bool(mem_compare_kind(*fn)) ? type_bool() : type_int();
                     }
                 }
-                // A `comptime func` calls a `comptime func`. Another function is `not supported yet`.
+                // A call whose every list is a C function, a macro, or a generic is `not supported yet`.
+                // A name with an ordinary list and an `extern` list is resolved below.
                 if (comptime_func_body() && comptime_callee_kind(node) == ComptimeCallee::Runtime) {
                     error(node.loc, "not supported yet");
                     for (const auto &arg : node.args) {

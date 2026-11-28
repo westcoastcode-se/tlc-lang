@@ -99,6 +99,8 @@ struct Symbol {
     bool runtime_const = false;
     // `var name` and `var name const Type`. `const` and `:=` are not this binding.
     bool is_var = false;
+    // `case Circle(c):` The name ends at the next `case`. A `var` in that arm does not.
+    bool case_binding = false;
     // `&name` was taken. A store through that pointer can write `null`, so a null check does not narrow the name.
     bool address_taken = false;
     // A null check made this `?*T` a `*T` for the region it guards. `restore_optional` ends it.
@@ -957,6 +959,8 @@ class Checker {
     // A direct call while a `comptime func` is checked. `Runtime` is a function that is not `comptime`.
     enum class ComptimeCallee { Unknown, Comptime, Runtime };
     ComptimeCallee comptime_callee_kind(const Expr::Call &call);
+    // A `comptime func`, or an ordinary function with a body, run inside a comptime call.
+    bool comptime_runnable(const FunctionDecl &fn) const;
     bool comptime_func_body() const;
     // The slice data is an array in this function, or a slice already marked that way.
     bool slice_refers_to_local(const Expr &expr);
@@ -1471,6 +1475,8 @@ class Checker {
     // A body of `i32` locals, `if`, loops, and `return`, run while the structs are still being sized.
     bool early_runnable(const FunctionDecl &fn) const;
     int early_depth_ = 0;
+    // Steps of the whole early evaluation, including the calls it makes. Each top-level call starts at 0.
+    int early_steps_ = 0;
     std::optional<int> early_run(const FunctionDecl &fn, std::vector<std::pair<std::string, int>> env);
     void bind_file_const(VarDecl &var);
     // The type of a file-scope `comptime const`. Sets `has_const` when the value folds.

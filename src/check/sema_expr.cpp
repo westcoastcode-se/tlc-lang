@@ -2342,7 +2342,9 @@ Type Checker::finish_overloaded(Expr &expr, const Symbol &symbol, bool deferring
             }
         }
     }
-    if (comptime_func_body() && (winner->decl == nullptr || !winner->decl->is_comptime)) {
+    // The selected list is the callee. An ordinary body runs. An `extern` list does not.
+    if (comptime_func_body() &&
+        (symbol.is_local_function || winner->decl == nullptr || !comptime_runnable(*winner->decl))) {
         error(node.loc, "not supported yet");
         return type_invalid();
     }

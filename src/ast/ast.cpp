@@ -1339,6 +1339,7 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.is_const = node.is_const;
                 copy.is_comptime = node.is_comptime;
                 copy.emit = node.emit;
+                copy.case_binding = node.case_binding;
                 copy.narrow_bits = node.narrow_bits;
                 copy.narrow_unsigned = node.narrow_unsigned;
                 out->data = std::move(copy);

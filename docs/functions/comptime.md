@@ -10,7 +10,7 @@ A `comptime func` calculates while the compiler is still compiling the program.
 
 Every argument has to be a comptime value, even when the parameter is not marked `comptime`.
 
-A `comptime func` calls a `comptime func`, and an ordinary function that has a body. That function, and every function it calls, runs in the same compiled call. `comptime func add(n i32) i32 { return inc(n) + 1; }` is 42 for `add(40)` when `inc` adds one. A C function, `extern(abi="c") func abs`, has no body to run, so calling it, also through an ordinary function, is `not supported yet`. So is a call through a function pointer, a macro, and a generic function.
+A `comptime func` calls a `comptime func`, and an ordinary function that has a body. That function, and every function it calls, runs in the same compiled call. `comptime func add(n i32) i32 { return inc(n) + 1; }` is 42 for `add(40)` when `inc` adds one. When the name has several parameter lists, the call uses the list it selects. An `extern` list beside an ordinary one does not reject that ordinary call. A C function, `extern(abi="c") func abs`, has no body to run, so calling it, also through an ordinary function, is `not supported yet`. So is a call through a function pointer, a macro, and a generic function.
 
 A `new` or `delete` with no allocator uses the heap. That call is `not supported yet`. `new(&builtin.allocator)` and `delete(&builtin.allocator)` are that call.
 
