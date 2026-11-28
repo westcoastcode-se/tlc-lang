@@ -14,7 +14,7 @@ Close the window to exit. The context is an OpenGL 3.3 core profile. After the c
 
 ## Tetris
 
-`examples/tetris` is a playable game in the same window. It calls the same `vendor/gl` functions and compiles its own shader. Blocks are colored quads. `Cell` is the piece enum, and the board is `[20][10]Cell` on a `Game`. Piece cells are the comptime table `shapes`, each piece four `Spot` values. `for (var spot : shape)` walks those cells, `Spot::turn` rotates them, and `SDL_GetTicks` times the drop.
+`examples/tetris` is a playable game in the same window. It calls the same `vendor/gl` functions and compiles its own shader. Blocks are colored quads. `Cell` is the piece enum. A settled square is a `Tile`: `case Block(tile):` reads that color, and `case Empty:` is the well. Piece cells and colors are the comptime tables `shapes` and `colors`. `for (const spot : shape)` walks those cells, `Spot::turn` rotates them, and `SDL_GetTicks` times the drop.
 
 Left, right, and down move. Up rotates clockwise, Z rotates the other way, and space drops the piece. R starts again after the stack reaches the top. Escape or closing the window quits. Line clears and the score are printed in the terminal. A column of marks on the left counts cleared lines, and the next piece is shown on the right.
 

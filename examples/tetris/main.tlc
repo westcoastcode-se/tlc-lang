@@ -82,6 +82,14 @@ type Rgb struct {
     b f32;
 }
 
+// A settled square is empty, or a block that keeps the color it was placed with.
+type Mark enum { Empty, Block };
+
+type Tile union(Mark) {
+    Empty struct {};
+    Block struct { color Rgb; };
+};
+
 type Vertex struct {
     x f32;
     y f32;
@@ -96,6 +104,7 @@ type Gpu struct {
 }
 
 // Seven pieces, four cells each. I is the first row and O is the second.
+// Colors sit on the same row, so one index names both.
 comptime const shapes = [_][4]Spot{
     {{.x = 0, .y = 1}, {.x = 1, .y = 1}, {.x = 2, .y = 1}, {.x = 3, .y = 1}},
     {{.x = 1, .y = 0}, {.x = 2, .y = 0}, {.x = 1, .y = 1}, {.x = 2, .y = 1}},
@@ -105,6 +114,20 @@ comptime const shapes = [_][4]Spot{
     {{.x = 0, .y = 0}, {.x = 0, .y = 1}, {.x = 1, .y = 1}, {.x = 2, .y = 1}},
     {{.x = 2, .y = 0}, {.x = 0, .y = 1}, {.x = 1, .y = 1}, {.x = 2, .y = 1}},
 };
+
+comptime const colors = [_]Rgb{
+    {.r = 0.35f, .g = 0.90f, .b = 0.95f},
+    {.r = 0.95f, .g = 0.84f, .b = 0.25f},
+    {.r = 0.72f, .g = 0.38f, .b = 0.90f},
+    {.r = 0.40f, .g = 0.86f, .b = 0.42f},
+    {.r = 0.92f, .g = 0.32f, .b = 0.34f},
+    {.r = 0.32f, .g = 0.48f, .b = 0.95f},
+    {.r = 0.96f, .g = 0.58f, .b = 0.22f},
+};
+
+comptime const pieces = [_]Cell{Cell.I, Cell.O, Cell.T, Cell.S, Cell.Z, Cell.J, Cell.L};
+
+comptime const empty_color = Rgb{.r = 0.45f, .g = 0.48f, .b = 0.55f};
 
 func Spot::turn(self this, times i32, span i32) Spot {
     var x = self.x;
@@ -116,82 +139,52 @@ func Spot::turn(self this, times i32, span i32) Spot {
     return Spot{.x = x, .y = y};
 }
 
-func Cell::shape(self this) [4]Spot {
-    var slot = 0;
+func Cell::index(self this) i32 {
     switch (self) {
     case Cell.I:
-        slot = 0;
-        break;
+        return 0;
     case Cell.O:
-        slot = 1;
-        break;
+        return 1;
     case Cell.T:
-        slot = 2;
-        break;
+        return 2;
     case Cell.S:
-        slot = 3;
-        break;
+        return 3;
     case Cell.Z:
-        slot = 4;
-        break;
+        return 4;
     case Cell.J:
-        slot = 5;
-        break;
+        return 5;
     case Cell.L:
-        slot = 6;
-        break;
+        return 6;
     default:
-        slot = 0;
-        break;
+        return -1;
     }
+}
+
+func Cell::shape(self this) [4]Spot {
+    const slot = self.index();
     // The table is const. The copy is the array this function returns.
-    var copy = shapes[slot];
+    var copy = shapes[slot < 0 ? 0 : slot];
     return copy;
 }
 
 func Cell::roll(n i32) Cell {
-    switch (n) {
-    case 0:
-        return Cell.I;
-    case 1:
-        return Cell.O;
-    case 2:
-        return Cell.T;
-    case 3:
-        return Cell.S;
-    case 4:
-        return Cell.Z;
-    case 5:
-        return Cell.J;
-    default:
+    if (n < 0 || n >= pieces.len) {
         return Cell.L;
     }
+    return pieces[n];
 }
 
 func Cell::rgb(self this) Rgb {
-    switch (self) {
-    case Cell.I:
-        return Rgb{.r = 0.35f, .g = 0.90f, .b = 0.95f};
-    case Cell.O:
-        return Rgb{.r = 0.95f, .g = 0.84f, .b = 0.25f};
-    case Cell.T:
-        return Rgb{.r = 0.72f, .g = 0.38f, .b = 0.90f};
-    case Cell.S:
-        return Rgb{.r = 0.40f, .g = 0.86f, .b = 0.42f};
-    case Cell.Z:
-        return Rgb{.r = 0.92f, .g = 0.32f, .b = 0.34f};
-    case Cell.J:
-        return Rgb{.r = 0.32f, .g = 0.48f, .b = 0.95f};
-    case Cell.L:
-        return Rgb{.r = 0.96f, .g = 0.58f, .b = 0.22f};
-    default:
-        return Rgb{.r = 0.45f, .g = 0.48f, .b = 0.55f};
+    const slot = self.index();
+    if (slot < 0) {
+        return empty_color;
     }
+    return colors[slot];
 }
 
 type Game struct {
     gpu Gpu;
-    board [20][10]Cell;
+    board [20][10]Tile;
     kind Cell;
     rot i32;
     px i32;
@@ -215,13 +208,18 @@ func Game::place(piece Cell, spot Spot, ox i32, oy i32, turn i32) (i32, i32) {
 
 func Game::fits(self *this, piece Cell, turn i32, ox i32, oy i32) bool {
     var shape = piece.shape();
-    for (var spot : shape) {
+    for (const spot : shape) {
         x, y := Game.place(piece, spot, ox, oy, turn);
         if (x < 0 || x >= columns || y >= rows) {
             return false;
         }
-        if (y >= 0 && self.board[y][x] != Cell.Empty) {
-            return false;
+        if (y >= 0) {
+            switch (self.board[y][x]) {
+            case Block:
+                return false;
+            case Empty:
+                break;
+            }
         }
     }
     return true;
@@ -230,7 +228,7 @@ func Game::fits(self *this, piece Cell, turn i32, ox i32, oy i32) bool {
 func Game::wipe(self *this) void {
     for (var y = 0; y < rows; ++y) {
         for (var x = 0; x < columns; ++x) {
-            self.board[y][x] = Cell.Empty;
+            self.board[y][x] = Tile{.Empty = {}};
         }
     }
 }
@@ -241,8 +239,12 @@ func Game::clear_lines(self *this) i32 {
     while (y >= 0) {
         var full = true;
         for (var x = 0; x < columns; ++x) {
-            if (self.board[y][x] == Cell.Empty) {
+            switch (self.board[y][x]) {
+            case Empty:
                 full = false;
+                break;
+            case Block:
+                break;
             }
         }
         if (full) {
@@ -252,7 +254,7 @@ func Game::clear_lines(self *this) i32 {
                 }
             }
             for (var zx = 0; zx < columns; ++zx) {
-                self.board[0][zx] = Cell.Empty;
+                self.board[0][zx] = Tile{.Empty = {}};
             }
             ++cleared;
         } else {
@@ -287,12 +289,12 @@ func Game::settle(self *this) void {
     var buried = false;
     var kind Cell = self.kind;
     var shape = kind.shape();
-    for (var spot : shape) {
+    for (const spot : shape) {
         x, y := Game.place(kind, spot, self.px, self.py, self.rot);
         if (y < 0) {
             buried = true;
         } else {
-            self.board[y][x] = kind;
+            self.board[y][x] = Tile{.Block = {.color = kind.rgb()}};
         }
     }
     if (buried) {
@@ -509,7 +511,7 @@ func Game::block(col i32, row i32, color Rgb, ox i32, oy i32) void {
 
 func Game::draw_piece(self *this, piece Cell, turn i32, ox i32, oy i32, color Rgb) void {
     var shape = piece.shape();
-    for (var spot : shape) {
+    for (const spot : shape) {
         x, y := Game.place(piece, spot, ox, oy, turn);
         if (y >= 0) {
             Game.block(x, y, color, origin_x, origin_y);
@@ -523,7 +525,7 @@ func Game::draw_next(self *this) void {
     var upcoming Cell = self.next;
     var shape = upcoming.shape();
     var color = upcoming.rgb();
-    for (var spot : shape) {
+    for (const spot : shape) {
         x, y := Game.place(upcoming, spot, 0, 0, 0);
         Game.block(x, y, color, preview_x, origin_y);
     }
@@ -554,10 +556,12 @@ func Game::draw(self *this) void {
     Game.rect(origin_x, origin_y, columns * cell, rows * cell, well);
     for (var row = 0; row < rows; ++row) {
         for (var col = 0; col < columns; ++col) {
-            var filled Cell = self.board[row][col];
-            if (filled != Cell.Empty) {
-                var color Rgb = filled.rgb();
-                Game.block(col, row, color, origin_x, origin_y);
+            switch (self.board[row][col]) {
+            case Block(tile):
+                Game.block(col, row, tile.color, origin_x, origin_y);
+                break;
+            case Empty:
+                break;
             }
         }
     }
