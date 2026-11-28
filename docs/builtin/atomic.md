@@ -26,7 +26,7 @@ The call does not record a trace frame.
 
 On a float, add and sub are floating operations. `and`, `or`, `xor`, and `atomic_cmpxchg` use the bits.
 
-A struct load, store, exchange, or compare-exchange uses the bits of the whole value. `add`, `sub`, `and`, `or`, and `xor` on a struct are `not supported yet`.
+A struct load, store, exchange, or compare-exchange uses the bits of the whole value. `add`, `sub`, `and`, `or`, and `xor` on a struct are `type mismatch`: a struct has no number to add. Exchange is the read-modify-write a struct takes.
 
 A struct whose size is not 1, 2, 4, or 8 bytes, or whose alignment is lower than that size, is `not supported yet`. Two `i32` fields in a plain struct are 8 bytes aligned to 4, so that struct is `not supported yet`. `struct(align=8)` with those fields is the 8-byte value.
 

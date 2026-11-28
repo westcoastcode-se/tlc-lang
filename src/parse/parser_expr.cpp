@@ -542,15 +542,22 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
     // `new [n][m]T` and `new [n][]T` allocate an element that is itself an array or a slice. The element is
     // one written type, and its constructors are the shells.
     bool element_written = false;
-    if (check(TokenKind::LBracket) && (count || inferred) && node.indirections == 0) {
+    if ((check(TokenKind::LBracket) || at_func_type() || check(TokenKind::LParen)) && (count || inferred) &&
+        node.indirections == 0) {
+        // `new [n]func (i32) i32`, `new [n](i32, i32)`, and `new [n][2]Box<i32>`: the element is one written type.
         const SourceLoc at = peek().loc;
         const PlacedType element = parse_go_type();
-        if (element.is_fn_ptr || element.is_tuple || !element.type_args.empty() || element.type_name.empty()) {
-            // A function pointer, a tuple, or a generic struct as the element of an array element is not this form.
+        if ((element.is_fn_ptr || element.is_tuple) && !element.shells.empty()) {
+            // An array or a pointer around that function pointer or tuple is not this form.
             diags_.error(at, "not supported yet");
             node.count = std::move(count);
             node.count_inferred = inferred;
             return make_expr(std::move(node));
+        }
+        if (element.is_fn_ptr) {
+            node.elem_fn.push_back(fn_param_from(element));
+        } else if (element.is_tuple) {
+            node.tuple_parts = element.tuple_parts;
         }
         node.type_name = element.type_name;
         node.type_package = element.type_package;
@@ -559,6 +566,7 @@ std::unique_ptr<Expr> Parser::parse_alloc() {
         node.optional = element.optional;
         node.const_pointee = element.const_pointee;
         node.shells = element.shells;
+        node.type_args = element.type_args;
         element_written = true;
     } else if (check(TokenKind::LBracket) && (count || inferred)) {
         error_here("not supported yet");

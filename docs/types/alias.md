@@ -140,6 +140,10 @@ A cast confirms the type: `Name<i32>(42)` and `i32(n)`. `var n Name<i32> = 42` a
 
 Each use is an alias, the same as the alias written out: `Ptr<i32>` follows `type Ptr *i32`. `var p Ptr<i32> = &n` is `type mismatch: expected Ptr<i32>, found *i32`, and `Ptr<i32>(&n)` converts. `Row<i32>` is a different type from `[4]i32`. `r[3]`, `b.len`, and `pp.y` read through the alias.
 
+### An alias of a function type
+
+`type Op<T type> func (T) T`, `type Pick<T type, U type> func (T, U) U`, and `type Maker<T type> ?func () *T` name that function type once the arguments are written. A function alias is the same type as the function type it names, as `type BinOp func (i32, i32) i32` is, so `var f Op<i32> = inc` needs no cast, and `func apply<T type>(f Op<T>, v T) T` takes `inc`.
+
 ### An alias of a specialization
 
 `type MyAlias<T type> Vec<T>` is an alias of that specialization. `MyAlias<i32>` is a different type from `Vec<i32>` and from `MyAlias<u8>`. Assigning one to the other is `type mismatch`.

@@ -860,6 +860,7 @@ Checker::ComptimeCallee Checker::comptime_callee_kind(const Expr::Call &call) {
         return ComptimeCallee::Unknown;
     }
     bool saw = false;
+    bool runnable = true;
     for (const FnList &list : symbol->lists) {
         if (list.decl == nullptr) {
             continue;
@@ -868,6 +869,16 @@ Checker::ComptimeCallee Checker::comptime_callee_kind(const Expr::Call &call) {
         if (list.decl->is_comptime) {
             return ComptimeCallee::Comptime;
         }
+        // An ordinary function with a body runs in the same compiled call. A C function, a function the
+        // compiler supplies, a macro, and a comptime parameter template do not.
+        const FunctionDecl &fn = *list.decl;
+        if (fn.body == nullptr || fn.extern_c || fn.is_extern || fn.extern_compiler || fn.is_macro ||
+            !fn.type_params.empty() || comptime_param_template(fn)) {
+            runnable = false;
+        }
+    }
+    if (saw && runnable && !symbol->is_local_function) {
+        return ComptimeCallee::Comptime;
     }
     return saw ? ComptimeCallee::Runtime : ComptimeCallee::Unknown;
 }
@@ -1567,6 +1578,37 @@ std::unique_ptr<Expr> macro_literal(Checker &self, const Expr &value, std::optio
     return nullptr;
 }
 
+// `emit if` and `emit for` are pasted as one statement. Their bindings are renamed before that paste.
+bool macro_paste_whole(const Stmt &stmt) {
+    if (const auto *node = std::get_if<Stmt::If>(&stmt.data)) {
+        return node->emit;
+    }
+    if (const auto *node = std::get_if<Stmt::For>(&stmt.data)) {
+        return node->emit;
+    }
+    if (const auto *node = std::get_if<Stmt::While>(&stmt.data)) {
+        return node->emit;
+    }
+    if (const auto *node = std::get_if<Stmt::DoWhile>(&stmt.data)) {
+        return node->emit;
+    }
+    return false;
+}
+
+// Drops `emit` bindings pasted inside one block or one unrolled iteration.
+struct EmitScope {
+    std::vector<std::pair<std::string, std::string>> &names;
+    std::size_t mark = 0;
+    explicit EmitScope(std::vector<std::pair<std::string, std::string>> &names) : names(names), mark(names.size()) {}
+    ~EmitScope() {
+        if (names.size() > mark) {
+            names.resize(mark);
+        }
+    }
+    EmitScope(const EmitScope &) = delete;
+    EmitScope &operator=(const EmitScope &) = delete;
+};
+
 TokenKind compound_op(TokenKind op) {
     switch (op) {
     case TokenKind::PlusEq:
@@ -1586,7 +1628,242 @@ TokenKind compound_op(TokenKind op) {
 
 } // namespace
 
+void Checker::rename_emit_uses(std::unique_ptr<Expr> &slot, const std::unordered_set<std::string> *hide) {
+    if (slot == nullptr || macro_emit_renames_.empty()) {
+        return;
+    }
+    if (const auto *named = std::get_if<Expr::Name>(&slot->data)) {
+        if (hide != nullptr && hide->contains(named->text)) {
+            return;
+        }
+        for (auto it = macro_emit_renames_.rbegin(); it != macro_emit_renames_.rend(); ++it) {
+            if (!it->first.empty() && it->first == named->text) {
+                std::get<Expr::Name>(slot->data).text = it->second;
+                return;
+            }
+        }
+        return;
+    }
+    // A nested function has its own parameters.
+    if (std::holds_alternative<Expr::Func>(slot->data)) {
+        return;
+    }
+    const auto self = [&](std::unique_ptr<Expr> &child) { rename_emit_uses(child, hide); };
+    std::visit(
+        [&](auto &node) {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Expr::Unary> || std::is_same_v<T, Expr::Sizeof> ||
+                          std::is_same_v<T, Expr::Typeof> || std::is_same_v<T, Expr::Cast>) {
+                self(node.expr);
+            } else if constexpr (std::is_same_v<T, Expr::Binary>) {
+                self(node.lhs);
+                self(node.rhs);
+                self(node.mid);
+            } else if constexpr (std::is_same_v<T, Expr::Assign>) {
+                self(node.lhs);
+                self(node.rhs);
+            } else if constexpr (std::is_same_v<T, Expr::Call>) {
+                self(node.callee);
+                for (auto &arg : node.args) {
+                    self(arg);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                self(node.base);
+            } else if constexpr (std::is_same_v<T, Expr::Index>) {
+                self(node.base);
+                self(node.index);
+                self(node.end);
+            } else if constexpr (std::is_same_v<T, Expr::Init>) {
+                for (auto &field : node.fields) {
+                    self(field.value);
+                }
+                for (auto &element : node.elements) {
+                    self(element);
+                }
+            } else if constexpr (std::is_same_v<T, Expr::New>) {
+                self(node.allocator);
+                self(node.count);
+                self(node.init);
+            } else if constexpr (std::is_same_v<T, Expr::Delete>) {
+                self(node.allocator);
+                self(node.expr);
+            }
+        },
+        slot->data);
+}
+
+void Checker::subst_macro_expr(std::unique_ptr<Expr> &slot, bool substitute, const std::vector<std::string> &names,
+                               const std::vector<const Expr *> &exprs, const std::unordered_set<std::string> *hide) {
+    // An `emit` binding already in scope keeps its fresh name. The parameter is not written over it.
+    rename_emit_uses(slot, hide);
+    if (!substitute || slot == nullptr) {
+        return;
+    }
+    const std::unordered_set<std::string> empty;
+    apply_names(slot, names, exprs, hide != nullptr ? *hide : empty);
+}
+
+void Checker::fresh_emit_name(std::string &name) {
+    if (name.empty() || name == "_") {
+        return;
+    }
+    const std::string fresh = name + "__macro" + std::to_string(++macro_rename_count_);
+    macro_emit_renames_.emplace_back(name, fresh);
+    name = fresh;
+}
+
+void Checker::finish_emit_decl(Stmt &stmt) {
+    if (auto *bind = std::get_if<Stmt::Bind>(&stmt.data); bind != nullptr && bind->emit) {
+        for (std::string &name : bind->names) {
+            fresh_emit_name(name);
+        }
+        bind->emit = false;
+        return;
+    }
+    if (auto *decl = std::get_if<Stmt::Decl>(&stmt.data); decl != nullptr && decl->emit) {
+        for (VarDecl &var : decl->vars) {
+            fresh_emit_name(var.name);
+        }
+        decl->emit = false;
+    }
+}
+
+void Checker::prepare_macro_node(Stmt &stmt, bool substitute, const std::vector<std::string> &names,
+                                 const std::vector<const Expr *> &exprs,
+                                 const std::unordered_set<std::string> *hide) {
+    const auto expr = [&](std::unique_ptr<Expr> &slot) { subst_macro_expr(slot, substitute, names, exprs, hide); };
+    const auto case_values = [&](auto &&self, Stmt &node) -> void {
+        if (auto *block = std::get_if<Stmt::Block>(&node.data)) {
+            for (auto &child : block->statements) {
+                if (child != nullptr) {
+                    self(self, *child);
+                }
+            }
+            return;
+        }
+        if (auto *kase = std::get_if<Stmt::Case>(&node.data)) {
+            expr(kase->value);
+        }
+    };
+    std::visit(
+        [&](auto &node) {
+            using T = std::decay_t<decltype(node)>;
+            if constexpr (std::is_same_v<T, Stmt::Return>) {
+                expr(node.value);
+                for (auto &extra : node.extra) {
+                    expr(extra);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Expression>) {
+                expr(node.expr);
+            } else if constexpr (std::is_same_v<T, Stmt::If> || std::is_same_v<T, Stmt::While> ||
+                                 std::is_same_v<T, Stmt::DoWhile>) {
+                expr(node.cond);
+            } else if constexpr (std::is_same_v<T, Stmt::For>) {
+                if (node.init != nullptr) {
+                    prepare_macro_node(*node.init, substitute, names, exprs, hide);
+                }
+                std::unordered_set<std::string> hidden = hide != nullptr ? *hide : std::unordered_set<std::string>{};
+                const std::string index = loop_index_name(node);
+                if (!index.empty()) {
+                    hidden.insert(index);
+                }
+                const std::unordered_set<std::string> *outer = hide;
+                subst_macro_expr(node.each_expr, substitute, names, exprs, outer);
+                subst_macro_expr(node.cond, substitute, names, exprs, &hidden);
+                subst_macro_expr(node.step, substitute, names, exprs, &hidden);
+            } else if constexpr (std::is_same_v<T, Stmt::Switch>) {
+                expr(node.cond);
+                if (node.body != nullptr) {
+                    case_values(case_values, *node.body);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
+                for (VarDecl &var : node.vars) {
+                    expr(var.init);
+                }
+            } else if constexpr (std::is_same_v<T, Stmt::Bind>) {
+                expr(node.value);
+            } else if constexpr (std::is_same_v<T, Stmt::Defer>) {
+                expr(node.call);
+            } else if constexpr (std::is_same_v<T, Stmt::Assert>) {
+                expr(node.cond);
+            }
+        },
+        stmt.data);
+}
+
+void Checker::prepare_macro_tree(Stmt &stmt, bool substitute, const std::vector<std::string> &names,
+                                 const std::vector<const Expr *> &exprs,
+                                 const std::unordered_set<std::string> *hide) {
+    if (auto *bind = std::get_if<Stmt::Bind>(&stmt.data); bind != nullptr && bind->emit) {
+        prepare_macro_node(stmt, substitute, names, exprs, hide);
+        finish_emit_decl(stmt);
+        return;
+    }
+    if (auto *decl = std::get_if<Stmt::Decl>(&stmt.data); decl != nullptr && decl->emit) {
+        prepare_macro_node(stmt, substitute, names, exprs, hide);
+        finish_emit_decl(stmt);
+        return;
+    }
+    if (auto *block = std::get_if<Stmt::Block>(&stmt.data)) {
+        EmitScope scope(macro_emit_renames_);
+        for (auto &child : block->statements) {
+            if (child != nullptr) {
+                prepare_macro_tree(*child, substitute, names, exprs, hide);
+            }
+        }
+        return;
+    }
+    prepare_macro_node(stmt, substitute, names, exprs, hide);
+    if (auto *branch = std::get_if<Stmt::If>(&stmt.data)) {
+        if (branch->then_arm != nullptr) {
+            prepare_macro_tree(*branch->then_arm, substitute, names, exprs, hide);
+        }
+        if (branch->else_arm != nullptr) {
+            prepare_macro_tree(*branch->else_arm, substitute, names, exprs, hide);
+        }
+        return;
+    }
+    if (auto *loop = std::get_if<Stmt::For>(&stmt.data)) {
+        std::unordered_set<std::string> hidden = hide != nullptr ? *hide : std::unordered_set<std::string>{};
+        const std::string index = loop_index_name(*loop);
+        if (!index.empty()) {
+            hidden.insert(index);
+        }
+        if (loop->body != nullptr) {
+            prepare_macro_tree(*loop->body, substitute, names, exprs, &hidden);
+        }
+        return;
+    }
+    if (auto *loop = std::get_if<Stmt::While>(&stmt.data); loop != nullptr && loop->body != nullptr) {
+        prepare_macro_tree(*loop->body, substitute, names, exprs, hide);
+        return;
+    }
+    if (auto *loop = std::get_if<Stmt::DoWhile>(&stmt.data); loop != nullptr && loop->body != nullptr) {
+        prepare_macro_tree(*loop->body, substitute, names, exprs, hide);
+        return;
+    }
+    if (auto *sw = std::get_if<Stmt::Switch>(&stmt.data); sw != nullptr && sw->body != nullptr) {
+        prepare_macro_tree(*sw->body, substitute, names, exprs, hide);
+        return;
+    }
+    if (auto *kase = std::get_if<Stmt::Case>(&stmt.data); kase != nullptr && kase->stmt != nullptr) {
+        prepare_macro_tree(*kase->stmt, substitute, names, exprs, hide);
+    }
+}
+
 bool Checker::macro_local_stmt(Stmt &stmt) {
+    // `emit var x = n;` is pasted. The fresh name is chosen when this statement is pasted, after the
+    // initializer has taken the parameter.
+    if (auto *node = std::get_if<Stmt::Bind>(&stmt.data); node != nullptr && node->emit) {
+        apply_macro_locals(node->value);
+        return false;
+    }
+    if (auto *node = std::get_if<Stmt::Decl>(&stmt.data); node != nullptr && node->emit) {
+        for (VarDecl &var : node->vars) {
+            apply_macro_locals(var.init);
+        }
+        return false;
+    }
     auto bind = [&](const std::string &name, std::unique_ptr<Expr> &value, bool is_var, SourceLoc loc) {
         apply_macro_locals(value);
         std::unique_ptr<Expr> literal;
@@ -1677,15 +1954,28 @@ bool Checker::macro_local_stmt(Stmt &stmt) {
 void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &fn,
                                 const std::vector<std::string> &names, const std::vector<const Expr *> &exprs,
                                 std::vector<std::unique_ptr<Stmt>> &out, bool substitute, bool defer,
-                                bool keep_block) {
+                                bool keep_block, const std::unordered_set<std::string> *hide) {
     if (stmt == nullptr || folded_switch_stop_) {
         return;
     }
-    if (substitute) {
-        const std::unordered_set<std::string> skip;
-        subst_in_stmt(*stmt, names, exprs, skip);
+    // Nested statements are substituted when they are expanded, so an `emit` binding declared earlier in
+    // the same block hides the parameter. A pasted `emit for` is one copy, renamed here.
+    if (macro_paste_whole(*stmt)) {
+        prepare_macro_tree(*stmt, substitute, names, exprs, hide);
+    } else {
+        prepare_macro_node(*stmt, substitute, names, exprs, hide);
     }
     if (macro_local_stmt(*stmt)) {
+        return;
+    }
+    if (auto *bind = std::get_if<Stmt::Bind>(&stmt->data); bind != nullptr && bind->emit) {
+        finish_emit_decl(*stmt);
+        append_statement(std::move(stmt), out, defer);
+        return;
+    }
+    if (auto *decl = std::get_if<Stmt::Decl>(&stmt->data); decl != nullptr && decl->emit) {
+        finish_emit_decl(*stmt);
+        append_statement(std::move(stmt), out, defer);
         return;
     }
     if (std::holds_alternative<Stmt::Return>(stmt->data)) {
@@ -1727,7 +2017,8 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
     }
     if (auto *block = std::get_if<Stmt::Block>(&stmt->data)) {
         std::vector<std::unique_ptr<Stmt>> children = std::move(block->statements);
-        // A binding made in this block ends with it.
+        // A binding made in this block ends with it. An `emit` name pasted here ends with it too.
+        EmitScope emit_scope(macro_emit_renames_);
         struct LocalScope {
             std::vector<MacroLocal> &locals;
             std::size_t size;
@@ -1745,7 +2036,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
                 if (folded_switch_stop_) {
                     break;
                 }
-                expand_macro_stmt(std::move(child), fn, names, exprs, inner, false, true, false);
+                expand_macro_stmt(std::move(child), fn, names, exprs, inner, substitute, true, false, hide);
             }
             --unsafe_depth_;
             block->statements = std::move(inner);
@@ -1762,7 +2053,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
                 if (folded_switch_stop_) {
                     break;
                 }
-                expand_macro_stmt(std::move(child), fn, names, exprs, inner, false, defer, true);
+                expand_macro_stmt(std::move(child), fn, names, exprs, inner, substitute, defer, true, hide);
             }
             block->statements = std::move(inner);
             if (defer) {
@@ -1776,7 +2067,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
             if (folded_switch_stop_) {
                 break;
             }
-            expand_macro_stmt(std::move(child), fn, names, exprs, out, false, defer, false);
+            expand_macro_stmt(std::move(child), fn, names, exprs, out, substitute, defer, false, hide);
         }
         return;
     }
@@ -1825,7 +2116,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
             folded_switch_stop_ = false;
             ++folded_switch_depth_;
             bool active = false;
-            expand_folded_switch(std::move(sw->body), arm, active, fn, names, exprs, out, defer);
+            expand_folded_switch(std::move(sw->body), arm, active, fn, names, exprs, out, defer, substitute, hide);
             folded_switch_depth_ = saved_depth;
             folded_switch_stop_ = saved_stop;
             return;
@@ -1845,7 +2136,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
             folded_switch_stop_ = false;
             ++folded_switch_depth_;
             bool active = false;
-            expand_folded_switch(std::move(sw->body), arm, active, fn, names, exprs, out, defer);
+            expand_folded_switch(std::move(sw->body), arm, active, fn, names, exprs, out, defer, substitute, hide);
             folded_switch_depth_ = saved_depth;
             folded_switch_stop_ = saved_stop;
             return;
@@ -1860,7 +2151,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         ++runtime_switch_depth_;
         std::vector<std::unique_ptr<Stmt>> parts;
         if (sw->body != nullptr) {
-            expand_macro_stmt(std::move(sw->body), fn, names, exprs, parts, false, true, true);
+            expand_macro_stmt(std::move(sw->body), fn, names, exprs, parts, substitute, true, true, hide);
         }
         --runtime_switch_depth_;
         if (diags_.size() != before) {
@@ -1878,7 +2169,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         }
         if (kase->stmt != nullptr) {
             std::vector<std::unique_ptr<Stmt>> parts;
-            expand_macro_stmt(std::move(kase->stmt), fn, names, exprs, parts, false, true, true);
+            expand_macro_stmt(std::move(kase->stmt), fn, names, exprs, parts, substitute, true, true, hide);
             kase->stmt = as_arm(std::move(parts), kase->loc);
         }
         out.push_back(std::move(stmt));
@@ -1900,7 +2191,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         apply_macro_locals(loop->each_expr);
         // A `comptime for` does not become a runtime loop. A bound that does not fold stays out.
         if (loop->comptime_for) {
-            unroll_inline_for(*stmt, fn, names, exprs, out, defer);
+            unroll_inline_for(*stmt, fn, names, exprs, out, defer, substitute, hide);
             return;
         }
         // A bound that does not fold stays a loop in the caller. The body is expanded first, so `emit`
@@ -1912,8 +2203,15 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
                 if (!folds) {
                     const std::size_t before = diags_.size();
                     std::vector<std::unique_ptr<Stmt>> body_parts;
+                    std::unordered_set<std::string> hidden =
+                        hide != nullptr ? *hide : std::unordered_set<std::string>{};
+                    const std::string index = loop_index_name(*loop);
+                    if (!index.empty()) {
+                        hidden.insert(index);
+                    }
                     if (loop->body != nullptr) {
-                        expand_macro_stmt(std::move(loop->body), fn, names, exprs, body_parts, false, true, true);
+                        expand_macro_stmt(std::move(loop->body), fn, names, exprs, body_parts, substitute, true, true,
+                                          &hidden);
                     }
                     if (diags_.size() != before) {
                         return;
@@ -1924,7 +2222,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
                 }
             }
         }
-        unroll_inline_for(*stmt, fn, names, exprs, out, defer);
+        unroll_inline_for(*stmt, fn, names, exprs, out, defer, substitute, hide);
         return;
     }
     if (auto *branch = std::get_if<Stmt::If>(&stmt->data)) {
@@ -1955,7 +2253,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         if (value && (got.kind == TypeKind::Bool || got.kind == TypeKind::Int)) {
             std::unique_ptr<Stmt> arm = *value != 0 ? std::move(branch->then_arm) : std::move(branch->else_arm);
             if (arm != nullptr) {
-                expand_macro_stmt(std::move(arm), fn, names, exprs, out, false, defer, false);
+                expand_macro_stmt(std::move(arm), fn, names, exprs, out, substitute, defer, false, hide);
             }
             return;
         }
@@ -1969,13 +2267,13 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         std::vector<std::unique_ptr<Stmt>> then_parts;
         std::vector<std::unique_ptr<Stmt>> else_parts;
         if (branch->then_arm != nullptr) {
-            expand_macro_stmt(std::move(branch->then_arm), fn, names, exprs, then_parts, false, true, true);
+            expand_macro_stmt(std::move(branch->then_arm), fn, names, exprs, then_parts, substitute, true, true, hide);
         }
         if (diags_.size() != before) {
             return;
         }
         if (branch->else_arm != nullptr) {
-            expand_macro_stmt(std::move(branch->else_arm), fn, names, exprs, else_parts, false, true, true);
+            expand_macro_stmt(std::move(branch->else_arm), fn, names, exprs, else_parts, substitute, true, true, hide);
         }
         if (diags_.size() != before) {
             return;
@@ -1998,7 +2296,7 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
         const std::size_t before = diags_.size();
         std::vector<std::unique_ptr<Stmt>> parts;
         if (body != nullptr) {
-            expand_macro_stmt(std::move(body), fn, names, exprs, parts, false, true, true);
+            expand_macro_stmt(std::move(body), fn, names, exprs, parts, substitute, true, true, hide);
         }
         if (diags_.size() != before) {
             return false;
@@ -2056,12 +2354,13 @@ void Checker::expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &
 bool Checker::expand_folded_switch(std::unique_ptr<Stmt> stmt, const Stmt::Case *arm, bool &active,
                                    const FunctionDecl &fn, const std::vector<std::string> &names,
                                    const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out,
-                                   bool defer) {
+                                   bool defer, bool substitute, const std::unordered_set<std::string> *hide) {
     if (stmt == nullptr || folded_switch_stop_) {
         return folded_switch_stop_;
     }
     if (auto *block = std::get_if<Stmt::Block>(&stmt->data)) {
         std::vector<std::unique_ptr<Stmt>> children = std::move(block->statements);
+        EmitScope emit_scope(macro_emit_renames_);
         // The taken arm stays inside the `unsafe` block. A plain block is flattened.
         std::vector<std::unique_ptr<Stmt>> held;
         std::vector<std::unique_ptr<Stmt>> &dest = block->unsafe_block ? held : out;
@@ -2076,7 +2375,7 @@ bool Checker::expand_folded_switch(std::unique_ptr<Stmt> stmt, const Stmt::Case 
             if (!active && !switch_reaches_case(*child, arm)) {
                 continue;
             }
-            expand_folded_switch(std::move(child), arm, active, fn, names, exprs, dest, defer);
+            expand_folded_switch(std::move(child), arm, active, fn, names, exprs, dest, defer, substitute, hide);
         }
         if (block->unsafe_block) {
             block->statements = std::move(held);
@@ -2091,7 +2390,8 @@ bool Checker::expand_folded_switch(std::unique_ptr<Stmt> stmt, const Stmt::Case 
     if (auto *node = std::get_if<Stmt::Case>(&stmt->data)) {
         if (!active && node != arm) {
             if (node->stmt != nullptr && switch_reaches_case(*node->stmt, arm)) {
-                return expand_folded_switch(std::move(node->stmt), arm, active, fn, names, exprs, out, defer);
+                return expand_folded_switch(std::move(node->stmt), arm, active, fn, names, exprs, out, defer, substitute,
+                                            hide);
             }
             return false;
         }
@@ -2099,7 +2399,8 @@ bool Checker::expand_folded_switch(std::unique_ptr<Stmt> stmt, const Stmt::Case 
             active = true;
         }
         if (node->stmt != nullptr) {
-            return expand_folded_switch(std::move(node->stmt), arm, active, fn, names, exprs, out, defer);
+            return expand_folded_switch(std::move(node->stmt), arm, active, fn, names, exprs, out, defer, substitute,
+                                        hide);
         }
         return folded_switch_stop_;
     }
@@ -2107,13 +2408,13 @@ bool Checker::expand_folded_switch(std::unique_ptr<Stmt> stmt, const Stmt::Case 
         folded_switch_stop_ = true;
         return true;
     }
-    expand_macro_stmt(std::move(stmt), fn, names, exprs, out, false, defer, false);
+    expand_macro_stmt(std::move(stmt), fn, names, exprs, out, substitute, defer, false, hide);
     return folded_switch_stop_;
 }
 
 void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const std::vector<std::string> &names,
                                 const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out,
-                                bool defer) {
+                                bool defer, bool substitute, const std::unordered_set<std::string> *hide) {
     const auto *loop = std::get_if<Stmt::For>(&stmt.data);
     if (loop == nullptr || loop->body == nullptr) {
         error(loop != nullptr ? loop->loc : SourceLoc{}, "not supported yet");
@@ -2171,6 +2472,8 @@ void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const 
             }
             const std::vector<std::string> item_names{loop->each_name};
             const std::vector<const Expr *> item_exprs{element.get()};
+            // Each iteration pastes its own `emit` bindings. The next iteration does not reuse those names.
+            EmitScope emit_scope(macro_emit_renames_);
             for (const auto &child : each_body->statements) {
                 if (child == nullptr) {
                     continue;
@@ -2178,7 +2481,7 @@ void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const 
                 std::unique_ptr<Stmt> piece = clone_stmt(*child);
                 const std::unordered_set<std::string> skip;
                 subst_in_stmt(*piece, item_names, item_exprs, skip);
-                expand_macro_stmt(std::move(piece), fn, names, exprs, out, false, defer, false);
+                expand_macro_stmt(std::move(piece), fn, names, exprs, out, substitute, defer, false, hide);
             }
         }
         return;
@@ -2234,6 +2537,8 @@ void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const 
         }
         const std::vector<std::string> index_names{index};
         const std::vector<const Expr *> index_exprs{literal.get()};
+        // Each iteration pastes its own `emit` bindings. A binding outside the loop stays in scope.
+        EmitScope emit_scope(macro_emit_renames_);
         for (const auto &child : block->statements) {
             if (child == nullptr) {
                 continue;
@@ -2241,7 +2546,7 @@ void Checker::unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const 
             std::unique_ptr<Stmt> piece = clone_stmt(*child);
             const std::unordered_set<std::string> skip;
             subst_in_stmt(*piece, index_names, index_exprs, skip);
-            expand_macro_stmt(std::move(piece), fn, names, exprs, out, false, defer, false);
+            expand_macro_stmt(std::move(piece), fn, names, exprs, out, substitute, defer, false, hide);
         }
     }
 }
@@ -2441,15 +2746,18 @@ void Checker::expand_macro_call(const Expr::Call &call, const FunctionDecl &fn,
         error(call.loc, "not supported yet");
         return;
     }
-    // A macro that calls a macro sees only its own bindings.
+    // A macro that calls a macro sees only its own bindings. `emit` names are chosen as each binding is pasted.
     std::vector<MacroLocal> outer = std::move(macro_locals_);
     macro_locals_.clear();
+    std::vector<std::pair<std::string, std::string>> outer_emit = std::move(macro_emit_renames_);
+    macro_emit_renames_.clear();
     for (const auto &stmt : body->statements) {
         if (stmt == nullptr) {
             continue;
         }
         expand_macro_stmt(clone_stmt(*stmt), fn, names, replacement, out, true);
     }
+    macro_emit_renames_ = std::move(outer_emit);
     macro_locals_ = std::move(outer);
 }
 
@@ -2898,7 +3206,181 @@ void Checker::check_switch(const Stmt::Switch &node) {
     finish_switch(!has_default);
 }
 
+bool Checker::rewrite_union_match(Stmt &stmt) {
+    auto *sw = std::get_if<Stmt::Switch>(&stmt.data);
+    if (sw == nullptr || sw->cond == nullptr || sw->body == nullptr || sw->comptime_switch) {
+        return false;
+    }
+    auto *body = std::get_if<Stmt::Block>(&sw->body->data);
+    if (body == nullptr) {
+        return false;
+    }
+    // Only a switch whose subject is a tagged union is a match. The type is read quietly first.
+    const bool saved_quiet = quiet_;
+    const int saved_errors = quiet_errors_;
+    const AssignState saved_assign = assign_;
+    const AssignState saved_true = cond_true_;
+    const AssignState saved_false = cond_false_;
+    quiet_ = true;
+    const Type subject = check_expr(*sw->cond, true);
+    quiet_ = saved_quiet;
+    quiet_errors_ = saved_errors;
+    assign_ = saved_assign;
+    cond_true_ = saved_true;
+    cond_false_ = saved_false;
+    if (subject.kind != TypeKind::Struct || subject.struct_id < 0 ||
+        subject.struct_id >= static_cast<int>(structs_.size())) {
+        return false;
+    }
+    const StructInfo &info = structs_[static_cast<std::size_t>(subject.struct_id)];
+    if (!info.is_union || info.tag_enum < 0 || info.tag_name.empty()) {
+        return false;
+    }
+    const SourceLoc loc = sw->loc;
+    auto name_expr = [&](const std::string &text, SourceLoc at) {
+        auto out = std::make_unique<Expr>();
+        Expr::Name named;
+        named.loc = at;
+        named.text = text;
+        out->data = std::move(named);
+        return out;
+    };
+    auto enum_name = [&](SourceLoc at) {
+        if (info.tag_package.empty()) {
+            return name_expr(info.tag_name, at);
+        }
+        auto out = std::make_unique<Expr>();
+        Expr::Selector qualified;
+        qualified.loc = at;
+        qualified.base = name_expr(info.tag_package, at);
+        qualified.field = info.tag_name;
+        out->data = std::move(qualified);
+        return out;
+    };
+    auto is_arm = [&](const std::string &text) {
+        for (const StructInfo::Field &field : info.fields) {
+            if (field.name == text) {
+                return true;
+            }
+        }
+        return false;
+    };
+    // `switch (shape)` reads `shape` once. The arms read this copy.
+    const std::string held = "match__" + std::to_string(++match_count_);
+    std::vector<std::unique_ptr<Stmt>> rebuilt;
+    std::vector<std::unique_ptr<Stmt>> &items = body->statements;
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        std::unique_ptr<Stmt> &item = items[i];
+        auto *kase = item == nullptr ? nullptr : std::get_if<Stmt::Case>(&item->data);
+        if (kase == nullptr || kase->is_default || kase->value == nullptr) {
+            rebuilt.push_back(std::move(item));
+            continue;
+        }
+        std::string arm;
+        std::string binding;
+        SourceLoc binding_loc{};
+        if (const auto *named = std::get_if<Expr::Name>(&kase->value->data); named != nullptr && is_arm(named->text)) {
+            arm = named->text;
+        } else if (const auto *call = std::get_if<Expr::Call>(&kase->value->data)) {
+            const auto *callee = call->callee == nullptr ? nullptr : std::get_if<Expr::Name>(&call->callee->data);
+            if (callee != nullptr && is_arm(callee->text) && call->args.size() <= 1 && call->type_args.empty()) {
+                arm = callee->text;
+                if (call->args.size() == 1) {
+                    const auto *bound = call->args.front() == nullptr
+                                            ? nullptr
+                                            : std::get_if<Expr::Name>(&call->args.front()->data);
+                    if (bound == nullptr) {
+                        // `case Circle(1)` is not a pattern. The name after the arm is the binding.
+                        error(expr_loc(*call->args.front()), "expected an identifier");
+                    } else {
+                        binding = bound->text;
+                        binding_loc = bound->loc;
+                    }
+                }
+            }
+        }
+        if (arm.empty()) {
+            rebuilt.push_back(std::move(item));
+            continue;
+        }
+        // `case Circle(c):` is `case ShapeType.Circle:` with `const c = shape.Circle` in front of its statements.
+        const SourceLoc at = expr_loc(*kase->value);
+        auto tag = std::make_unique<Expr>();
+        Expr::Selector member;
+        member.loc = at;
+        member.base = enum_name(at);
+        member.field = arm;
+        tag->data = std::move(member);
+        kase->value = std::move(tag);
+        if (!binding.empty() && binding != "_") {
+            Stmt::Block arm_block;
+            arm_block.loc = at;
+            Stmt::Bind bind;
+            bind.loc = binding_loc;
+            bind.names.push_back(binding);
+            bind.name_locs.push_back(binding_loc);
+            bind.is_const = true;
+            auto payload = std::make_unique<Expr>();
+            Expr::Selector read;
+            read.loc = binding_loc;
+            read.base = name_expr(held, binding_loc);
+            read.field = arm;
+            payload->data = std::move(read);
+            bind.value = std::move(payload);
+            auto bind_stmt = std::make_unique<Stmt>();
+            bind_stmt->data = std::move(bind);
+            arm_block.statements.push_back(std::move(bind_stmt));
+            if (kase->stmt != nullptr) {
+                arm_block.statements.push_back(std::move(kase->stmt));
+            }
+            // The statements up to the next case belong to this arm, so the binding covers them.
+            while (i + 1 < items.size() && items[i + 1] != nullptr &&
+                   !std::holds_alternative<Stmt::Case>(items[i + 1]->data)) {
+                arm_block.statements.push_back(std::move(items[i + 1]));
+                ++i;
+            }
+            auto block_stmt = std::make_unique<Stmt>();
+            block_stmt->data = std::move(arm_block);
+            kase->stmt = std::move(block_stmt);
+        }
+        rebuilt.push_back(std::move(item));
+    }
+    body->statements = std::move(rebuilt);
+    // `{ const match__1 = shape; switch (ShapeType(match__1)) { ... } }`.
+    Stmt::Bind hold;
+    hold.loc = loc;
+    hold.names.push_back(held);
+    hold.name_locs.push_back(loc);
+    hold.is_const = true;
+    hold.value = std::move(sw->cond);
+    auto cast = std::make_unique<Expr>();
+    Expr::Cast tag_of;
+    tag_of.loc = loc;
+    tag_of.type_name = info.tag_name;
+    tag_of.type_package = info.tag_package;
+    tag_of.is_enum = true;
+    tag_of.expr = name_expr(held, loc);
+    cast->data = std::move(tag_of);
+    sw->cond = std::move(cast);
+    Stmt::Block outer;
+    outer.loc = loc;
+    auto hold_stmt = std::make_unique<Stmt>();
+    hold_stmt->data = std::move(hold);
+    outer.statements.push_back(std::move(hold_stmt));
+    auto switch_stmt = std::make_unique<Stmt>();
+    switch_stmt->data = std::move(*sw);
+    outer.statements.push_back(std::move(switch_stmt));
+    stmt.data = std::move(outer);
+    return true;
+}
+
 void Checker::check_stmt(const Stmt &stmt) {
+    // `switch (shape) { case Circle(c): ... }` on a tagged union becomes a switch on the tag.
+    if (std::holds_alternative<Stmt::Switch>(stmt.data) && macro_depth_ == 0 &&
+        rewrite_union_match(const_cast<Stmt &>(stmt))) {
+        check_stmt(stmt);
+        return;
+    }
     if (comptime_block_depth_ > 0) {
         // `comptime { ... }` keeps compile-time statements. A `var` stays out.
         const bool allowed = std::visit(

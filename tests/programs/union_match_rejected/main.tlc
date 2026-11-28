@@ -1,0 +1,19 @@
+// The binding is a `const` copy. A pattern names the binding with an identifier.
+type ShapeType enum { Circle, Rectangle };
+type Shape union(ShapeType) {
+    Circle struct { radius i32; };
+    Rectangle struct { width i32; height i32; };
+};
+func main() i32 {
+    var s Shape = {.Circle = {.radius = 2}};
+    switch (s) {
+    case Circle(c):
+        c.radius = 5;
+        break;
+    case Rectangle(1):
+        break;
+    case Triangle(t):
+        break;
+    }
+    return s.Circle.radius;
+}

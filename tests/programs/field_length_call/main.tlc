@@ -1,0 +1,17 @@
+// A call of a `comptime func` in a field length runs before the struct has a size.
+comptime func twice(n i32) i32 { return n * 2; }
+comptime func sum_to(n i32) i32 {
+    var total = 0;
+    for (var i = 1; i <= n; i += 1) { total += i; }
+    return total;
+}
+comptime const K = 3;
+type Buf struct {
+    a [twice(2) + 1]u8;
+    b [sum_to(K)]u8;
+    c [twice(K)]u8;
+}
+func main() i32 {
+    var b Buf;
+    return i32(b.a.len + b.b.len + b.c.len) + 25;
+}

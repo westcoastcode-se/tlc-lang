@@ -1,0 +1,19 @@
+// A generic alias of a function type is that function type once the arguments are written.
+type Op<T type> func (T) T;
+type Pick<T type, U type> func (T, U) U;
+type Maker<T type> ?func () *T;
+func inc(n i32) i32 { return n + 1; }
+func half(f f64) f64 { return f / 2.0; }
+func second(a i32, b f64) f64 { return b; }
+func apply<T type>(f Op<T>, v T) T { return f(v); }
+func main() i32 {
+    var f Op<i32> = inc;
+    var g Op<f64> = half;
+    var p Pick<i32, f64> = second;
+    var m Maker<i32> = null;
+    var total = f(20) + i32(g(8.0)) + i32(p(1, 9.0)) + apply(f, 7);
+    if (m == null) {
+        total -= 0;
+    }
+    return total;
+}

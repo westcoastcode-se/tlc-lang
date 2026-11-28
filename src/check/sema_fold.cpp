@@ -1,4 +1,5 @@
 // Compile-time folding of constants.
+#include <functional>
 #include <set>
 #include "check/check.hpp"
 #include "check/check_util.hpp"
@@ -3623,8 +3624,9 @@ std::optional<int> Checker::fold_early_call(const Expr &init) {
             fn = item;
         }
     }
+    // A body that runs calls itself through `early_run`, which counts the depth.
     if (fn == nullptr || !fn->is_comptime || fn->is_macro || fn->variadic || !fn->type_params.empty() ||
-        fn->params.size() != call->args.size() || comptime_folding_.contains(fn)) {
+        fn->params.size() != call->args.size() || (comptime_folding_.contains(fn) && early_depth_ == 0)) {
         return std::nullopt;
     }
     const Expr *value = single_i32_return(*fn);
@@ -3657,6 +3659,7 @@ std::optional<int> Checker::fold_early_call(const Expr &init) {
     for (const auto &item : owned) {
         exprs.push_back(item.get());
     }
+    const bool held = comptime_folding_.contains(fn);
     comptime_folding_.insert(fn);
     std::optional<int> folded;
     if (value != nullptr) {
@@ -3671,7 +3674,9 @@ std::optional<int> Checker::fold_early_call(const Expr &init) {
         }
         folded = early_run(*fn, std::move(env));
     }
-    comptime_folding_.erase(fn);
+    if (!held) {
+        comptime_folding_.erase(fn);
+    }
     return folded;
 }
 
@@ -3685,10 +3690,19 @@ bool Checker::early_runnable(const FunctionDecl &fn) const {
 }
 
 std::optional<int> Checker::early_run(const FunctionDecl &fn, std::vector<std::pair<std::string, int>> env) {
-    // Statements of `i32` only. Anything else leaves the call to the later check.
+    // Statements of `i32`, `bool`, and arrays of `i32`. Anything else leaves the call to the later check.
     enum class Flow { Next, Break, Continue, Return, Fail };
+    if (early_depth_ >= 64) {
+        return std::nullopt;
+    }
+    ++early_depth_;
+    struct Depth {
+        int &depth;
+        ~Depth() { --depth; }
+    } depth_guard{early_depth_};
     int steps = 0;
     int result = 0;
+    std::vector<std::pair<std::string, std::vector<int>>> arrays;
     const bool saved_quiet = quiet_;
     quiet_ = true;
     auto find = [&](const std::string &name) -> int * {
@@ -3699,8 +3713,83 @@ std::optional<int> Checker::early_run(const FunctionDecl &fn, std::vector<std::p
         }
         return nullptr;
     };
-    auto eval = [&](const Expr &expr) -> std::optional<int> {
+    auto find_array = [&](const Expr *base) -> std::vector<int> * {
+        const auto *named = base == nullptr ? nullptr : std::get_if<Expr::Name>(&base->data);
+        if (named == nullptr) {
+            return nullptr;
+        }
+        for (auto it = arrays.rbegin(); it != arrays.rend(); ++it) {
+            if (it->first == named->text) {
+                return &it->second;
+            }
+        }
+        return nullptr;
+    };
+    std::function<std::optional<int>(const Expr &)> eval;
+    // `row[i]`, `row.len`, and `twice(i)` become the integer they read before the names are replaced.
+    std::function<bool(std::unique_ptr<Expr> &, int)> resolve = [&](std::unique_ptr<Expr> &part, int depth) -> bool {
+        if (part == nullptr || depth > 64) {
+            return part == nullptr;
+        }
+        const SourceLoc at = expr_loc(*part);
+        if (auto *index = std::get_if<Expr::Index>(&part->data); index != nullptr && !index->is_range) {
+            if (std::vector<int> *row = find_array(index->base.get())) {
+                if (index->index == nullptr) {
+                    return false;
+                }
+                const std::optional<int> at_index = eval(*index->index);
+                if (!at_index || *at_index < 0 || static_cast<std::size_t>(*at_index) >= row->size()) {
+                    return false;
+                }
+                part = folded_int((*row)[static_cast<std::size_t>(*at_index)], at);
+                return true;
+            }
+        }
+        if (auto *selector = std::get_if<Expr::Selector>(&part->data); selector != nullptr && selector->field == "len") {
+            if (std::vector<int> *row = find_array(selector->base.get())) {
+                part = folded_int(static_cast<int>(row->size()), at);
+                return true;
+            }
+        }
+        if (auto *call = std::get_if<Expr::Call>(&part->data)) {
+            for (std::unique_ptr<Expr> &arg : call->args) {
+                if (!resolve(arg, depth + 1)) {
+                    return false;
+                }
+            }
+            // The arguments are integers now. A call of another `comptime func` runs the same way.
+            std::unique_ptr<Expr> copy = clone_expr(*part);
+            auto *copied = std::get_if<Expr::Call>(&copy->data);
+            for (std::unique_ptr<Expr> &arg : copied->args) {
+                const std::optional<int> value = arg == nullptr ? std::nullopt : eval(*arg);
+                if (!value) {
+                    return false;
+                }
+                arg = folded_int(*value, expr_loc(*arg));
+            }
+            const std::optional<int> value = fold_early_call(*copy);
+            if (!value) {
+                return false;
+            }
+            part = folded_int(*value, at);
+            return true;
+        }
+        if (auto *unary = std::get_if<Expr::Unary>(&part->data)) {
+            return resolve(unary->expr, depth + 1);
+        }
+        if (auto *binary = std::get_if<Expr::Binary>(&part->data)) {
+            return resolve(binary->lhs, depth + 1) && resolve(binary->mid, depth + 1) && resolve(binary->rhs, depth + 1);
+        }
+        if (auto *cast = std::get_if<Expr::Cast>(&part->data)) {
+            return resolve(cast->expr, depth + 1);
+        }
+        return true;
+    };
+    eval = [&](const Expr &expr) -> std::optional<int> {
         std::unique_ptr<Expr> copy = clone_expr(expr);
+        if (!resolve(copy, 0)) {
+            return std::nullopt;
+        }
         std::vector<std::string> names;
         std::vector<std::unique_ptr<Expr>> owned;
         std::vector<const Expr *> values;
@@ -3724,13 +3813,93 @@ std::optional<int> Checker::early_run(const FunctionDecl &fn, std::vector<std::p
         return value;
     };
     auto plain_i32 = [](const VarDecl &var) {
-        return var.inferred || (var.type_name == "i32" && var.type_package.empty() && var.indirections == 0 &&
-                                !var.is_array && var.shells.empty() && !var.is_struct && !var.is_fn_ptr &&
-                                !var.is_tuple);
+        return var.inferred || ((var.type_name == "i32" || var.type_name == "bool") && var.type_package.empty() &&
+                                var.indirections == 0 && !var.is_array && var.shells.empty() && !var.is_struct &&
+                                !var.is_fn_ptr && !var.is_tuple);
+    };
+    // `var row [4]i32 = {1, 2, 0...}` and `[_]i32{1, 2}`. The length and every element are known.
+    auto array_local = [&](const VarDecl &var) -> std::optional<std::vector<int>> {
+        const Expr *init = var.init.get();
+        const auto *list = init == nullptr ? nullptr : std::get_if<Expr::Init>(&init->data);
+        int64_t length = -1;
+        if (var.inferred) {
+            if (list == nullptr || !list->array_literal || list->type_name != "i32" || !list->elem_shells.empty() ||
+                list->elem_is_array) {
+                return std::nullopt;
+            }
+            length = static_cast<int64_t>(list->elements.size());
+        } else if (var.is_array && var.shells.empty()) {
+            // `var row [5]i32` written flat.
+            if (var.type_name != "i32" || var.indirections != 0 || !var.type_package.empty() || var.ptr_to_array) {
+                return std::nullopt;
+            }
+            std::optional<int> folded;
+            if (!var.array_len_name.empty()) {
+                if (const int *named = find(var.array_len_name)) {
+                    folded = *named;
+                } else {
+                    folded = lookup_const_value(var.array_len_name);
+                }
+            } else if (var.array_len >= 0) {
+                folded = static_cast<int>(var.array_len);
+            }
+            if (!folded || *folded < 0) {
+                return std::nullopt;
+            }
+            length = *folded;
+        } else {
+            if (var.type_name != "i32" || var.indirections != 0 || !var.type_package.empty() || var.shells.size() != 1 ||
+                var.shells.front().kind != TypeShell::Kind::Array) {
+                return std::nullopt;
+            }
+            const TypeShell &shell = var.shells.front();
+            std::optional<int> folded;
+            if (shell.length_expr != nullptr) {
+                folded = eval(*shell.length_expr);
+            } else if (!shell.length_name.empty()) {
+                if (const int *named = find(shell.length_name)) {
+                    folded = *named;
+                } else {
+                    folded = lookup_const_value(shell.length_name);
+                }
+            } else {
+                folded = static_cast<int>(shell.length);
+            }
+            if (!folded || *folded < 0) {
+                return std::nullopt;
+            }
+            length = *folded;
+        }
+        if (length > 4096 || list == nullptr || !list->fields.empty() ||
+            (!list->zero_rest && static_cast<int64_t>(list->elements.size()) != length) ||
+            static_cast<int64_t>(list->elements.size()) > length) {
+            return std::nullopt;
+        }
+        std::vector<int> row(static_cast<std::size_t>(length), 0);
+        for (std::size_t i = 0; i < list->elements.size(); ++i) {
+            const std::optional<int> value = list->elements[i] == nullptr ? std::nullopt : eval(*list->elements[i]);
+            if (!value) {
+                return std::nullopt;
+            }
+            row[i] = *value;
+        }
+        return row;
     };
     auto store = [&](const Expr &target_expr, TokenKind op, const Expr *rhs) -> bool {
-        const auto *target = std::get_if<Expr::Name>(&target_expr.data);
-        int *slot = target == nullptr ? nullptr : find(target->text);
+        int *slot = nullptr;
+        if (const auto *target = std::get_if<Expr::Name>(&target_expr.data)) {
+            slot = find(target->text);
+        } else if (const auto *index = std::get_if<Expr::Index>(&target_expr.data);
+                   index != nullptr && !index->is_range && index->index != nullptr) {
+            // `row[i] = v` and `row[i] += v`.
+            if (std::vector<int> *row = find_array(index->base.get())) {
+                const std::optional<int> at = eval(*index->index);
+                if (!at || *at < 0 || static_cast<std::size_t>(*at) >= row->size()) {
+                    return false;
+                }
+                slot = &(*row)[static_cast<std::size_t>(*at)];
+            }
+        }
         if (slot == nullptr) {
             return false;
         }
@@ -3777,6 +3946,7 @@ std::optional<int> Checker::early_run(const FunctionDecl &fn, std::vector<std::p
                 using T = std::decay_t<decltype(node)>;
                 if constexpr (std::is_same_v<T, Stmt::Block>) {
                     const std::size_t depth = env.size();
+                    const std::size_t rows = arrays.size();
                     for (const auto &child : node.statements) {
                         if (child == nullptr) {
                             continue;
@@ -3784,10 +3954,12 @@ std::optional<int> Checker::early_run(const FunctionDecl &fn, std::vector<std::p
                         const Flow flow = self(self, *child);
                         if (flow != Flow::Next) {
                             env.resize(depth);
+                            arrays.resize(rows);
                             return flow;
                         }
                     }
                     env.resize(depth);
+                    arrays.resize(rows);
                     return Flow::Next;
                 } else if constexpr (std::is_same_v<T, Stmt::Return>) {
                     if (node.value == nullptr || !node.extra.empty()) {
@@ -3803,19 +3975,38 @@ std::optional<int> Checker::early_run(const FunctionDecl &fn, std::vector<std::p
                     if (node.names.size() != 1 || node.value == nullptr) {
                         return Flow::Fail;
                     }
+                    // `var copy = [_]i32{2, 2}` is an array local.
+                    if (std::holds_alternative<Expr::Init>(node.value->data)) {
+                        VarDecl as_var;
+                        as_var.name = node.names.front();
+                        as_var.inferred = true;
+                        as_var.init = clone_expr(*node.value);
+                        std::optional<std::vector<int>> row = array_local(as_var);
+                        if (!row) {
+                            return Flow::Fail;
+                        }
+                        arrays.emplace_back(as_var.name, std::move(*row));
+                        return Flow::Next;
+                    }
+                    // `const ok = n > 3` holds 0 or 1. A condition reads it the same way.
                     const std::optional<int> value = eval(*node.value);
-                    if (!value || folds_to_bool(*node.value)) {
+                    if (!value) {
                         return Flow::Fail;
                     }
                     env.emplace_back(node.names.front(), *value);
                     return Flow::Next;
                 } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
                     for (const VarDecl &var : node.vars) {
-                        if (!plain_i32(var) || var.init == nullptr) {
+                        if (std::optional<std::vector<int>> row = array_local(var)) {
+                            arrays.emplace_back(var.name, std::move(*row));
+                            continue;
+                        }
+                        const bool list = var.init != nullptr && std::holds_alternative<Expr::Init>(var.init->data);
+                        if (!plain_i32(var) || var.init == nullptr || list) {
                             return Flow::Fail;
                         }
                         const std::optional<int> value = eval(*var.init);
-                        if (!value || folds_to_bool(*var.init)) {
+                        if (!value) {
                             return Flow::Fail;
                         }
                         env.emplace_back(var.name, *value);
@@ -3873,6 +4064,12 @@ std::optional<int> Checker::early_run(const FunctionDecl &fn, std::vector<std::p
                         return Flow::Fail;
                     }
                     const std::size_t depth = env.size();
+                    const std::size_t rows = arrays.size();
+                    struct RowScope {
+                        std::vector<std::pair<std::string, std::vector<int>>> &arrays;
+                        std::size_t rows;
+                        ~RowScope() { arrays.resize(rows); }
+                    } row_scope{arrays, rows};
                     if (node.init != nullptr && self(self, *node.init) != Flow::Next) {
                         env.resize(depth);
                         return Flow::Fail;

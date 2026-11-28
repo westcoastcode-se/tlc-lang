@@ -1,0 +1,11 @@
+// 255 nested specializations of one function are within the limit of 256.
+func scale(comptime n i32, x i32) i32 {
+    comptime if (n == 0) {
+        return x;
+    } else {
+        return scale(n - 1, x + 1);
+    }
+}
+func main() i32 {
+    return scale(255, 2) - 215;
+}

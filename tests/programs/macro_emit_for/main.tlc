@@ -1,0 +1,16 @@
+// A folded `for` pastes one `emit var` per iteration. `total` outside the loop is one binding.
+macro func sums(slot *i32) void {
+    emit var total = 0;
+    for (var i = 0; i < 4; i += 1) {
+        emit var tmp = i;
+        emit total += tmp;
+    }
+    emit *slot = total;
+}
+
+func main() i32 {
+    var total = 100;
+    var slot = 0;
+    sums(&slot);
+    return slot + total;
+}

@@ -1,0 +1,24 @@
+// `new [n]func (i32) i32`, `new [n](i32, f64)`, and `new [n][2]Box<i32>` reserve elements of that type.
+type Box<T type> struct { v T = 5; }
+func inc(n i32) i32 { return n + 1; }
+func dbl(n i32) i32 { return n * 2; }
+func main() i32 {
+    var n = 2;
+    var fs = new [n]func (i32) i32{inc...};
+    fs[1] = dbl;
+    var opt = new [n]?func (i32) i32{null...};
+    var ts = new [n](i32, f64);
+    ts[1] = (7, 1.5);
+    var bs = new [n][2]Box<i32>;
+    var one = new [n]Box<i32>;
+    var total = fs[0](10) + fs[1](3) + ts[1][0] + i32(ts[1][1] * 2.0) + bs[1][1].v + one[0].v;  // 11 + 6 + 7 + 3 + 5 + 5
+    if (opt[0] == null) {
+        total += 5;
+    }
+    delete fs;
+    delete opt;
+    delete ts;
+    delete bs;
+    delete one;
+    return total;
+}

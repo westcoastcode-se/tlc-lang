@@ -817,9 +817,21 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
             return {zero(), 0};
         }
     }
-    const Lowered low = lower(current_file_, node.type_name, node.type_package, node.is_struct, node.indirections, false,
-                              0, false, false, node.shells);
-    if (low.type == nullptr || (low.elem_void && node.shells.empty()) || low.type->isFunctionTy()) {
+    // `new [n]func (i32) i32` and `new [n](i32, i32)` store that pointer or that tuple in each element.
+    const Lowered low = [&]() {
+        if (!node.elem_fn.empty()) {
+            const FnParam &fn = node.elem_fn.front();
+            return lower_fnptr(current_file_, fn.type_name, fn.type_package, fn.is_struct, fn.is_enum,
+                               fn.ret_indirections, fn.indirections, fn.params, fn.variadic, fn.results);
+        }
+        if (!node.tuple_parts.empty()) {
+            return lower_tuple_parts(current_file_, node.tuple_parts);
+        }
+        return lower(current_file_, node.type_name, node.type_package, node.is_struct, node.indirections, false, 0,
+                     false, false, node.shells);
+    }();
+    const bool shaped_element = !node.elem_fn.empty() || !node.tuple_parts.empty();
+    if (low.type == nullptr || (low.elem_void && node.shells.empty() && !shaped_element) || low.type->isFunctionTy()) {
         error(node.loc, "type mismatch");
         return {zero(), 0};
     }
@@ -1024,8 +1036,18 @@ TypedValue CodeGen::emit_new(const Expr::New &node) {
         result.array_len = -1;
         result.elem_slice = low.is_slice;
         result.inner_array_len = low.is_array ? low.array_len : low.inner_array_len;
+        // `new [n]func (i32) i32` and `new [n](i32, i32)`. Each element keeps that signature or those parts.
+        if (shaped_element) {
+            // The same value a written `[]func (i32) i32` or `[](i32, i32)` describes.
+            TypeShell header;
+            header.kind = TypeShell::Kind::Slice;
+            const Lowered slice = compose_shells(low, {header}, false);
+            copy_element(result, slice);
+            result.depth = slice.depth;
+            result.elem_slice = false;
+        }
         // `new [n][2][2]i32` is `[][2][2]i32`, the same element a written slice of that type has.
-        if (!node.shells.empty()) {
+        if (!node.shells.empty() && !shaped_element) {
             std::vector<TypeShell> whole = node.shells;
             TypeShell header;
             header.kind = TypeShell::Kind::Slice;

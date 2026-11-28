@@ -731,7 +731,7 @@ A function in that argument must be a `comptime func`. An ordinary function is `
 
 `width<add(3) + 1>()` is `expected an expression`. `+` is not part of a type list, so `<` is a comparison.
 
-A body that builds the next value, such as `return width<add(N)>()`, stops after 32 specializations with `not supported yet`.
+A body that builds the next value, such as `return width<add(N)>()`, stops after 256 specializations with `not supported yet`. A chain that ends, `count<dec(N)>()` from `count<200>()`, is within that limit.
 
 `width<add(3)>()` in `main` is one specialization.
 

@@ -123,6 +123,39 @@ xorl %eax, %eax                  # zero the result
 retq                             # return
 ```
 
+## Matching an arm
+
+`switch (shape)` on a tagged union matches the active arm. `case Circle(c):` runs when the tag is `ShapeType.Circle`, and `c` is a `const` copy of `shape.Circle` for the statements up to the next `case`. `case Empty:` matches an arm with no binding, and `case ShapeType.Circle:` is the same test written with the enumerator. `default:` and `break` work as in any `switch`, and a case without `break` falls into the next one.
+
+`switch (make(5))` evaluates the value once. A store into the binding, `c.radius = 5`, is `type mismatch`; write `shape.Circle.radius = 5` to change the union. `case Circle(1)` is `expected an identifier`. A name that is not an arm, `case Triangle(t)`, is `undeclared identifier`.
+
+```c
+type ShapeType enum { Circle, Rectangle, Empty };
+
+type Shape union(ShapeType) {
+    Circle struct { radius i32; };
+    Rectangle struct { width i32; height i32; };
+    Empty struct {};
+};
+
+func area(shape Shape) i32 {
+    switch (shape) {
+    case Circle(c):
+        return 3 * c.radius * c.radius;
+    case Rectangle(r):
+        return r.width * r.height;
+    case Empty:
+        return 0;
+    }
+    return -1;
+}
+
+func main() i32 {
+    var s Shape = {.Rectangle = {.width = 6, .height = 7}};
+    return area(s);
+}
+```
+
 ## Payload and tag
 
 The value stores one payload and the enum tag after it. Every field starts at offset 0, and the payload is large enough for the largest field.

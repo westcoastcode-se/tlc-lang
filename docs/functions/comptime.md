@@ -10,7 +10,7 @@ A `comptime func` calculates while the compiler is still compiling the program.
 
 Every argument has to be a comptime value, even when the parameter is not marked `comptime`.
 
-A `comptime func` calls a `comptime func`. A call of any other function is `not supported yet`.
+A `comptime func` calls a `comptime func`, and an ordinary function that has a body. That function, and every function it calls, runs in the same compiled call. `comptime func add(n i32) i32 { return inc(n) + 1; }` is 42 for `add(40)` when `inc` adds one. A C function, `extern(abi="c") func abs`, has no body to run, so calling it, also through an ordinary function, is `not supported yet`. So is a call through a function pointer, a macro, and a generic function.
 
 A `new` or `delete` with no allocator uses the heap. That call is `not supported yet`. `new(&builtin.allocator)` and `delete(&builtin.allocator)` are that call.
 
@@ -330,7 +330,7 @@ retq                             # return
 
 A `comptime func` whose body has an error of its own is not run, wherever it is declared. That error, on the body, is the report, and the call adds none. An error that comes from the arguments, such as `10 / n` when the call passes 0, is found by running the body and is reported as below.
 
-A global whose value is set at start, `var h = make()` or a copy of one, has no value while compiling. A comptime call that reads it, in its own body or in a `comptime func` it calls, is `set at start, not at compile time` on that read, with the call chain below. Taking its address, `&h`, reads no value. A local of the same name hides the global.
+A global whose value is set at start, `var h = make()` or a copy of one, has no value while compiling. A comptime call that reads it, in its own body or in a function it calls, is `set at start, not at compile time` on that read, with the call chain below. That function may be a `comptime func` or an ordinary function with a body. Taking its address, `&h`, reads no value. A local of the same name hides the global.
 
 A false `assert` is that message, on the `assert`.
 
@@ -1754,7 +1754,7 @@ A function nested in another function still passes the constant.
 
 `var f = scale` stores the address of `scale`. `f(2, x)` passes `2` and `x`. `scale(2, x)` still calls the specialized copy and does not pass `2`. `scale(n, x)` when `n` is a `var` is `type mismatch`. A body that does not typecheck while `n` is still a parameter is a name. `var f = fill` then `f(4, 38)` calls the specialized copy. `call(fill, 38)` calls `main.call.spec.fnfill`, and that copy calls `main.fill.spec.4`.
 
-More than 32 nested specializations are `not supported yet`.
+More than 256 nested specializations are `not supported yet`. `scale(n - 1, x + 1)` from `scale(255, 2)` is within that limit, and a body that never stops, `scale(n + 1, x)`, ends there.
 
 A struct, a float, an alias, a function, and a tuple are comptime arguments.
 

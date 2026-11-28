@@ -1,0 +1,23 @@
+// A start-time global read through an ordinary callee is the same fault as a direct read.
+func make() i32 {
+    return 7;
+}
+
+var g = make();
+
+func deeper() i32 {
+    return g;
+}
+
+func read() i32 {
+    return deeper();
+}
+
+comptime func peek() i32 {
+    return read();
+}
+
+func main() i32 {
+    comptime const a = peek();
+    return a;
+}

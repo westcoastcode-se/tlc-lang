@@ -1,0 +1,12 @@
+// A C function has no body to run while compiling, also through an ordinary function.
+extern(abi="c") func abs(n i32) i32;
+
+func noisy(n i32) i32 { return abs(n); }
+
+comptime func direct(n i32) i32 { return abs(n); }
+comptime func through(n i32) i32 { return noisy(n); }
+
+func main() i32 {
+    comptime const x = through(-3);
+    return direct(-2) + x;
+}

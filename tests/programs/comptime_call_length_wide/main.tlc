@@ -1,0 +1,41 @@
+// Recursion, `bool` locals, arrays of `i32`, and calls of other `comptime func` run before the struct has a size.
+comptime func fib(n i32) i32 {
+    if (n < 2) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+comptime func largest(a i32, b i32) i32 {
+    const left = a > b;
+    if (left) {
+        return a;
+    }
+    return b;
+}
+comptime func table_sum(n i32) i32 {
+    var row [5]i32 = {3, 1, 4, 1, 5};
+    row[0] += n;
+    var total = 0;
+    for (var i = 0; i < row.len; i += 1) {
+        total += row[i];
+    }
+    var copy = [_]i32{2, 2};
+    return total + copy[1] + i32(copy.len);
+}
+comptime func twice(n i32) i32 { return n * 2; }
+comptime func nested(n i32) i32 {
+    var x = twice(n) + 1;
+    return largest(x, 3);
+}
+comptime const f = fib(7);          // 13
+comptime const t = table_sum(2);    // 16 + 2 + 2 = 20
+type Buf struct {
+    a [f]u8;
+    b [t]u8;
+    c [nested(2)]u8;                 // 5
+    d [largest(1, 4)]u8;             // 4
+}
+func main() i32 {
+    var b Buf;
+    return i32(b.a.len + b.b.len + b.c.len + b.d.len);
+}

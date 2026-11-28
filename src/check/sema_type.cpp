@@ -3068,8 +3068,9 @@ void Checker::register_tuple_alias_template(const TypedefDecl &item) {
     }
     // `type Ptr<T type> *T`, `type Row<T type> [4]T`, and `type Buf<N i32> [N]u8`. Each use is the alias that
     // substitution writes, the same as `type Ptr *i32` written out.
-    const bool shaped = !item.is_tuple && !item.is_fn_ptr && !item.type_name.empty() &&
-                        (item.indirections > 0 || item.is_array || !item.shells.empty());
+    // `type Op<T type> func (T) T` is a function type alias of that kind too.
+    const bool shaped = !item.is_tuple && !item.type_name.empty() &&
+                        (item.is_fn_ptr || item.indirections > 0 || item.is_array || !item.shells.empty());
     if ((!item.is_tuple || item.tuple_parts.empty()) && !application && !parameter && !shaped) {
         error(item.loc, "not supported yet");
         return;
@@ -3207,6 +3208,13 @@ std::optional<int> Checker::fold_length_expr(const Expr &expr) {
             if (cast->expr != nullptr) {
                 walk(walk, *cast->expr, depth + 1);
             }
+        } else if (const auto *call = std::get_if<Expr::Call>(&part.data)) {
+            // `twice(K)`. The argument is a length name too. The callee is not.
+            for (const auto &arg : call->args) {
+                if (arg != nullptr) {
+                    walk(walk, *arg, depth + 1);
+                }
+            }
         }
     };
     collect(collect, expr, 0);
@@ -3235,15 +3243,63 @@ std::optional<int> Checker::fold_length_expr(const Expr &expr) {
         owned.push_back(std::move(number));
         known.push_back(name);
     }
-    if (known.empty()) {
-        return fold_runtime_const(expr);
-    }
     std::vector<const Expr *> values;
     for (const auto &item : owned) {
         values.push_back(item.get());
     }
     std::unique_ptr<Expr> copy = clone_expr(expr);
-    replace_names(copy, known, values);
+    if (!known.empty()) {
+        replace_names(copy, known, values);
+    }
+    // `buf [twice(2) + 1]u8` in a field. The call runs the same way `comptime const k = twice(2)` does,
+    // before the structs have a size.
+    bool called = false;
+    const auto calls = [&](const auto &self, std::unique_ptr<Expr> &part, int depth) -> bool {
+        if (part == nullptr || depth > 64) {
+            return true;
+        }
+        if (std::holds_alternative<Expr::Call>(part->data)) {
+            const std::optional<int> value = fold_early_call(*part);
+            if (!value) {
+                return false;
+            }
+            const SourceLoc at = expr_loc(*part);
+            auto number = std::make_unique<Expr>();
+            Expr::Int literal;
+            literal.loc = at;
+            literal.value = static_cast<uint64_t>(*value < 0 ? -static_cast<int64_t>(*value) : *value);
+            number->data = literal;
+            if (*value < 0) {
+                auto negated = std::make_unique<Expr>();
+                Expr::Unary minus;
+                minus.loc = at;
+                minus.op = TokenKind::Minus;
+                minus.expr = std::move(number);
+                negated->data = std::move(minus);
+                number = std::move(negated);
+            }
+            part = std::move(number);
+            called = true;
+            return true;
+        }
+        if (auto *unary = std::get_if<Expr::Unary>(&part->data)) {
+            return self(self, unary->expr, depth + 1);
+        }
+        if (auto *binary = std::get_if<Expr::Binary>(&part->data)) {
+            return self(self, binary->lhs, depth + 1) && self(self, binary->mid, depth + 1) &&
+                   self(self, binary->rhs, depth + 1);
+        }
+        if (auto *cast = std::get_if<Expr::Cast>(&part->data)) {
+            return self(self, cast->expr, depth + 1);
+        }
+        return true;
+    };
+    if (!calls(calls, copy, 0)) {
+        return std::nullopt;
+    }
+    if (known.empty() && !called) {
+        return fold_runtime_const(expr);
+    }
     if (const std::optional<int> folded = fold_int(*copy)) {
         return folded;
     }

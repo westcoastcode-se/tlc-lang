@@ -1,0 +1,23 @@
+// A `comptime const` that names another constant, a function, or an enumerator is copied into the inner function,
+// so that function is a value.
+type Point struct { x i32; y i32; }
+type Order enum { less, more };
+func add(a i32, b i32) i32 { return a + b; }
+comptime const base = 10;
+func apply(f func (i32) i32, n i32) i32 { return f(n); }
+func main() i32 {
+    comptime const k = 30;
+    comptime const p = Point{.x = k, .y = base};
+    comptime const fp = add;
+    comptime const o = Order.more;
+    comptime const pair = (k, fp);
+    func pass(n i32) i32 {
+        var extra = 0;
+        if (o == Order.more) {
+            extra = 1;
+        }
+        return fp(n, p.x) + p.y - 10 + extra + pair[0] - 30;
+    }
+    var f = pass;
+    return f(1) + apply(pass, 10) - 41 + 10;
+}

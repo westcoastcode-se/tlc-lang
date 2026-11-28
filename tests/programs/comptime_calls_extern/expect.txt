@@ -1,0 +1,5 @@
+link: -lc
+compile-error: main.tlc:6:42: error: not supported yet
+stderr:
+main.tlc:6:42: error: not supported yet
+main.tlc:10:24: error: not supported yet

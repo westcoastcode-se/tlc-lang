@@ -315,35 +315,80 @@ std::unique_ptr<Expr> Checker::inline_capture(const Symbol &symbol, SourceLoc lo
         negated->data = std::move(minus);
         return negated;
     }
-    // `Point{.x = 1, .y = 2}`, `0.5`, `3000000000u32`, and `(40, 2)`: a copy that reads no other name. A name
-    // there could mean something else inside the inner function.
-    if (symbol.const_init == nullptr) {
+    // `Point{.x = 1, .y = 2}`, `0.5`, `(40, 2)`, `Point{.x = k}`, and `comptime const fp = add`. Each name in the copy
+    // is another captured `comptime const`, copied the same way, or a file-scope function, type, or constant that no
+    // local name hides, so it means the same thing inside the inner function.
+    if (symbol.const_init == nullptr || inline_depth_ > 16) {
         return nullptr;
     }
-    const auto plain = [&](const auto &self, const Expr &part, int depth) -> bool {
+    ++inline_depth_;
+    struct Depth {
+        int &depth;
+        ~Depth() { --depth; }
+    } depth_guard{inline_depth_};
+    const auto hidden = [&](const std::string &name) {
+        for (const Scope &scope : scopes_) {
+            if (scope.function_id != 0 && scope.symbols.contains(name)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    std::unique_ptr<Expr> copy = clone_expr(*symbol.const_init);
+    const auto rewrite = [&](const auto &self, std::unique_ptr<Expr> &part, int depth) -> bool {
+        if (part == nullptr) {
+            return true;
+        }
         if (depth > 32) {
             return false;
         }
+        if (auto *named = std::get_if<Expr::Name>(&part->data)) {
+            const Symbol *found = lookup(named->text);
+            if (found == nullptr) {
+                // `Order` in `Order.more` names a type, not a value.
+                Type alias;
+                const bool type_name = find_enum(file_id_, named->text) >= 0 || find_tag(file_id_, named->text) >= 0 ||
+                                       package_typedef(file_id_, named->text, alias);
+                return type_name && !hidden(named->text);
+            }
+            if (captured(*found)) {
+                if (!found->is_constant || found == &symbol) {
+                    return false;
+                }
+                std::unique_ptr<Expr> inner = inline_capture(*found, named->loc);
+                if (inner == nullptr) {
+                    return false;
+                }
+                part = std::move(inner);
+                return true;
+            }
+            const bool file_scope = found->function_id == 0 &&
+                                    (found->is_function || found->is_type || found->is_constant || found->is_package);
+            return file_scope && !found->is_local_function && !hidden(named->text);
+        }
         return std::visit(
-            [&](const auto &item) -> bool {
+            [&](auto &item) -> bool {
                 using T = std::decay_t<decltype(item)>;
                 if constexpr (std::is_same_v<T, Expr::Int> || std::is_same_v<T, Expr::Float> ||
                               std::is_same_v<T, Expr::Bool> || std::is_same_v<T, Expr::String> ||
                               std::is_same_v<T, Expr::Nullptr>) {
                     return true;
                 } else if constexpr (std::is_same_v<T, Expr::Unary> || std::is_same_v<T, Expr::Cast>) {
-                    return item.expr != nullptr && self(self, *item.expr, depth + 1);
+                    return item.expr != nullptr && self(self, item.expr, depth + 1);
                 } else if constexpr (std::is_same_v<T, Expr::Binary>) {
-                    return item.lhs != nullptr && item.rhs != nullptr && self(self, *item.lhs, depth + 1) &&
-                           (item.mid == nullptr || self(self, *item.mid, depth + 1)) && self(self, *item.rhs, depth + 1);
+                    return item.lhs != nullptr && item.rhs != nullptr && self(self, item.lhs, depth + 1) &&
+                           self(self, item.mid, depth + 1) && self(self, item.rhs, depth + 1);
+                } else if constexpr (std::is_same_v<T, Expr::Selector>) {
+                    // `Order.more` and `pkg.add`.
+                    return item.base != nullptr && self(self, item.base, depth + 1);
                 } else if constexpr (std::is_same_v<T, Expr::Init>) {
-                    for (const Expr::FieldInit &field : item.fields) {
-                        if (field.value == nullptr || !self(self, *field.value, depth + 1)) {
+                    for (Expr::FieldInit &field : item.fields) {
+                        if (field.value == nullptr || !self(self, field.value, depth + 1)) {
                             return false;
                         }
                     }
-                    for (const auto &element : item.elements) {
-                        if (element == nullptr || !self(self, *element, depth + 1)) {
+                    for (auto &element : item.elements) {
+                        if (element == nullptr || !self(self, element, depth + 1)) {
                             return false;
                         }
                     }
@@ -352,12 +397,12 @@ std::unique_ptr<Expr> Checker::inline_capture(const Symbol &symbol, SourceLoc lo
                     return false;
                 }
             },
-            part.data);
+            part->data);
     };
-    if (!plain(plain, *symbol.const_init, 0)) {
+    if (!rewrite(rewrite, copy, 0)) {
         return nullptr;
     }
-    return clone_expr(*symbol.const_init);
+    return copy;
 }
 
 Type Checker::check_raw(const Expr &expr, bool used) {
@@ -3312,7 +3357,7 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                                       node.alloc_is_pointer, node.alloc_is_trait);
                     reject_comptime_heap(node.loc, node.builtin_alloc, node.alloc_is_trait, node.alloc_file,
                                          node.alloc_name);
-                    if (node.type_name.empty()) {
+                    if (node.type_name.empty() && node.tuple_parts.empty()) {
                         error(node.loc, "expected a type");
                         return type_invalid();
                     }
@@ -3339,13 +3384,29 @@ Type Checker::check_raw(const Expr &expr, bool used) {
                         }
                     }
                     Type object = type_invalid();
-                    if (!written.type_args.empty()) {
+                    if (!written.elem_fn.empty()) {
+                        // `new [n]func (i32) i32`. Each element is that function pointer.
+                        object = type_of_fn_param(written.elem_fn.front(), written.loc, false);
+                    } else if (!written.tuple_parts.empty()) {
+                        // `new [n](i32, i32)`. Each element is that tuple.
+                        object = type_of_written_tuple(written.tuple_parts, 0, false, {}, written.loc);
+                    } else if (!written.type_args.empty()) {
                         // `new(&arena) Buf[n]` stays written as `n`. One element stands in until the call.
                         object = deferred_struct_type(written.type_name, written.type_package, written.type_args,
                                                       written.loc);
                         if (object.kind != TypeKind::Invalid && written.indirections > 0) {
                             object = with_indirections(std::move(object), written.indirections, written.loc,
                                                        written.optional, written.const_pointee);
+                        }
+                        // `new [n][2]Box<i32>`. The shells wrap that specialization.
+                        if (object.kind != TypeKind::Invalid && !written.shells.empty()) {
+                            fold_shells(written.shells, written.loc);
+                            bool rejected = false;
+                            object = apply_shells(std::move(object), written.shells, false, rejected);
+                            if (rejected) {
+                                error(node.loc, "not supported yet");
+                                return type_invalid();
+                            }
                         }
                     } else {
                         object = spelled_type(node.type_name, node.type_package, node.is_struct, false, node.indirections,

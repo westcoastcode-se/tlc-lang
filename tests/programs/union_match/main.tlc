@@ -1,0 +1,43 @@
+// `switch` on a tagged union matches an arm. `case Circle(c):` binds a copy of that payload.
+type ShapeType enum { Circle, Rectangle, Empty };
+type Shape union(ShapeType) {
+    Circle struct { radius i32; };
+    Rectangle struct { width i32; height i32; };
+    Empty struct {};
+};
+func area(shape Shape) i32 {
+    switch (shape) {
+    case Circle(c):
+        return 3 * c.radius * c.radius;
+    case Rectangle(r):
+        var a = r.width;
+        return a * r.height;
+    case Empty:
+        return 0;
+    }
+    return -1;
+}
+func make(n i32) Shape {
+    var s Shape = {.Rectangle = {.width = n, .height = 2}};
+    return s;
+}
+func main() i32 {
+    var c Shape = {.Circle = {.radius = 2}};
+    var e Shape = {.Empty = {}};
+    var total = area(c) + area(e);           // 12
+    switch (make(5)) {                        // evaluated once
+    case Rectangle(r):
+        total += r.width * r.height;          // 10
+        break;
+    default:
+        total += 100;
+    }
+    switch (c) {
+    case ShapeType.Circle:
+        total += 20;
+        break;
+    case Rectangle(x):
+        total += 1000;
+    }
+    return total;
+}

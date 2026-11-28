@@ -1,1 +1,1 @@
-compile-error: not supported yet
+compile-error: main.tlc:12:12: error: type mismatch

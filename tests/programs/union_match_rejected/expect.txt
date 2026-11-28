@@ -1,0 +1,6 @@
+compile-error: main.tlc:13:20: error: expected an identifier
+stderr:
+main.tlc:13:20: error: expected an identifier
+main.tlc:11:9: error: type mismatch
+main.tlc:15:10: error: undeclared identifier
+main.tlc:15:19: error: undeclared identifier

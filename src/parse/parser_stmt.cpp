@@ -1180,6 +1180,15 @@ std::unique_ptr<Stmt> Parser::parse_statement() {
                 stmt.expr = std::move(expr->expr);
                 return make_stmt(std::move(stmt));
             }
+            // `emit var x = 1;`, `emit const k = n;`, and `emit var row [4]i32;`.
+            if (auto *bind = std::get_if<Stmt::Bind>(&inner->data); bind != nullptr && !bind->is_comptime) {
+                bind->emit = true;
+                return inner;
+            }
+            if (auto *decl = std::get_if<Stmt::Decl>(&inner->data); decl != nullptr && !decl->vars.empty()) {
+                decl->emit = true;
+                return inner;
+            }
         }
         diags_.error(stmt.loc, "not supported yet");
         return make_stmt(std::move(stmt));

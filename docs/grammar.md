@@ -2081,6 +2081,7 @@ statement   = block
             | "emit" "if" "(" expression ")" block [ "else" ( if-statement | block ) ]
             | "emit" "while" "(" expression ")" block
             | "emit" "do" block "while" "(" expression ")" ";"
+            | "emit" ( var-decl | binding )
             | assert-stmt
             | var-decl
             | binding
@@ -2110,6 +2111,8 @@ A body without `{` is reported as `expected '{'`.
 The string is the diagnostic when the condition is false.
 
 `case` and `default` are statements, so they appear inside the switch body.
+
+When the switch value is a tagged union, `case Circle(c):` names an arm and a binding, and `case Empty:` names an arm. See [Unions](types/union.md).
 
 ## Expressions
 
@@ -2164,7 +2167,7 @@ postfix-op  = "(" [ argument-list ] ")"
             | struct-init ;
 argument-list = expression { "," expression } ;
 new-expr    = "new" [ "(" expression ")" ] [ new-count ] { pointer } [ identifier "." ] ( integer-name | float-name | identifier ) [ type-args ] [ new-init ]
-            | "new" [ "(" expression ")" ] new-count array-type [ new-init ] ;
+            | "new" [ "(" expression ")" ] new-count ( array-type | func-type | tuple-type ) [ new-init ] ;
 new-count   = "[" expression "]" | "[" "_" "]" ;
 new-init    = struct-init | element-list ;
 element-list = "{" [ element { "," element } [ "," ] ] "}" ;

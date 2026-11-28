@@ -1,0 +1,12 @@
+// `emit var n` keeps the parameter for the initializer and pastes a binding the caller does not name.
+macro func bump(comptime n i32, slot *i32) void {
+    emit var n = n + 1;
+    emit *slot = n;
+}
+
+func main() i32 {
+    var n = 9;
+    var slot = 0;
+    bump(4, &slot);
+    return n * 10 + slot;
+}

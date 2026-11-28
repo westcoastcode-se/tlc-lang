@@ -515,7 +515,7 @@ retq
 
 `const twice = n * 2` and `var total = 0` in a macro body, without `emit`, are values while the macro expands. They are not pasted. A later statement reads the value: `emit *slot = twice` pastes `*slot = 40` when `n` is 20, and `if (total > 5)` folds. `total += i` and `total = 7` without `emit` change a `var`, so a loop that unrolls can add up a value. A store into a `const` is `type mismatch`. The binding ends with the block that holds it, and each call of the macro starts with none.
 
-The value is an integer, a `bool`, a float, or a string known while compiling. A value that reads an argument without `comptime`, `var copy = n`, is `not supported yet`. `emit var` and `emit const` are `not supported yet`: a pasted statement uses the names of the caller.
+The value is an integer, a `bool`, a float, or a string known while compiling. A value that reads an argument without `comptime`, `var copy = n`, is `not supported yet`. `emit var tmp = *a`, `emit var total i32 = 0`, and `emit const done = total * 2` paste a binding into the caller. Each paste gives that binding a name of its own, so it does not meet a name of the caller: `swap(&tmp, &other)` works when the caller has a `tmp`, and two calls in one block each declare their own. A later `emit` in the same call reads the binding, as in `emit *b = tmp`. The caller cannot name it. The initializer is substituted first, so `emit var n = n + 1` in a macro whose parameter is `n` reads the argument and pastes a different name. A `for` that folds gives each iteration its own name.
 
 ## Limits on a macro
 

@@ -1,0 +1,12 @@
+// A generic that specializes itself 200 levels deep.
+comptime func dec(n i32) i32 { return n - 1; }
+func count<N i32>() i32 {
+    comptime if (N == 0) {
+        return 0;
+    } else {
+        return 1 + count<dec(N)>();
+    }
+}
+func main() i32 {
+    return count<200>() - 158;
+}

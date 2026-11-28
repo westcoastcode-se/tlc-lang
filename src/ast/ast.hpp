@@ -470,6 +470,10 @@ struct Expr {
         mutable bool alloc_is_pointer = false;
         // `alloc` has type `*Allocator`. The struct is filled when that function is specialized.
         mutable bool alloc_is_trait = false;
+        // `new [n]func (i32) i32`. One entry, the element written as a parameter of that type.
+        std::vector<FnParam> elem_fn;
+        // `new [n](i32, i32)`. The elements of the tuple each slot holds.
+        std::vector<ResultSlot> tuple_parts;
     };
     // `delete p` and `delete(allocator) p`.
     struct Delete {
@@ -841,6 +845,8 @@ struct Stmt {
     struct Decl {
         SourceLoc loc{};
         std::vector<VarDecl> vars;
+        // `emit var x i32 = 1;` inside a macro. The declaration is pasted with a name of its own.
+        bool emit = false;
     };
     struct Func {
         std::unique_ptr<FunctionDecl> decl;
@@ -860,6 +866,8 @@ struct Stmt {
         bool is_const = false;
         // `comptime const name = expr`. The initializer is a compile-time constant.
         bool is_comptime = false;
+        // `emit var x = 1;` inside a macro. The binding is pasted with a name of its own.
+        bool emit = false;
         // Set by the checker. `var e = 250u8` binds a `u8`, so codegen allocates 8 bits, not the promoted
         // `i32`. 0 is every other binding. Codegen reads this instead of guessing from the emitted value.
         mutable int narrow_bits = 0;

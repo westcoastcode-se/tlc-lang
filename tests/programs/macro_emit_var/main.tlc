@@ -1,0 +1,23 @@
+// `emit var` pastes a binding with a name of its own for each call. The caller's `tmp` and `total` are not that binding.
+macro func swap(a *i32, b *i32) void {
+    emit var tmp = *a;
+    emit *a = *b;
+    emit *b = tmp;
+}
+macro func accumulate(slot *i32, comptime n i32) void {
+    emit var total i32 = 0;
+    for (var i = 0; i < n; i += 1) {
+        emit total += i;
+    }
+    emit const done = total * 2;
+    emit *slot = done;
+}
+func main() i32 {
+    var tmp = 30;
+    var other = 4;
+    swap(&tmp, &other);
+    swap(&tmp, &other);   // a second expansion declares its own name
+    var total = 0;
+    accumulate(&total, 4);   // (0+1+2+3) * 2 = 12
+    return tmp + other + total - 4;
+}

@@ -1,3 +1,4 @@
+// `add` on a struct has no number to add. Only exchange, op 0, takes a struct.
 import "builtin";
 
 type Pair struct(align=4) {

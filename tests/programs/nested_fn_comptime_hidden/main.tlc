@@ -1,0 +1,7 @@
+// A parameter that hides the function the constant names keeps the capture. The call still reads the outer `add`.
+func add(a i32, b i32) i32 { return a + b; }
+func main() i32 {
+    comptime const fp = add;
+    func pass(add i32) i32 { return fp(add, 1); }
+    return pass(41);
+}

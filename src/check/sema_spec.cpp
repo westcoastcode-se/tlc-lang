@@ -413,6 +413,43 @@ std::string Checker::specialize_tuple_alias(const TypedefDecl &templ, uint32_t o
                 written.array_len = part.array_len;
                 spec.tuple_parts.push_back(std::move(written));
             }
+        } else if (spec.is_fn_ptr) {
+            // `type Op<T type> func (T) T`. The parameters and the result take the arguments, as a field does.
+            FieldDecl field;
+            field.loc = spec.loc;
+            field.type_name = std::move(spec.type_name);
+            field.type_package = std::move(spec.type_package);
+            field.is_struct = spec.is_struct;
+            field.is_enum = spec.is_enum;
+            field.indirections = spec.indirections;
+            field.optional = spec.optional;
+            field.const_pointee = spec.const_pointee;
+            field.shells = std::move(spec.shells);
+            field.type_args = std::move(spec.type_args);
+            field.is_fn_ptr = true;
+            field.fn_c_abi = spec.fn_c_abi;
+            field.ret_indirections = spec.ret_indirections;
+            field.ret_optional = spec.ret_optional;
+            field.ret_const_pointee = spec.ret_const_pointee;
+            field.fn_params = std::move(spec.fn_params);
+            field.fn_variadic = spec.fn_variadic;
+            field.fn_results = std::move(spec.fn_results);
+            substitute_field(templ.type_params, bounds, field);
+            spec.type_name = std::move(field.type_name);
+            spec.type_package = std::move(field.type_package);
+            spec.is_struct = field.is_struct;
+            spec.is_enum = field.is_enum;
+            spec.indirections = field.indirections;
+            spec.optional = field.optional;
+            spec.const_pointee = field.const_pointee;
+            spec.shells = std::move(field.shells);
+            spec.type_args = std::move(field.type_args);
+            spec.ret_indirections = field.ret_indirections;
+            spec.ret_optional = field.ret_optional;
+            spec.ret_const_pointee = field.ret_const_pointee;
+            spec.fn_params = std::move(field.fn_params);
+            spec.fn_variadic = field.fn_variadic;
+            spec.fn_results = std::move(field.fn_results);
         } else {
             // `type MyAlias<T type> Vec<T>` and `type Name<T type> T` become a concrete alias.
             substitute_type(templ.type_params, bounds, spec.type_name, spec.type_package, spec.is_struct, spec.is_enum,
@@ -612,7 +649,7 @@ std::string Checker::specialize_type_app(const std::string &package, const std::
         note_caller(spec_name);
         return spec_name;
     }
-    if (generic_spec_depth_ >= 32) {
+    if (generic_spec_depth_ >= kMaxSpecDepth) {
         error(loc, "not supported yet");
         return {};
     }
@@ -2424,7 +2461,12 @@ bool Checker::atomic_builtin_rejected(const FunctionDecl &fn, const Expr::Call &
         const bool pointer = bound != nullptr ? atomic_pointer(*bound)
                                               : (!fn.params.empty() && (fn.params.front().indirections >= 2 ||
                                                                         !fn.params.front().shells.empty()));
-        if ((pointer || struct_value) && op != 0) {
+        // `add`, `sub`, `and`, `or`, and `xor` work on a number. A struct has none to add, so that is a type error.
+        if (struct_value && op != 0) {
+            error(call.loc, "type mismatch");
+            return true;
+        }
+        if (pointer && op != 0) {
             error(call.loc, "not supported yet");
             return true;
         }
@@ -2921,7 +2963,7 @@ std::optional<Type> Checker::maybe_generic_call(Expr &expr, bool used) {
         }
         return check_raw(expr, used);
     }
-    if (generic_spec_depth_ >= 32) {
+    if (generic_spec_depth_ >= kMaxSpecDepth) {
         error(call.loc, "not supported yet");
         return type_invalid();
     }
@@ -3086,7 +3128,7 @@ uint32_t Checker::comptime_decl_file(const FunctionDecl &fn) const {
 
 bool Checker::apply_comptime_template(Expr::Call &call, const FunctionDecl &fn, bool several, std::size_t skip,
                                       std::optional<uint32_t> owner_file) {
-    if (comptime_spec_depth_ >= 32) {
+    if (comptime_spec_depth_ >= kMaxSpecDepth) {
         error(call.loc, "not supported yet");
         return false;
     }

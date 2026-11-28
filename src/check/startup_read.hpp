@@ -1,8 +1,9 @@
 // A comptime call that reads a global set at start, `var h = make()`. The run would read 0, since
 // `make` runs only when the program starts. The read is `set at start, not at compile time`.
 //
-// The body is scanned before it runs, with each comptime func it calls. A local of the same name hides
-// the global for the whole function. `&h` takes the address, which is fixed, so it is not a read.
+// The body is scanned before it runs, with each comptime func it calls and each ordinary function that
+// call runs. A local of the same name hides the global for the whole function. `&h` takes the address,
+// which is fixed, so it is not a read.
 //
 // Included once, from sema_fold.cpp.
 #pragma once
@@ -99,18 +100,60 @@ bool Checker::startup_read_fault(const FunctionDecl &fn) {
             const VarDecl *var = file_scope_var(root, file, owner);
             return var != nullptr && set_at_start(*var, owner);
         };
-        const auto comptime_callee_of = [&](const Expr::Call &call) -> const FunctionDecl * {
+        // True when a callee's body reads a start-time global. A comptime func in this file is the old
+        // path. An ordinary function with a body is run in the same compiled call, including one in
+        // another file of this package, so its reads are the same fault.
+        const auto scan_call = [&](const Expr::Call &call) -> bool {
             const auto *named = call.callee == nullptr ? nullptr : std::get_if<Expr::Name>(&call.callee->data);
             if (named == nullptr || locals.contains(named->text)) {
-                return nullptr;
+                return false;
             }
+            const auto follow = [&](const FunctionDecl &callee) {
+                comptime_calls_.push_back(ComptimeCall{call.loc, current.name});
+                const bool found = scan_self(scan_self, callee);
+                comptime_calls_.pop_back();
+                return found;
+            };
             for (const TopDecl &decl : unit->decls) {
                 if (const auto *item = std::get_if<FunctionDecl>(&decl.data);
-                    item != nullptr && item->name == named->text && item->method_struct.empty() && item->is_comptime) {
-                    return item;
+                    item != nullptr && item->name == named->text && item->method_struct.empty() && item->is_comptime &&
+                    item->body != nullptr) {
+                    return follow(*item);
                 }
             }
-            return nullptr;
+            const auto ordinary = [&](const FunctionDecl &item, uint32_t id) {
+                if (item.name != named->text || !item.method_struct.empty() || item.body == nullptr || item.is_comptime ||
+                    item.extern_c || item.is_extern || item.extern_compiler || item.is_macro || !item.type_params.empty() ||
+                    comptime_param_template(item) || (id != file && item.is_static)) {
+                    return false;
+                }
+                if (item.variadic) {
+                    return call.args.size() >= item.params.size();
+                }
+                return call.args.size() == item.params.size();
+            };
+            const auto scan_unit = [&](const TranslationUnit &other, uint32_t id) {
+                for (const TopDecl &decl : other.decls) {
+                    const auto *item = std::get_if<FunctionDecl>(&decl.data);
+                    if (item != nullptr && ordinary(*item, id) && follow(*item)) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            if (scan_unit(*unit, file)) {
+                return true;
+            }
+            for (const uint32_t id : files_in_package(file)) {
+                if (id == file) {
+                    continue;
+                }
+                const PackageNode *node = find_node(id);
+                if (node != nullptr && scan_unit(node->unit, id)) {
+                    return true;
+                }
+            }
+            return false;
         };
         const auto walk_expr = [&](auto &&self, const Expr &expr) -> bool {
             return std::visit(
@@ -141,14 +184,8 @@ bool Checker::startup_read_fault(const FunctionDecl &fn) {
                                 return true;
                             }
                         }
-                        if (const FunctionDecl *callee = comptime_callee_of(node)) {
-                            // The callee's read is reported with this call on the chain.
-                            comptime_calls_.push_back(ComptimeCall{node.loc, current.name});
-                            const bool found = scan_self(scan_self, *callee);
-                            comptime_calls_.pop_back();
-                            return found;
-                        }
-                        return false;
+                        // The callee's read is reported with this call on the chain.
+                        return scan_call(node);
                     } else if constexpr (std::is_same_v<T, Expr::Selector>) {
                         if (global_set_at_start(expr)) {
                             report_comptime_fault(node.loc, "set at start, not at compile time", current.name);

@@ -597,8 +597,8 @@ class Checker {
     bool copies_address(const VarDecl &var, const Type &want);
     // `var h = make()`, or a copy of one: the value exists only once the program has started.
     bool set_at_start(const VarDecl &var, uint32_t file, int depth = 0) const;
-    // A read of such a global in `fn` or a comptime func it calls is `set at start, not at compile time`,
-    // with the call chain. True when it reported one.
+    // A read of such a global in `fn`, a comptime func it calls, or an ordinary function that call runs,
+    // is `set at start, not at compile time`, with the call chain. True when it reported one.
     bool startup_read_fault(const FunctionDecl &fn);
     // Calls not run for that reason. Their body's errors are the report, so the call adds none.
     std::unordered_set<const Expr::Call *> broken_calls_;
@@ -915,18 +915,39 @@ class Checker {
         std::unique_ptr<Expr> value;
         bool is_var = false;
     };
+    // Fresh names for `emit` bindings of the macro call being expanded. The latest entry for a source name
+    // wins. A block drops the names it pasted. The count is not reset, so two calls do not share a spelling.
+    int macro_rename_count_ = 0;
+    std::vector<std::pair<std::string, std::string>> macro_emit_renames_;
     std::vector<MacroLocal> macro_locals_;
+    void rename_emit_uses(std::unique_ptr<Expr> &slot, const std::unordered_set<std::string> *hide);
+    void subst_macro_expr(std::unique_ptr<Expr> &slot, bool substitute, const std::vector<std::string> &names,
+                          const std::vector<const Expr *> &exprs, const std::unordered_set<std::string> *hide);
+    void fresh_emit_name(std::string &name);
+    // Gives each `emit` binding on `stmt` a fresh name. The initializer is already substituted.
+    void finish_emit_decl(Stmt &stmt);
+    // Parameter substitution and emit-renames for the expressions this statement owns, not nested statements.
+    void prepare_macro_node(Stmt &stmt, bool substitute, const std::vector<std::string> &names,
+                            const std::vector<const Expr *> &exprs, const std::unordered_set<std::string> *hide);
+    // The same, in source order through a statement that is pasted whole (`emit if`, `emit for`).
+    void prepare_macro_tree(Stmt &stmt, bool substitute, const std::vector<std::string> &names,
+                            const std::vector<const Expr *> &exprs, const std::unordered_set<std::string> *hide);
     void apply_macro_locals(std::unique_ptr<Expr> &slot);
     void apply_macro_locals(Stmt &stmt);
     // True when `stmt` was a macro binding or a store into one. It is not pasted.
     bool macro_local_stmt(Stmt &stmt);
+    // `switch (shape) { case Circle(c): ... }` on a tagged union, rewritten into a switch on the tag.
+    bool rewrite_union_match(Stmt &stmt);
+    int match_count_ = 0;
     // `keep_block` leaves a block in place. The statements inside it are still expanded.
     void expand_macro_stmt(std::unique_ptr<Stmt> stmt, const FunctionDecl &fn, const std::vector<std::string> &names,
                            const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out,
-                           bool substitute, bool defer = false, bool keep_block = false);
+                           bool substitute, bool defer = false, bool keep_block = false,
+                           const std::unordered_set<std::string> *hide = nullptr);
     void unroll_inline_for(const Stmt &stmt, const FunctionDecl &fn, const std::vector<std::string> &names,
                            const std::vector<const Expr *> &exprs, std::vector<std::unique_ptr<Stmt>> &out,
-                           bool defer = false);
+                           bool defer = false, bool substitute = false,
+                           const std::unordered_set<std::string> *hide = nullptr);
     // `comptime for` outside a macro. True when the body was unrolled, or a diagnostic was already reported.
     // False when the bounds do not fold. The caller reports `not supported yet`.
     bool unroll_comptime_for(Stmt::For &loop);
@@ -1059,7 +1080,8 @@ class Checker {
     // Expands the taken path. Other cases are left out. True when `break` or `return` ends the path.
     bool expand_folded_switch(std::unique_ptr<Stmt> stmt, const Stmt::Case *arm, bool &active, const FunctionDecl &fn,
                               const std::vector<std::string> &names, const std::vector<const Expr *> &exprs,
-                              std::vector<std::unique_ptr<Stmt>> &out, bool defer);
+                              std::vector<std::unique_ptr<Stmt>> &out, bool defer, bool substitute,
+                              const std::unordered_set<std::string> *hide);
     // `while`, `do`, and a `for` outside a macro. A `for` in a macro is unrolled.
     int plain_loop_depth_ = 0;
     void check_for_each(const Stmt::For &node);
@@ -1407,8 +1429,11 @@ class Checker {
     std::unordered_set<std::string> spec_checking_;
     std::unordered_set<std::string> spec_ready_;
     // Nested comptime-parameter specializations. The cap matches a macro `for`.
+    // Nested specializations of one call chain, `scale(n - 1, x)`. Each level is checked on the compiler's
+    // stack, which has room for this many.
+    static constexpr int kMaxSpecDepth = 256;
     int comptime_spec_depth_ = 0;
-    // Nested generic instantiations. A body that builds the next value stops at 32.
+    // Nested generic instantiations. A body that builds the next value stops at `kMaxSpecDepth`.
     int generic_spec_depth_ = 0;
     // `file\nSpec` while that specialization's variables are being built.
     std::unordered_set<std::string> assoc_busy_;
@@ -1445,6 +1470,7 @@ class Checker {
     std::optional<int> fold_early_call(const Expr &init);
     // A body of `i32` locals, `if`, loops, and `return`, run while the structs are still being sized.
     bool early_runnable(const FunctionDecl &fn) const;
+    int early_depth_ = 0;
     std::optional<int> early_run(const FunctionDecl &fn, std::vector<std::pair<std::string, int>> env);
     void bind_file_const(VarDecl &var);
     // The type of a file-scope `comptime const`. Sets `has_const` when the value folds.
@@ -1457,6 +1483,7 @@ class Checker {
     // A copy of a captured `comptime const` the inner function reads in place of the capture. Null when the
     // initializer reads another name.
     std::unique_ptr<Expr> inline_capture(const Symbol &symbol, SourceLoc loc);
+    int inline_depth_ = 0;
     // `&name` where `name` is a `comptime const`.
     bool comptime_address(const Expr &expr);
     // What a comptime pointer expression points at. Null when it is not one.

@@ -1194,6 +1194,8 @@ std::unique_ptr<Expr> clone_expr(const Expr &expr) {
                 copy.alloc_name = node.alloc_name;
                 copy.alloc_is_pointer = node.alloc_is_pointer;
                 copy.alloc_is_trait = node.alloc_is_trait;
+                copy.elem_fn = node.elem_fn;
+                copy.tuple_parts = node.tuple_parts;
                 out->data = std::move(copy);
             } else if constexpr (std::is_same_v<T, Expr::Delete>) {
                 Expr::Delete copy;
@@ -1310,6 +1312,7 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
             } else if constexpr (std::is_same_v<T, Stmt::Decl>) {
                 Stmt::Decl copy;
                 copy.loc = node.loc;
+                copy.emit = node.emit;
                 for (const VarDecl &var : node.vars) {
                     copy.vars.push_back(clone_var(var));
                 }
@@ -1335,6 +1338,7 @@ std::unique_ptr<Stmt> clone_stmt(const Stmt &stmt) {
                 copy.is_define = node.is_define;
                 copy.is_const = node.is_const;
                 copy.is_comptime = node.is_comptime;
+                copy.emit = node.emit;
                 copy.narrow_bits = node.narrow_bits;
                 copy.narrow_unsigned = node.narrow_unsigned;
                 out->data = std::move(copy);
